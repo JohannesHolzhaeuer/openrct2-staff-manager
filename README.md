@@ -83,9 +83,10 @@ reassigned** to a different spot, e.g.
 
 ## Building
 
-This plugin is written in TypeScript against the official [OpenRCT2 plugin API
-typings](https://github.com/OpenRCT2/OpenRCT2/blob/develop/distribution/scripting/openrct2.d.ts)
-(`openrct2.d.ts`, included in this repository).
+This plugin is written in TypeScript against the community-maintained
+[`@openrct2/types`](https://www.npmjs.com/package/@openrct2/types) package, which provides
+official OpenRCT2 plugin API typings and is installed as a dev dependency via `npm install`
+(no vendored `.d.ts` file is checked into this repository).
 
 ### Prerequisites
 

@@ -10,6 +10,7 @@
     "watch": "tsc --watch"
   },
   "devDependencies": {
+    "@openrct2/types": "^0.5.4",
     "eslint": "^10.8.1",
     "typescript": "^5.4.5"
   }

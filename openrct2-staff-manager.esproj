@@ -13,7 +13,6 @@
     <Content Include="tsconfig.json" />
     <Content Include="package.json" />
     <Content Include="README.md" />
-    <Content Include="openrct2.d.ts" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".github\workflows\release.yml" />

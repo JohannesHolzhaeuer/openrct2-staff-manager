@@ -15,9 +15,9 @@ paths into patrol areas and assigning staff accordingly.
 
 - `staff-manager.ts` — the entire plugin source (types, logic, GUI, plugin registration). This is
   the only file that should normally need edits for feature/bugfix work.
-- `openrct2.d.ts` — official OpenRCT2 scripting API type definitions (vendored from the OpenRCT2
-  repo's `distribution/scripting/openrct2.d.ts`). Do not hand-edit; replace wholesale if it needs
-  updating.
+- `@openrct2/types` (npm dev dependency) — official OpenRCT2 scripting API type definitions,
+  providing `node_modules/@openrct2/types/openrct2.d.ts`. Kept up to date via `npm update`; do not
+  vendor a local copy.
 - `tsconfig.json` — compiles `staff-manager.ts` to `dist/staff-manager.js` (ES2017, no module
   system, strict mode).
 - `package.json` — `build` script runs `tsc && node deploy.js`; `watch` runs `tsc --watch`.
@@ -43,7 +43,7 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
 
 - Tabs for indentation in `staff-manager.ts` (match existing style).
 - Strict TypeScript (`strict: true`); avoid introducing `any` where a proper OpenRCT2 API type
-  exists in `openrct2.d.ts`.
+  exists in `node_modules/@openrct2/types/openrct2.d.ts`.
 - The compiled output has no module system (`module: "None"`) — the plugin must remain a single
   self-contained script; do not introduce `import`/`export` or split into multiple compiled
   modules.

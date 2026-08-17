@@ -16,6 +16,6 @@
   },
   "include": [
     "staff-manager.ts",
-    "openrct2.d.ts"
+    "node_modules/@openrct2/types/openrct2.d.ts"
   ]
 }
