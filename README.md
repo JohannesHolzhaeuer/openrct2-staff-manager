@@ -1,4 +1,4 @@
-# Staff Manager Plus
+# Staff Manager
 
 An [OpenRCT2](https://openrct2.org/) plugin that automates park staff management:
 it splits your paths (or ride **queues**) among **handymen, security guards and
@@ -107,7 +107,7 @@ typings](https://github.com/OpenRCT2/OpenRCT2/blob/develop/distribution/scriptin
    compiles and deploys `staff-manager.js` directly into your OpenRCT2 plugin
    folder.
 2. Start OpenRCT2 (or, in single‑player, use the plugin **hot‑reload**).
-3. Open it from the **map / red‑toolbox button → “Staff Manager Plus”**.
+3. Open it from the **map / red‑toolbox button → “Staff Manager”**.
 
 ---
 

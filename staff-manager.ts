@@ -1,6 +1,6 @@
 /// <reference path="openrct2.d.ts" />
 /*****************************************************************************
- * Staff Manager Plus
+ * Staff Manager
  * ---------------------------------------------------------------------------
  * Manages park staff by patrol area:
  *   - HANDYMEN, SECURITY, MASCOTS (entertainers): split the park's paths into
@@ -352,7 +352,7 @@ function confirmDialog(lines: string[], yesLabel: string, onYes: () => void, onN
 	ui.openWindow({
 		classification: CONFIRM_TAG,
 		width: 320, height: by + 28,
-		title: "Staff Manager Plus",
+		title: "Staff Manager",
 		colours: [24, 24],
 		widgets: widgets
 	});
@@ -989,7 +989,7 @@ function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[]): voi
 // Button entry for path staff: scan, then offer to hire if short, then assign.
 function assignPathStaff(kind: StaffKind, niceName: string): void {
 	if (busy) {
-		park.postMessage({ type: "blank", text: "Staff Manager Plus is busy scanning..." });
+		park.postMessage({ type: "blank", text: "Staff Manager is busy scanning..." });
 		return;
 	}
 	ensureScan(true, function () {
@@ -1329,7 +1329,7 @@ function openWindow(): void {
 		width: 300, height: winH,
 		minWidth: 280, maxWidth: 620,
 		minHeight: winH, maxHeight: winH + 260,
-		title: "Staff Manager Plus",
+		title: "Staff Manager",
 		colours: [24, 24],
 		onUpdate: function () {
 			const w = ui.getWindow(WINDOW_TAG);
@@ -1343,13 +1343,13 @@ function openWindow(): void {
 // --- Main ------------------------------------------------------------------
 function main(): void {
 	if (typeof ui !== "undefined") {
-		ui.registerMenuItem("Staff Manager Plus", function () { openWindow(); });
+		ui.registerMenuItem("Staff Manager", function () { openWindow(); });
 	}
 	startAuto();
 }
 
 registerPlugin({
-	name: "Staff Manager Plus",
+	name: "Staff Manager",
 	version: "2.18.0",
 	authors: ["Johannes"],
 	type: "local",
