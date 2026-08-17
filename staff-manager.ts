@@ -872,20 +872,146 @@ function reachableOwnedTiles(pathInfo: { [key: string]: PathTileInfo }, seeds: S
 	return { paths: paths, queues: queues };
 }
 
-function partition<T>(arr: T[], n: number): T[][] {
-	const chunks: T[][] = [];
-	if (n <= 0) { return chunks; }
-	const per = Math.ceil(arr.length / n);
-	for (let i = 0; i < n; i++) {
-		const slice = arr.slice(i * per, (i + 1) * per);
-		if (slice.length > 0) { chunks.push(slice); }
+function tileKey(t: ScanTile): string { return (t.x / TILE) + ":" + (t.y / TILE); }
+
+// Splits a connected tile set into up to n connected, contiguous regions of
+// roughly equal size via multi-source BFS growth from spread-out seeds. Each
+// resulting region is guaranteed connected because it is built by expanding
+// only into unclaimed grid-adjacent neighbours of its own seed.
+function growPartition(tiles: ScanTile[], n: number): ScanTile[][] {
+	const result: ScanTile[][] = [];
+	if (tiles.length === 0 || n <= 0) { return result; }
+	n = Math.min(n, tiles.length);
+
+	const byKey: { [key: string]: ScanTile } = {};
+	tiles.forEach(function (t) { byKey[tileKey(t)] = t; });
+
+	// Farthest-point sampling: spread seeds apart so regions grow evenly.
+	const seeds: ScanTile[] = [tiles[0]];
+	while (seeds.length < n) {
+		let bestT: ScanTile | null = null, bestD = -1;
+		for (let i = 0; i < tiles.length; i++) {
+			const t = tiles[i];
+			let minD = Infinity;
+			for (let s = 0; s < seeds.length; s++) {
+				const dx = t.x - seeds[s].x, dy = t.y - seeds[s].y;
+				const d = dx * dx + dy * dy;
+				if (d < minD) { minD = d; }
+			}
+			if (minD > bestD) { bestD = minD; bestT = t; }
+		}
+		if (!bestT) { break; }
+		seeds.push(bestT);
 	}
+
+	const regionOf: { [key: string]: number } = {};
+	const queue: string[] = [];
+	const queueRegion: number[] = [];
+	seeds.forEach(function (s, i) {
+		const k = tileKey(s);
+		regionOf[k] = i;
+		queue.push(k);
+		queueRegion.push(i);
+		result[i] = [];
+	});
+
+	let head = 0;
+	while (head < queue.length) {
+		const k = queue[head];
+		const region = queueRegion[head];
+		head++;
+		result[region].push(byKey[k]);
+		const parts = k.split(":");
+		const tx = +parts[0], ty = +parts[1];
+		for (let d = 0; d < 4; d++) {
+			const nk = (tx + DIR_DELTA[d].dx) + ":" + (ty + DIR_DELTA[d].dy);
+			if (byKey[nk] && regionOf[nk] === undefined) {
+				regionOf[nk] = region;
+				queue.push(nk);
+				queueRegion.push(region);
+			}
+		}
+	}
+	return result.filter(function (r) { return r.length > 0; });
+}
+
+// Splits a tile set into its grid-adjacency connected components (4-neighbour).
+function connectedComponents(tiles: ScanTile[]): ScanTile[][] {
+	const byKey: { [key: string]: ScanTile } = {};
+	tiles.forEach(function (t) { byKey[tileKey(t)] = t; });
+	const visited: { [key: string]: boolean } = {};
+	const components: ScanTile[][] = [];
+	tiles.forEach(function (start) {
+		const startKey = tileKey(start);
+		if (visited[startKey]) { return; }
+		const comp: ScanTile[] = [];
+		const queue: string[] = [startKey];
+		visited[startKey] = true;
+		let head = 0;
+		while (head < queue.length) {
+			const k = queue[head++];
+			comp.push(byKey[k]);
+			const parts = k.split(":");
+			const tx = +parts[0], ty = +parts[1];
+			for (let d = 0; d < 4; d++) {
+				const nk = (tx + DIR_DELTA[d].dx) + ":" + (ty + DIR_DELTA[d].dy);
+				if (byKey[nk] && !visited[nk]) { visited[nk] = true; queue.push(nk); }
+			}
+		}
+		components.push(comp);
+	});
+	return components;
+}
+
+// Partition a (possibly disconnected) tile set into n reachable, connected,
+// contiguous zones. Zones are allocated across components proportional to
+// their size (each component keeps at least one zone), then grown within
+// each component via BFS so every resulting zone stays a single connected
+// region rather than an arbitrary slice of the sorted tile array.
+function partition(tiles: ScanTile[], n: number): ScanTile[][] {
+	if (tiles.length === 0 || n <= 0) { return []; }
+	const components = connectedComponents(tiles);
+	if (components.length === 1) { return growPartition(components[0], n); }
+
+	const totalTiles = tiles.length;
+	const zonesPer: number[] = components.map(function (c) {
+		return Math.max(1, Math.round((c.length / totalTiles) * n));
+	});
+	let allocated = zonesPer.reduce(function (a, b) { return a + b; }, 0);
+	let guard = 0;
+	while (allocated > n && guard < n * 4 + components.length + 10) {
+		const idx = guard % zonesPer.length;
+		if (zonesPer[idx] > 1) { zonesPer[idx]--; allocated--; }
+		guard++;
+	}
+	guard = 0;
+	while (allocated < n) {
+		zonesPer[guard % zonesPer.length]++;
+		allocated++;
+		guard++;
+	}
+
+	const chunks: ScanTile[][] = [];
+	components.forEach(function (c, i) {
+		growPartition(c, Math.min(zonesPer[i], c.length)).forEach(function (r) { chunks.push(r); });
+	});
 	return chunks;
 }
 
-// Centre tile of a zone (chunk of tiles).
+// Centre tile of a zone: the tile nearest the region's centroid, so it stays
+// spatially meaningful even for irregularly-shaped contiguous zones.
 function zoneCentre(chunk: ScanTile[]): ScanTile {
-	return chunk[Math.floor(chunk.length / 2)];
+	if (chunk.length === 0) { return { x: 0, y: 0, z: 0 }; }
+	let sumX = 0, sumY = 0;
+	for (let i = 0; i < chunk.length; i++) { sumX += chunk[i].x; sumY += chunk[i].y; }
+	const cx = sumX / chunk.length, cy = sumY / chunk.length;
+	let best = chunk[0], bestD = Infinity;
+	for (let i = 0; i < chunk.length; i++) {
+		const dx = chunk[i].x - cx, dy = chunk[i].y - cy;
+		const d = dx * dx + dy * dy;
+		if (d < bestD) { bestD = d; best = chunk[i]; }
+	}
+	return best;
 }
 
 // Greedily match staff to their NEAREST free zone, minimising walking.
