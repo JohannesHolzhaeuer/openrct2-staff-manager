@@ -1035,6 +1035,18 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 	});
 }
 
+// Button entry: just rescan and refresh the Needed/Hired counts, without
+// hiring, firing or (re)assigning anyone.
+function recalcPathNeeded(kind: StaffKind, niceName: string): void {
+	if (busy) {
+		park.postMessage({ type: "blank", text: "Staff Manager is busy scanning..." });
+		return;
+	}
+	ensureScan(true, function () {
+		refreshWindow();
+	});
+}
+
 // --- GUI -------------------------------------------------------------------
 const WINDOW_TAG = "smp_window";
 
@@ -1053,6 +1065,7 @@ const PATH_KINDS: PathKindDef[] = [
 function wPer(kind: StaffKind): string    { return "smp_per_" + kind; }
 function wStatus(kind: StaffKind): string { return "smp_st_" + kind; }
 function wBtn(kind: StaffKind): string    { return "smp_btn_" + kind; }
+function wRecalc(kind: StaffKind): string { return "smp_recalc_" + kind; }
 function wBox(kind: StaffKind): string    { return "smp_box_" + kind; }
 function wIcon(kind: StaffKind): string   { return "smp_icon_" + kind; }
 function wAuto(kind: StaffKind): string { return "smp_auto_" + kind; }
@@ -1071,6 +1084,7 @@ const W_MSTATUS = "smp_mstatus";
 const W_GB_M = "smp_gb_m";
 const W_BTN_APPLY = "smp_btn_ap";
 const W_BTN_ASSIGN_M = "smp_btn_am";
+const W_BTN_RECALC_M = "smp_btn_recalc_m";
 
 function perLabelText(kind: StaffKind): string { return "Path tiles per staff: " + getPer(kind); }
 
@@ -1152,6 +1166,7 @@ function reflow(w: Window): void {
 		stretch(w, wPer(pk.kind), cw);
 		stretch(w, wStatus(pk.kind), cw);
 		stretch(w, wBtn(pk.kind), full);
+		stretch(w, wRecalc(pk.kind), full);
 		stretch(w, wAuto(pk.kind), full);
 	});
 	stretch(w, W_M_QUEUES, cw);
@@ -1159,7 +1174,7 @@ function reflow(w: Window): void {
 	stretch(w, W_M_PPER, cw);
 	stretch(w, W_M_PERAREA, cw);
 	stretch(w, W_GB_M, w.width - 10);
-	[W_BTN_APPLY, W_BTN_ASSIGN_M, W_AUTO, W_MSTATUS].forEach(function (n) {
+	[W_BTN_APPLY, W_BTN_ASSIGN_M, W_BTN_RECALC_M, W_AUTO, W_MSTATUS].forEach(function (n) {
 		stretch(w, n, full);
 	});
 	const dd = w.findWidget<DropdownWidget>(W_INSPECT);
@@ -1167,7 +1182,8 @@ function reflow(w: Window): void {
 }
 
 // Section height: mascots have a checkbox + 3 spinners; others one spinner.
-function sectionHeight(pk: PathKindDef): number { return pk.kind === "entertainer" ? 168 : 88; }
+// (+18 to fit the extra "Recalculate needed" button row.)
+function sectionHeight(pk: PathKindDef): number { return (pk.kind === "entertainer" ? 168 : 88) + 18; }
 
 function makePathSection(pk: PathKindDef, y: number): WidgetDesc[] {
 	const kind = pk.kind;
@@ -1250,8 +1266,17 @@ function makePathSection(pk: PathKindDef, y: number): WidgetDesc[] {
 		}; })(kind, pk.nice)
 	});
 	widgets.push({
+		type: "button", name: wRecalc(kind),
+		x: 10, y: yBtn + 18, width: 280, height: 16,
+		text: "Recalculate needed " + pk.nice,
+		tooltip: "Rescan and refresh the Needed/Hired counts, without hiring, firing or (re)assigning anyone",
+		onClick: (function (k, nice) { return function () {
+			recalcPathNeeded(k, nice);
+		}; })(kind, pk.nice)
+	});
+	widgets.push({
 		type: "checkbox", name: wAuto(kind),
-		x: 10, y: yBtn + 18, width: 280, height: 12,
+		x: 10, y: yBtn + 36, width: 280, height: 12,
 		text: "Auto: hire/fire + assign on path changes",
 		tooltip: "Automatically keep " + pk.nice + " right-sized and assigned when paths, land rights or staff change (newest first)",
 		isChecked: getAutoKind(kind),
@@ -1279,7 +1304,7 @@ function openWindow(): void {
 	const my = y;
 	const mcw = 290 - CONTENT_X - RIGHT_PAD + 5;
 	widgets = widgets.concat([
-		{ type: "groupbox", name: W_GB_M, x: 5, y: my, width: 290, height: 132, text: "Mechanics" },
+		{ type: "groupbox", name: W_GB_M, x: 5, y: my, width: 290, height: 150, text: "Mechanics" },
 		{
 			type: "button", name: wIcon("mechanic"),
 			x: 12, y: my + 16, width: 30, height: 30,
@@ -1308,8 +1333,15 @@ function openWindow(): void {
 			onClick: function () { assignMechanicsWithHire(); }
 		},
 		{
+			type: "button", name: W_BTN_RECALC_M,
+			x: 10, y: my + 90, width: 280, height: 16,
+			text: "Recalculate needed mechanics",
+			tooltip: "Refresh the exits-covered/mechanics counts, without hiring, firing or (re)assigning anyone",
+			onClick: function () { refreshWindow(); }
+		},
+		{
 			type: "checkbox", name: W_AUTO,
-			x: 10, y: my + 92, width: 280, height: 12,
+			x: 10, y: my + 110, width: 280, height: 12,
 			text: "Auto mechanics (hire/fire + assign)",
 			tooltip: "On exit/staff changes, automatically hire missing or fire surplus mechanics (newest, non-busy first) and assign them to exits",
 			isChecked: getAuto(),
@@ -1319,10 +1351,10 @@ function openWindow(): void {
 				refreshWindow();
 			}
 		},
-		{ type: "label", name: W_MSTATUS, x: 10, y: my + 110, width: 280, height: 16, text: mechStatusText() }
+		{ type: "label", name: W_MSTATUS, x: 10, y: my + 128, width: 280, height: 16, text: mechStatusText() }
 	]);
 
-	const winH = my + 132 + 8;
+	const winH = my + 150 + 8;
 	lastReflowW = -1;
 	ui.openWindow({
 		classification: WINDOW_TAG,
