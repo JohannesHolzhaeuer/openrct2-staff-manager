@@ -119,12 +119,24 @@ function setPer(kind, v) { store().set("per_" + kind, v); }
 // Last-assigned area centre per peep id, to detect reassignment ("moved").
 function getLastArea() { return store().get("lastArea", {}); }
 function setLastArea(v) { store().set("lastArea", v); }
-function getMascotOverlap() { return store().get("mascotOverlap", false); }
-function setMascotOverlap(v) { store().set("mascotOverlap", v); }
-function getMascotAreaSize() { return store().get("mascotAreaSize", 16); }
-function setMascotAreaSize(v) { store().set("mascotAreaSize", v); }
-function getMascotPerArea() { return store().get("mascotPerArea", 2); }
+// Mascot options:
+//  - queue tiles per mascot (max) : density when assigning to queue lines
+//  - path tiles per mascot        : density when assigning to general paths
+//  - mascots per area             : how many mascots share each area (>1 = overlap)
+function getMascotQueuePer() { return store().get("mascotQueuePer", 8); }
+function setMascotQueuePer(v) { store().set("mascotQueuePer", v); }
+function getMascotPathPer() { return store().get("mascotPathPer", 25); }
+function setMascotPathPer(v) { store().set("mascotPathPer", v); }
+function getMascotPerArea() { return store().get("mascotPerArea", 1); }
 function setMascotPerArea(v) { store().set("mascotPerArea", v); }
+// Assign mascots to QUEUE lines instead of general paths.
+function getMascotQueues() { return store().get("mascotQueues", false); }
+function setMascotQueues(v) { store().set("mascotQueues", v); }
+
+// Active "tiles per mascot" for the current mascot mode (queue vs path).
+function mascotTilesPer() {
+    return Math.max(1, getMascotQueues() ? getMascotQueuePer() : getMascotPathPer());
+}
 
 // --- Async helper ----------------------------------------------------------
 var busy = false;
@@ -392,11 +404,34 @@ function assignMechanics() {
     var lastArea = getLastArea();
     var counts = { fresh: 0, moved: 0 };
     var exits = allExits();
+
+    // Uncovered exits get their NEAREST free mechanic (minimise walking).
+    var uncovered = [];
     for (var i = 0; i < exits.length; i++) {
-        var e = exits[i];
-        if (assignments[e.key]) { continue; }
-        if (free.length === 0) { break; }
-        var mech = free.shift();
+        if (!assignments[exits[i].key]) { uncovered.push(exits[i]); }
+    }
+    var pairs = Math.min(uncovered.length, free.length);
+    var usedFree = [];
+    for (var f = 0; f < free.length; f++) { usedFree[f] = false; }
+    var doneExit = {};
+
+    for (var n = 0; n < pairs; n++) {
+        var bestE = -1, bestF = -1, bestD = Infinity;
+        for (var ei = 0; ei < uncovered.length; ei++) {
+            if (doneExit[ei]) { continue; }
+            var ex = uncovered[ei].exit;
+            for (var fi = 0; fi < free.length; fi++) {
+                if (usedFree[fi]) { continue; }
+                var dx = free[fi].x - (ex.x + 16), dy = free[fi].y - (ex.y + 16);
+                var d = dx * dx + dy * dy;
+                if (d < bestD) { bestD = d; bestE = ei; bestF = fi; }
+            }
+        }
+        if (bestE < 0) { break; }
+        var e = uncovered[bestE];
+        var mech = free[bestF];
+        doneExit[bestE] = true;
+        usedFree[bestF] = true;
         assignments[e.key] = mech.id;
         setPatrol(mech, e.exit);
         recordAssignment(lastArea, mech.id, e.exit.x, e.exit.y, counts);
@@ -540,12 +575,16 @@ function autoPathRun() {
 
 // Process PATH_KINDS one at a time (hire/fire then assign), chaining callbacks.
 // Only kinds whose per-type auto toggle is enabled are processed.
-function rightSizePathKindsSequential(i, tiles, done) {
+function rightSizePathKindsSequential(i, ignored, done) {
     if (i >= PATH_KINDS.length) { done(); return; }
     var pk = PATH_KINDS[i];
-    var next = function () { rightSizePathKindsSequential(i + 1, tiles, done); };
+    var next = function () { rightSizePathKindsSequential(i + 1, ignored, done); };
 
     if (!getAutoKind(pk.kind)) { next(); return; }   // this type's auto is off
+
+    // Each kind may target a different tile set (mascots -> queues).
+    var tiles = tilesForKind(pk.kind);
+    if (!tiles || tiles.length === 0) { next(); return; }
 
     var have = assignableOfKind(pk.kind).length;
     var need = neededForKind(pk.kind, tiles.length);
@@ -639,10 +678,14 @@ function scanMapAsync(onProgress, onComplete) {
     step();
 }
 
+// BFS from the entrance over connected footpaths. Returns reachable, owned
+// tiles split into { paths: [...], queues: [...] } (queues are traversed so
+// paths beyond a queue are still reached).
 function reachableOwnedTiles(pathInfo, seeds) {
     var visited = {};
     var q = [];
-    var result = [];
+    var paths = [];
+    var queues = [];
     function enq(tx, ty) {
         var k = tx + ":" + ty;
         if (visited[k] || !pathInfo[k]) { return; }
@@ -661,15 +704,17 @@ function reachableOwnedTiles(pathInfo, seeds) {
         var info = pathInfo[k];
         var parts = k.split(":");
         var tx = +parts[0], ty = +parts[1];
-        if (!info.isQueue && info.owned) {
-            result.push({ x: tx * TILE, y: ty * TILE, z: info.z });
+        if (info.owned) {
+            var tile = { x: tx * TILE, y: ty * TILE, z: info.z };
+            if (info.isQueue) { queues.push(tile); }
+            else { paths.push(tile); }
         }
         for (var d = 0; d < 4; d++) {
             if ((info.edges & (1 << d)) === 0) { continue; }
             enq(tx + DIR_DELTA[d].dx, ty + DIR_DELTA[d].dy);
         }
     }
-    return result;
+    return { paths: paths, queues: queues };
 }
 
 function partition(arr, n) {
@@ -683,10 +728,58 @@ function partition(arr, n) {
     return chunks;
 }
 
+// Centre tile of a zone (chunk of tiles).
+function zoneCentre(chunk) {
+    return chunk[Math.floor(chunk.length / 2)];
+}
+
+// Greedily match staff to their NEAREST free zone, minimising walking.
+// Repeatedly picks the globally-closest (staff, zone) pair until one side runs
+// out. Returns an array `assign` where assign[staffIndex] = zoneIndex (or -1).
+// `staff` are entities with x/y; `chunks` is an array of tile arrays.
+function matchNearestZones(staff, chunks) {
+    var assign = [];
+    for (var s = 0; s < staff.length; s++) { assign[s] = -1; }
+    var staffLeft = staff.length;
+    var zonesLeft = chunks.length;
+    var zoneTaken = [];
+    var staffTaken = [];
+    var centres = [];
+    for (var z = 0; z < chunks.length; z++) {
+        zoneTaken[z] = false;
+        centres[z] = zoneCentre(chunks[z]);
+    }
+    for (var s2 = 0; s2 < staff.length; s2++) { staffTaken[s2] = false; }
+
+    var pairs = Math.min(staffLeft, zonesLeft);
+    for (var n = 0; n < pairs; n++) {
+        var bestS = -1, bestZ = -1, bestD = Infinity;
+        for (var si = 0; si < staff.length; si++) {
+            if (staffTaken[si]) { continue; }
+            var px = staff[si].x, py = staff[si].y;
+            for (var zi = 0; zi < chunks.length; zi++) {
+                if (zoneTaken[zi]) { continue; }
+                var c = centres[zi];
+                var dx = px - (c.x + 16), dy = py - (c.y + 16);
+                var d = dx * dx + dy * dy;   // squared distance is fine
+                if (d < bestD) { bestD = d; bestS = si; bestZ = zi; }
+            }
+        }
+        if (bestS < 0) { break; }
+        assign[bestS] = bestZ;
+        staffTaken[bestS] = true;
+        zoneTaken[bestZ] = true;
+    }
+    return assign;
+}
+
 // Cached scan result (shared by all path staff).
-var cachedTiles = null;
+var cachedTiles = null;        // reachable, owned, non-queue path tiles
+var cachedQueues = null;       // reachable, owned queue tiles
 var pathsScanned = false;
 var scanProgress = -1;
+
+function sortTiles(a, b) { return (a.x - b.x) || (a.y - b.y); }
 
 function ensureScan(force, onDone) {
     if (!force && cachedTiles) { onDone(cachedTiles); return; }
@@ -697,8 +790,9 @@ function ensureScan(force, onDone) {
     scanMapAsync(function (pct) {
         scanProgress = pct; refreshWindow();
     }, function (pathInfo, seeds) {
-        cachedTiles = reachableOwnedTiles(pathInfo, seeds);
-        cachedTiles.sort(function (a, b) { return (a.x - b.x) || (a.y - b.y); });
+        var res = reachableOwnedTiles(pathInfo, seeds);
+        cachedTiles = res.paths.sort(sortTiles);
+        cachedQueues = res.queues.sort(sortTiles);
         pathsScanned = true;
         scanProgress = -1;
         busy = false;
@@ -707,59 +801,100 @@ function ensureScan(force, onDone) {
     });
 }
 
-// How many staff of a kind a full assignment needs for the given path count.
-function neededForKind(kind, pathCount) {
-    if (kind === "entertainer" && getMascotOverlap()) {
-        var areaSize = Math.max(1, getMascotAreaSize());
-        var perArea = Math.max(1, getMascotPerArea());
-        return Math.ceil(pathCount / areaSize) * perArea;
+// The tile set a given kind should be assigned to. Mascots use QUEUE tiles when
+// the "assign to queues" option is on (and any queues exist).
+function tilesForKind(kind) {
+    if (kind === "entertainer" && getMascotQueues() &&
+        cachedQueues && cachedQueues.length > 0) {
+        return cachedQueues;
     }
-    return Math.ceil(pathCount / Math.max(1, getPer(kind)));
+    return cachedTiles || [];
 }
 
-// Overlap-mode mascot placement.
-function assignMascotsOverlap(tiles) {
+// How many staff of a kind a full assignment needs for the given tile count.
+function neededForKind(kind, tileCount) {
+    if (kind === "entertainer") {
+        // Mascots: density = tiles-per-mascot (queue or path mode).
+        return Math.ceil(tileCount / mascotTilesPer());
+    }
+    return Math.ceil(tileCount / Math.max(1, getPer(kind)));
+}
+
+// Mascot placement. Each area holds `mascotsPerArea` mascots and spans
+// tilesPerMascot * mascotsPerArea tiles (so density stays tiles-per-mascot).
+// When mascotsPerArea > 1 the mascots in an area overlap.
+function assignMascots(tiles) {
     var mascots = assignableOfKind("entertainer");
     if (mascots.length === 0) {
         park.postMessage({ type: "blank", text: "No mascots available." });
         refreshWindow();
         return;
     }
-    var areaSize = Math.max(1, getMascotAreaSize());
+    var tilesPer = mascotTilesPer();
     var perArea = Math.max(1, getMascotPerArea());
+    var areaSize = Math.max(1, tilesPer * perArea);
     var numAreas = Math.ceil(tiles.length / areaSize);
     var areas = partition(tiles, numAreas);
 
-    var idx = 0, assigned = 0, areasUsed = 0;
+    // Nearest matching with capacity: each mascot takes the closest area that
+    // still has a free slot (perArea slots each). Minimises walking.
+    var cap = [];
+    var centres = [];
+    for (var a = 0; a < areas.length; a++) {
+        cap[a] = perArea;
+        centres[a] = zoneCentre(areas[a]);
+    }
+    var used = [];
+    for (var s = 0; s < mascots.length; s++) { used[s] = false; }
+
+    var assigned = 0, areaUsed = {};
     var lastArea = getLastArea();
     var counts = { fresh: 0, moved: 0 };
-    for (var a = 0; a < areas.length && idx < mascots.length; a++) {
-        var area = areas[a];
-        var t = area[Math.floor(area.length / 2)];
-        var placedHere = 0;
-        for (var j = 0; j < perArea && idx < mascots.length; j++) {
-            var p = mascots[idx++];
-            if (!p.patrolArea) { continue; }
+    var placements = Math.min(mascots.length, numAreas * perArea);
+
+    for (var n = 0; n < placements; n++) {
+        var bestS = -1, bestA = -1, bestD = Infinity;
+        for (var si = 0; si < mascots.length; si++) {
+            if (used[si]) { continue; }
+            var px = mascots[si].x, py = mascots[si].y;
+            for (var ai = 0; ai < areas.length; ai++) {
+                if (cap[ai] <= 0) { continue; }
+                var c = centres[ai];
+                var dx = px - (c.x + 16), dy = py - (c.y + 16);
+                var d = dx * dx + dy * dy;
+                if (d < bestD) { bestD = d; bestS = si; bestA = ai; }
+            }
+        }
+        if (bestS < 0) { break; }
+        var p = mascots[bestS];
+        used[bestS] = true;
+        cap[bestA]--;
+        areaUsed[bestA] = true;
+        if (p.patrolArea) {
+            var area = areas[bestA];
+            var t = centres[bestA];
             p.patrolArea.clear();
             p.patrolArea.add(area);
             try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) {}
             recordAssignment(lastArea, p.id, t.x, t.y, counts);
-            assigned++; placedHere++;
+            assigned++;
         }
-        if (placedHere > 0) { areasUsed++; }
     }
+    var areasUsed = 0;
+    for (var k in areaUsed) { areasUsed++; }
     setLastArea(lastArea);
+    var tileWord = getMascotQueues() ? "queue" : "path";
+    var overlapTxt = perArea > 1 ? (" (" + perArea + " per area, overlapping)") : "";
     park.postMessage({ type: "blank",
         text: "Mascots: " + assignSummary(counts) + " across " + areasUsed +
-              " overlapping area(s) of ~" + areaSize + " tiles (" +
-              perArea + " per area)." });
+              " " + tileWord + " area(s)" + overlapTxt + "." });
     refreshWindow();
 }
 
 // Equal contiguous split among a path-staff type; drop each into its area.
 function doPathAssign(kind, niceName, tiles) {
-    if (kind === "entertainer" && getMascotOverlap()) {
-        assignMascotsOverlap(tiles);
+    if (kind === "entertainer") {
+        assignMascots(tiles);
         return;
     }
     var staff = assignableOfKind(kind);
@@ -770,26 +905,31 @@ function doPathAssign(kind, niceName, tiles) {
         return;
     }
     var chunks = partition(tiles, staff.length);
+    // Match each staff member to its NEAREST zone (minimise walking).
+    var assign = matchNearestZones(staff, chunks);
     var assigned = 0;
     var lastArea = getLastArea();
     var counts = { fresh: 0, moved: 0 };
     for (var i = 0; i < staff.length; i++) {
         var p = staff[i];
         if (!p.patrolArea) { continue; }
-        var chunk = chunks[i];
+        var zi = assign[i];
+        if (zi < 0) { continue; }
+        var chunk = chunks[zi];
         p.patrolArea.clear();
         if (chunk && chunk.length > 0) {
             p.patrolArea.add(chunk);
-            var t = chunk[Math.floor(chunk.length / 2)];
+            var t = zoneCentre(chunk);
             try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) {}
             recordAssignment(lastArea, p.id, t.x, t.y, counts);
             assigned++;
         }
     }
     setLastArea(lastArea);
+    var tileWord = (kind === "entertainer" && getMascotQueues()) ? "queue tiles" : "path tiles";
     park.postMessage({ type: "blank",
         text: niceName + ": " + assignSummary(counts) + " over " +
-              tiles.length + " path tiles." });
+              tiles.length + " " + tileWord + "." });
     refreshWindow();
 }
 
@@ -799,9 +939,14 @@ function assignPathStaff(kind, niceName) {
         park.postMessage({ type: "blank", text: "Staff Manager Plus is busy scanning..." });
         return;
     }
-    ensureScan(true, function (tiles) {
-        if (tiles.length === 0) {
-            park.postMessage({ type: "blank", text: "No reachable owned path tiles found." });
+    ensureScan(true, function () {
+        var tiles = tilesForKind(kind);
+        var usingQueues = (kind === "entertainer" && getMascotQueues());
+        if (!tiles || tiles.length === 0) {
+            park.postMessage({ type: "blank",
+                text: usingQueues
+                    ? "No reachable queue tiles found."
+                    : "No reachable owned path tiles found." });
             refreshWindow();
             return;
         }
@@ -855,8 +1000,9 @@ function wIcon(kind)   { return "smp_icon_" + kind; }
 var CONTENT_X = 44;
 var RIGHT_PAD = 10;
 
-var W_M_OVERLAP = "smp_m_overlap";
-var W_M_AREASIZE = "smp_m_areasize";
+var W_M_QUEUES = "smp_m_queues";
+var W_M_QPER = "smp_m_qper";
+var W_M_PPER = "smp_m_pper";
 var W_M_PERAREA = "smp_m_perarea";
 
 var W_INSPECT = "smp_inspect";
@@ -870,21 +1016,27 @@ function perLabelText(kind) { return "Path tiles per staff: " + getPer(kind); }
 
 function pathStatusText(kind, nice) {
     if (scanProgress >= 0) { return "Scanning map... " + scanProgress + "%"; }
-    var paths = pathsScanned && cachedTiles ? cachedTiles.length : null;
-    var pathsTxt = paths === null ? "?" : String(paths);
+    // Mascots in queue mode count queue tiles; otherwise path tiles.
+    var useQueues = (kind === "entertainer" && getMascotQueues());
+    var srcLen = useQueues
+        ? (pathsScanned && cachedQueues ? cachedQueues.length : null)
+        : (pathsScanned && cachedTiles ? cachedTiles.length : null);
+    var label = useQueues ? "Queues" : "Paths";
+    var srcTxt = srcLen === null ? "?" : String(srcLen);
     var hired = allStaffOfType(kind).length;
-    var assignable = assignableOfKind(kind).length;
-    if (kind === "entertainer" && getMascotOverlap()) {
-        var areaSize = Math.max(1, getMascotAreaSize());
+
+    if (kind === "entertainer") {
+        var needed = srcLen === null ? "?" : String(neededForKind(kind, srcLen));
         var perArea = Math.max(1, getMascotPerArea());
-        var areas = paths === null ? "?" : String(Math.ceil(paths / areaSize));
-        var needOv = paths === null ? "?" : String(Math.ceil(paths / areaSize) * perArea);
-        return "Paths: " + pathsTxt + " | Areas: " + areas +
-               " | Needed: " + needOv + " | Hired: " + hired;
+        var extra = perArea > 1 ? (" | " + perArea + "/area") : "";
+        return label + ": " + srcTxt + " | Needed: " + needed +
+               " | Hired: " + hired + extra;
     }
+
+    var assignable = assignableOfKind(kind).length;
     var per = Math.max(1, getPer(kind));
-    var needed = paths === null ? "?" : String(Math.ceil(paths / per));
-    return "Paths: " + pathsTxt + " | Needed: " + needed +
+    var need2 = srcLen === null ? "?" : String(Math.ceil(srcLen / per));
+    return label + ": " + srcTxt + " | Needed: " + need2 +
            " | Hired: " + hired + " | Assignable: " + assignable;
 }
 
@@ -906,12 +1058,14 @@ function refreshWindow() {
         var st = w.findWidget(wStatus(pk.kind));
         if (st) { st.text = pathStatusText(pk.kind, pk.nice); }
     });
-    var ov = w.findWidget(W_M_OVERLAP);
-    if (ov) { ov.isChecked = getMascotOverlap(); }
-    var asz = w.findWidget(W_M_AREASIZE);
-    if (asz) { asz.text = "Area: " + getMascotAreaSize(); }
+    var qz = w.findWidget(W_M_QUEUES);
+    if (qz) { qz.isChecked = getMascotQueues(); }
+    var qp = w.findWidget(W_M_QPER);
+    if (qp) { qp.text = "Queue tiles/mascot: " + getMascotQueuePer(); }
+    var pp = w.findWidget(W_M_PPER);
+    if (pp) { pp.text = "Path tiles/mascot: " + getMascotPathPer(); }
     var pa = w.findWidget(W_M_PERAREA);
-    if (pa) { pa.text = "Per: " + getMascotPerArea(); }
+    if (pa) { pa.text = "Mascots per area: " + getMascotPerArea(); }
     var ms = w.findWidget(W_MSTATUS);
     if (ms) { ms.text = mechStatusText(); }
     var a = w.findWidget(W_AUTO);
@@ -940,12 +1094,10 @@ function reflow(w) {
         stretch(w, wBtn(pk.kind), full);
         stretch(w, wAuto(pk.kind), full);
     });
-    stretch(w, W_M_OVERLAP, cw);
-    var half = Math.floor((cw - 4) / 2);
-    var aszW = w.findWidget(W_M_AREASIZE);
-    if (aszW) { aszW.width = half; }
-    var paW = w.findWidget(W_M_PERAREA);
-    if (paW) { paW.width = half; paW.x = CONTENT_X + half + 4; }
+    stretch(w, W_M_QUEUES, cw);
+    stretch(w, W_M_QPER, cw);
+    stretch(w, W_M_PPER, cw);
+    stretch(w, W_M_PERAREA, cw);
     stretch(w, W_GB_M, w.width - 10);
     [W_BTN_APPLY, W_BTN_ASSIGN_M, W_AUTO, W_MSTATUS].forEach(function (n) {
         stretch(w, n, full);
@@ -956,8 +1108,8 @@ function reflow(w) {
 
 function wAuto(kind) { return "smp_auto_" + kind; }
 
-// +16px per section for the per-type auto checkbox.
-function sectionHeight(pk) { return pk.kind === "entertainer" ? 136 : 88; }
+// Section height: mascots have a checkbox + 3 spinners; others one spinner.
+function sectionHeight(pk) { return pk.kind === "entertainer" ? 168 : 88; }
 
 function makePathSection(pk, y) {
     var kind = pk.kind;
@@ -970,51 +1122,60 @@ function makePathSection(pk, y) {
             x: 12, y: y + 16, width: 30, height: 30,
             image: STAFF_SPRITE[kind], border: true, isDisabled: true,
             tooltip: pk.title
-        },
-        {
+        }
+    ];
+
+    var yStatus, yBtn;
+    if (kind === "entertainer") {
+        // Mascots: queue toggle + three dedicated density options.
+        widgets.push({
+            type: "checkbox", name: W_M_QUEUES,
+            x: CONTENT_X, y: y + 16, width: cw, height: 12,
+            text: "Assign to queue lines (not paths)",
+            tooltip: "Place mascots along ride queues to keep queuing guests happy",
+            isChecked: getMascotQueues(),
+            onChange: function (checked) { setMascotQueues(checked); refreshWindow(); }
+        });
+        widgets.push({
+            type: "spinner", name: W_M_QPER,
+            x: CONTENT_X, y: y + 32, width: cw, height: 14,
+            text: "Queue tiles/mascot: " + getMascotQueuePer(),
+            tooltip: "Maximum queue tiles each mascot covers (queue mode)",
+            onIncrement: function () { setMascotQueuePer(getMascotQueuePer() + 1); refreshWindow(); },
+            onDecrement: function () { setMascotQueuePer(Math.max(1, getMascotQueuePer() - 1)); refreshWindow(); }
+        });
+        widgets.push({
+            type: "spinner", name: W_M_PPER,
+            x: CONTENT_X, y: y + 48, width: cw, height: 14,
+            text: "Path tiles/mascot: " + getMascotPathPer(),
+            tooltip: "Path tiles each mascot covers (path mode)",
+            onIncrement: function () { setMascotPathPer(getMascotPathPer() + 1); refreshWindow(); },
+            onDecrement: function () { setMascotPathPer(Math.max(1, getMascotPathPer() - 1)); refreshWindow(); }
+        });
+        widgets.push({
+            type: "spinner", name: W_M_PERAREA,
+            x: CONTENT_X, y: y + 64, width: cw, height: 14,
+            text: "Mascots per area: " + getMascotPerArea(),
+            tooltip: "How many mascots share each area (>1 = overlapping)",
+            onIncrement: function () { setMascotPerArea(getMascotPerArea() + 1); refreshWindow(); },
+            onDecrement: function () { setMascotPerArea(Math.max(1, getMascotPerArea() - 1)); refreshWindow(); }
+        });
+        yStatus = y + 82;
+        yBtn = y + 96;
+    } else {
+        // Handymen / security: single density spinner.
+        widgets.push({
             type: "spinner", name: wPer(kind),
             x: CONTENT_X, y: y + 16, width: cw, height: 14,
             text: perLabelText(kind),
-            tooltip: "Path tiles each " + pk.nice + " member covers (non-overlap mode)",
+            tooltip: "Path tiles each " + pk.nice + " member covers",
             onIncrement: (function (k) { return function () {
                 setPer(k, getPer(k) + 1); refreshWindow();
             }; })(kind),
             onDecrement: (function (k) { return function () {
                 setPer(k, Math.max(1, getPer(k) - 1)); refreshWindow();
             }; })(kind)
-        }
-    ];
-
-    var yStatus, yBtn;
-    if (kind === "entertainer") {
-        widgets.push({
-            type: "checkbox", name: W_M_OVERLAP,
-            x: CONTENT_X, y: y + 34, width: cw, height: 12,
-            text: "Overlapping areas (multiple per area)",
-            tooltip: "Group paths into fixed-size areas and place several mascots in each",
-            isChecked: getMascotOverlap(),
-            onChange: function (checked) { setMascotOverlap(checked); refreshWindow(); }
         });
-        var halfw = Math.floor((cw - 4) / 2);
-        widgets.push({
-            type: "spinner", name: W_M_AREASIZE,
-            x: CONTENT_X, y: y + 50, width: halfw, height: 14,
-            text: "Area: " + getMascotAreaSize(),
-            tooltip: "Path tiles per mascot area (overlap mode)",
-            onIncrement: function () { setMascotAreaSize(getMascotAreaSize() + 1); refreshWindow(); },
-            onDecrement: function () { setMascotAreaSize(Math.max(1, getMascotAreaSize() - 1)); refreshWindow(); }
-        });
-        widgets.push({
-            type: "spinner", name: W_M_PERAREA,
-            x: CONTENT_X + halfw + 4, y: y + 50, width: halfw, height: 14,
-            text: "Per: " + getMascotPerArea(),
-            tooltip: "Mascots per area (overlap mode)",
-            onIncrement: function () { setMascotPerArea(getMascotPerArea() + 1); refreshWindow(); },
-            onDecrement: function () { setMascotPerArea(Math.max(1, getMascotPerArea() - 1)); refreshWindow(); }
-        });
-        yStatus = y + 68;
-        yBtn = y + 82;
-    } else {
         yStatus = y + 34;
         yBtn = y + 48;
     }
@@ -1131,7 +1292,7 @@ function main() {
 
 registerPlugin({
     name: "Staff Manager Plus",
-    version: "2.15.0",
+    version: "2.18.0",
     authors: ["Johannes"],
     type: "local",
     licence: "MIT",
