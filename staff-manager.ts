@@ -1394,6 +1394,51 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 	});
 }
 
+// Remove every given peep's last-area record from the store.
+function forgetLastArea(peepIds: number[]): void {
+	const lastArea = getLastArea();
+	peepIds.forEach(function (id) { delete lastArea[id as number]; });
+	setLastArea(lastArea);
+}
+
+function clearMechanicAssignments(peepIds: number[]): void {
+	setAssignments({});
+	forgetLastArea(peepIds);
+}
+
+// Remove all assignments for a single staff type: clear each staff member's
+// patrol area (and, for mechanics, the persisted exit->mechanic map).
+function resetStaffType(kind: StaffKind): void {
+	const ids: number[] = [];
+	allStaffOfType(kind).forEach(function (s) {
+		if (s.patrolArea) { s.patrolArea.clear(); }
+		ids.push(s.id as number);
+	});
+	if (kind === "mechanic") { clearMechanicAssignments(ids); }
+	else { forgetLastArea(ids); }
+	park.postMessage({ type: "blank", text: "Cleared " + kind + " assignments." });
+	refreshWindow();
+}
+
+// Remove all assignments for every staff type at once.
+function resetAllStaff(): void {
+	const ids: number[] = [];
+	PATH_KINDS.forEach(function (pk) {
+		allStaffOfType(pk.kind).forEach(function (s) {
+			if (s.patrolArea) { s.patrolArea.clear(); }
+			ids.push(s.id as number);
+		});
+	});
+	allStaffOfType("mechanic").forEach(function (s) {
+		if (s.patrolArea) { s.patrolArea.clear(); }
+		ids.push(s.id as number);
+	});
+	setAssignments({});
+	forgetLastArea(ids);
+	park.postMessage({ type: "blank", text: "Cleared all assignments." });
+	refreshWindow();
+}
+
 // Button entry: just rescan and refresh the Needed/Hired counts, without
 // hiring, firing or (re)assigning anyone.
 function recalcPathNeeded(kind: StaffKind, niceName: string): void {
@@ -1428,6 +1473,7 @@ function wRecalc(kind: StaffKind): string { return "smp_recalc_" + kind; }
 function wBox(kind: StaffKind): string    { return "smp_box_" + kind; }
 function wIcon(kind: StaffKind): string   { return "smp_icon_" + kind; }
 function wAuto(kind: StaffKind): string { return "smp_auto_" + kind; }
+function wReset(kind: StaffKind): string { return "smp_reset_" + kind; }
 
 const CONTENT_X = 44;
 const RIGHT_PAD = 10;
@@ -1446,6 +1492,8 @@ const W_BTN_ASSIGN_M = "smp_btn_am";
 const W_BTN_RECALC_M = "smp_btn_recalc_m";
 const W_BTN_ASSIGN_ALL = "smp_btn_assign_all";
 const W_BTN_AUTO_ALL = "smp_btn_auto_all";
+const W_BTN_RESET_ALL = "smp_btn_reset_all";
+const W_BTN_RESET_M = "smp_btn_reset_m";
 
 function autoAllLabel(): string {
 	return allAutoEnabled() ? "Deactivate automatic mode for all" : "Activate automatic mode for all";
@@ -1536,13 +1584,14 @@ function reflow(w: Window): void {
 		stretch(w, wBtn(pk.kind), full);
 		stretch(w, wRecalc(pk.kind), full);
 		stretch(w, wAuto(pk.kind), full);
+		stretch(w, wReset(pk.kind), full);
 	});
 	stretch(w, W_M_QUEUES, cw);
 	stretch(w, W_M_QPER, cw);
 	stretch(w, W_M_PPER, cw);
 	stretch(w, W_M_PERAREA, cw);
 	stretch(w, W_GB_M, w.width - 10);
-	[W_BTN_APPLY, W_BTN_ASSIGN_M, W_BTN_RECALC_M, W_AUTO, W_MSTATUS, W_BTN_ASSIGN_ALL, W_BTN_AUTO_ALL].forEach(function (n) {
+	[W_BTN_APPLY, W_BTN_ASSIGN_M, W_BTN_RECALC_M, W_AUTO, W_MSTATUS, W_BTN_ASSIGN_ALL, W_BTN_AUTO_ALL, W_BTN_RESET_ALL, W_BTN_RESET_M].forEach(function (n) {
 		stretch(w, n, full);
 	});
 	const dd = w.findWidget<DropdownWidget>(W_INSPECT);
@@ -1550,8 +1599,8 @@ function reflow(w: Window): void {
 }
 
 // Section height: mascots have a checkbox + 3 spinners; others one spinner.
-// (+18 to fit the extra "Recalculate needed" button row.)
-function sectionHeight(pk: PathKindDef): number { return (pk.kind === "entertainer" ? 168 : 88) + 18; }
+// (+36 for the "Recalculate" and "Reset" button rows.)
+function sectionHeight(pk: PathKindDef): number { return (pk.kind === "entertainer" ? 168 : 88) + 36; }
 
 function makePathSection(pk: PathKindDef, y: number): WidgetDesc[] {
 	const kind = pk.kind;
@@ -1649,6 +1698,15 @@ function makePathSection(pk: PathKindDef, y: number): WidgetDesc[] {
 			refreshWindow();
 		}; })(kind)
 	});
+	widgets.push({
+		type: "button", name: wReset(kind),
+		x: 10, y: yBtn + 54, width: 280, height: 14,
+		text: "Reset " + pk.nice + " assignments",
+		tooltip: "Clear the patrol areas (and persisted assignments) of all " + pk.nice + " without hiring or firing anyone",
+		onClick: (function (k) { return function () {
+			resetStaffType(k);
+		}; })(kind)
+	});
 	return widgets;
 }
 
@@ -1670,9 +1728,16 @@ function openWindow(): void {
 			text: autoAllLabel(),
 			tooltip: "Toggle automatic hire/fire + assign for mechanics and all path-staff types",
 			onClick: function () { setAllAuto(!allAutoEnabled()); refreshWindow(); }
+		},
+		{
+			type: "button", name: W_BTN_RESET_ALL,
+			x: 10, y: 58, width: 280, height: 18,
+			text: "Reset all assignments",
+			tooltip: "Clear the patrol areas and persisted assignments of every staff type (mechanics included) without hiring or firing anyone",
+			onClick: function () { resetAllStaff(); }
 		}
 	];
-	let y = 62;
+	let y = 84;
 	PATH_KINDS.forEach(function (pk) {
 		widgets = widgets.concat(makePathSection(pk, y));
 		y += sectionHeight(pk) + 6;
@@ -1682,7 +1747,7 @@ function openWindow(): void {
 	const my = y;
 	const mcw = 290 - CONTENT_X - RIGHT_PAD + 5;
 	widgets = widgets.concat([
-		{ type: "groupbox", name: W_GB_M, x: 5, y: my, width: 290, height: 150, text: "Mechanics" },
+		{ type: "groupbox", name: W_GB_M, x: 5, y: my, width: 290, height: 168, text: "Mechanics" },
 		makeIconWidget(wIcon("mechanic"), 12, my + 16, 30, 30, staffSprite("mechanic"), "Mechanics"),
 		{ type: "label", x: CONTENT_X, y: my + 18, width: 60, height: 12, text: "Inspect:" },
 		{
@@ -1724,10 +1789,17 @@ function openWindow(): void {
 				refreshWindow();
 			}
 		},
-		{ type: "label", name: W_MSTATUS, x: 10, y: my + 128, width: 280, height: 16, text: mechStatusText() }
+		{
+			type: "button", name: W_BTN_RESET_M,
+			x: 10, y: my + 126, width: 280, height: 16,
+			text: "Reset mechanics assignments",
+			tooltip: "Clear every mechanic's patrol area and the persisted exit->mechanic map, without hiring or firing anyone",
+			onClick: function () { resetStaffType("mechanic"); }
+		},
+		{ type: "label", name: W_MSTATUS, x: 10, y: my + 148, width: 280, height: 16, text: mechStatusText() }
 	]);
 
-	const winH = my + 150 + 8;
+	const winH = my + 176 + 8;
 	lastReflowW = -1;
 	ui.openWindow({
 		classification: WINDOW_TAG,
