@@ -1266,16 +1266,23 @@ function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 					const t = centres[bestA];
 					p.patrolArea.clear();
 					p.patrolArea.add(area);
-					try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) { /* ignore */ }
 					recordAssignment(lastArea, p.id as number, t.x, t.y, counts);
+					try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) { /* ignore */ }
 				}
 				n++;
 				processed++;
 			}
-			assignProgress = 70 + Math.floor((n / Math.max(1, placements)) * 30);
+			const pct = 70 + Math.floor((n / Math.max(1, placements)) * 30);
+			updateProgressWindow(pct, "Moving mascots (" + n + "/" + placements + ")");
+			assignProgress = pct;
 			refreshWindow();
-			if (n < placements) { context.setTimeout(step, 1); return; }
+			if (n < placements) {
+				// Pause after every 10 so the game settles between moves.
+				context.setTimeout(step, 25);
+				return;
+			}
 
+			closeProgressWindow();
 			let areasUsed = 0;
 			for (const k in areaUsed) { areasUsed++; }
 			setLastArea(lastArea);
@@ -1288,6 +1295,7 @@ function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 			refreshWindow();
 			if (onDone) { onDone(); }
 		}
+		if (placements > 0) { openProgressWindow(); }
 		step();
 	});
 }
@@ -1312,9 +1320,11 @@ function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[], onDo
 	}, function (chunks) {
 		// Match each staff member to its NEAREST zone (minimise walking).
 		matchNearestZonesAsync(staff, chunks, function (assign) {
-			assignProgress = 90; refreshWindow();
-			const lastArea = getLastArea();
-			const counts: AssignCounts = { fresh: 0, moved: 0 };
+			// Set all patrol areas first (instant), then teleport staff in
+			// small batches with a pause after every 10, showing progress in a
+			// dedicated small window. Slowing the teleport down seems to avoid
+			// the game dropping some staff from moving after assignment.
+			const targets: { p: Staff; t: ScanTile }[] = [];
 			for (let i = 0; i < staff.length; i++) {
 				const p = staff[i];
 				if (!p.patrolArea) { continue; }
@@ -1324,19 +1334,57 @@ function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[], onDo
 				p.patrolArea.clear();
 				if (chunk && chunk.length > 0) {
 					p.patrolArea.add(chunk);
-					const t = zoneCentre(chunk);
-					try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) { /* ignore */ }
-					recordAssignment(lastArea, p.id as number, t.x, t.y, counts);
+					targets.push({ p: p, t: zoneCentre(chunk) });
 				}
 			}
-			setLastArea(lastArea);
-			const tileWord = "path tiles";
-			park.postMessage({ type: "blank",
-				text: niceName + ": " + assignSummary(counts) + " over " +
-					  tiles.length + " " + tileWord + "." });
-			assignProgress = -1;
+			setLastArea(getLastArea());
+
+			if (targets.length === 0) {
+				assignProgress = -1;
+				park.postMessage({ type: "blank",
+					text: niceName + ": nothing to move." });
+				refreshWindow();
+				if (onDone) { onDone(); }
+				return;
+			}
+			teleportTotal = targets.length;
+			teleportActive = true;
+			assignProgress = 90;
 			refreshWindow();
-			if (onDone) { onDone(); }
+			openProgressWindow();
+			updateProgressWindow(90, "Moving " + niceName + " (" + 0 + "/" + teleportTotal + ")");
+			const lastArea = getLastArea();
+			const counts: AssignCounts = { fresh: 0, moved: 0 };
+			let cursor = 0;
+			function teleportStep(): void {
+				let processed = 0;
+				while (cursor < targets.length && processed < 10) {
+					const tp = targets[cursor];
+					const p = tp.p, t = tp.t;
+					recordAssignment(lastArea, p.id as number, t.x, t.y, counts);
+					try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) { /* ignore */ }
+					cursor++;
+					processed++;
+				}
+				const pct = 90 + Math.floor((cursor / Math.max(1, teleportTotal)) * 10);
+				updateProgressWindow(pct, "Moving " + niceName + " (" + cursor + "/" + teleportTotal + ")");
+				if (cursor < targets.length) {
+					// Pause after every 10 so the game settles and no staff
+					// are dropped from moving. The pause is the timeout delay.
+					context.setTimeout(teleportStep, 25);
+				} else {
+					closeProgressWindow();
+					setLastArea(lastArea);
+					const tileWord = "path tiles";
+					park.postMessage({ type: "blank",
+						text: niceName + ": " + assignSummary(counts) + " over " +
+							  tiles.length + " " + tileWord + "." });
+					assignProgress = -1;
+					refreshWindow();
+					if (onDone) { onDone(); }
+				}
+			}
+			teleportStep();
 		});
 	});
 }
@@ -1453,6 +1501,51 @@ function recalcPathNeeded(kind: StaffKind, niceName: string): void {
 
 // --- GUI -------------------------------------------------------------------
 const WINDOW_TAG = "smp_window";
+const PROGRESS_TAG = "smp_progress";
+const W_PROG_BAR = "smp_prog_bar";
+const W_PROG_LABEL = "smp_prog_label";
+let teleportProgress = 0;   // 0..100 for the teleport progress window
+let teleportTotal = 0;
+let teleportLabel = "";
+let teleportActive = false;
+
+function openProgressWindow(): void {
+	if (ui.getWindow(PROGRESS_TAG)) { return; }
+	ui.openWindow({
+		classification: PROGRESS_TAG,
+		x: 200, y: 200, width: 260, height: 70,
+		minWidth: 260, maxWidth: 260, minHeight: 70, maxHeight: 70,
+		title: "Moving staff",
+		colours: [24, 24],
+		widgets: [
+			{ type: "custom", name: W_PROG_BAR, x: 10, y: 40, width: 240, height: 16, tooltip: "",
+			  onDraw: function (g: GraphicsContext) {
+				g.colour = 23;
+				g.box(0, 0, 240, 16);
+				g.fill = 15;
+				g.rect(2, 2, Math.floor((240 - 4) * (teleportProgress / 100)), 12);
+			  } },
+			{ type: "label", name: W_PROG_LABEL, x: 10, y: 22, width: 240, height: 12,
+			  text: teleportLabel, textAlign: "centred" }
+		]
+	});
+}
+
+function updateProgressWindow(pct: number, label: string): void {
+	teleportProgress = pct;
+	teleportLabel = label;
+	const w = ui.getWindow(PROGRESS_TAG);
+	if (!w) { return; }
+	const lb = w.findWidget<LabelWidget>(W_PROG_LABEL);
+	if (lb) { lb.text = label; }
+}
+
+function closeProgressWindow(): void {
+	teleportActive = false;
+	const w = ui.getWindow(PROGRESS_TAG);
+	if (w) { w.close(); }
+}
+
 
 interface PathKindDef {
 	kind: StaffKind;
