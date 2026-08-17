@@ -1,6 +1,6 @@
 {
   "name": "staff-manager-plus",
-  "version": "2.18.0",
+  "version": "1.0.0",
   "description": "An OpenRCT2 plugin that automates park staff management (handymen, security, mascots, mechanics).",
   "main": "dist/staff-manager.js",
   "license": "MIT",

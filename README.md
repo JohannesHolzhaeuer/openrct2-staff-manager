@@ -6,7 +6,7 @@ mascots**, assigns **mechanics** to ride exits, manages **inspection
 intervals**, and can automatically **hire, fire and (re)assign** staff as your
 park changes — always sending each staff member to their **nearest** free zone.
 
-- **Version:** 2.18.0
+- **Version:** 1.0.0
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
@@ -86,6 +86,20 @@ reassigned** to a different spot, e.g.
 This plugin is written in TypeScript against the official [OpenRCT2 plugin API
 typings](https://github.com/OpenRCT2/OpenRCT2/blob/develop/distribution/scripting/openrct2.d.ts)
 (`openrct2.d.ts`, included in this repository).
+
+### Prerequisites
+
+- **[Node.js](https://nodejs.org/) 18+ (LTS recommended) with npm** — required to install
+  dependencies and run the TypeScript compiler. Verify with:
+  ```powershell
+  node -v
+  npm -v
+  ```
+- **OpenRCT2** installed at least once, so the local `plugin` folder (or your own custom
+  location) exists to deploy into.
+- Optional: **Visual Studio 2022/2026** with the Node.js/JavaScript workload if you want to open
+  `openrct2-staff-manager.sln` and build from the IDE instead of the command line (this runs the
+  same `npm run build` script under the hood).
 
 1. Install dependencies: `npm install`.
 2. Build: `npm run build`.
@@ -178,21 +192,7 @@ Near the top of `staff-manager.ts` you can tweak:
 
 ## Changelog (recent)
 
-- **2.18.0** – Nearest‑zone assignment for all staff (minimise walking).
-- **2.17.0** – Three dedicated mascot options (queue‑ / path‑tiles per mascot,
-  mascots per area).
-- **2.16.0** – Assign mascots to queue lines.
-- **2.15.0** – Messages for hired / fired / (re)assigned staff.
-- **2.14.0** – Separate auto toggles per path‑staff type.
-- **2.13.0** – Auto hire/fire + assign for handymen, security and mascots.
-- **2.12.0** – Auto mechanics now hire/fire as well as assign.
-- **2.11.x** – Fire surplus (newest first); busy mechanics protected.
-- **2.10.0** – Hire/fire dialogs when over/under‑staffed (all types).
-- **2.9.0** – Staff‑type pictures and nicer layout.
-- **2.8.0** – Mascot overlapping‑area options.
-- **2.7.0** – Security and mascot path management.
-- **2.5–2.6** – Resizable window; non‑blocking chunked scan.
-- **2.4.0** – Reachable‑from‑entrance + owned‑land path filtering.
+- **1.0.0** – Initial release.
 
 ---
 

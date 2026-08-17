@@ -1350,7 +1350,7 @@ function main(): void {
 
 registerPlugin({
 	name: "Staff Manager",
-	version: "2.18.0",
+	version: "1.0.0",
 	authors: ["Johannes"],
 	type: "local",
 	licence: "MIT",
