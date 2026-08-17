@@ -717,17 +717,14 @@ function rightSizePathKindsSequential(i: number, ignored: ScanTile[], done: () =
 
 	if (need > have) {
 		hireStaff(pk.kind, need - have, function () {
-			doPathAssign(pk.kind, pk.nice, tiles);
-			next();
+			doPathAssign(pk.kind, pk.nice, tiles, next);
 		});
 	} else if (need < have) {
 		fireStaff(pk.kind, have - need, function () {
-			doPathAssign(pk.kind, pk.nice, tiles);
-			next();
+			doPathAssign(pk.kind, pk.nice, tiles, next);
 		});
 	} else {
-		doPathAssign(pk.kind, pk.nice, tiles);
-		next();
+		doPathAssign(pk.kind, pk.nice, tiles, next);
 	}
 }
 
@@ -874,65 +871,88 @@ function reachableOwnedTiles(pathInfo: { [key: string]: PathTileInfo }, seeds: S
 
 function tileKey(t: ScanTile): string { return (t.x / TILE) + ":" + (t.y / TILE); }
 
+// How many farthest-point-sampling seed picks to do per game tick. Keeps the
+// O(seeds * tiles) seed-selection work from blocking the game on large parks.
+const SEEDS_PER_TICK = 4;
+
 // Splits a connected tile set into up to n connected, contiguous regions of
 // roughly equal size via multi-source BFS growth from spread-out seeds. Each
 // resulting region is guaranteed connected because it is built by expanding
 // only into unclaimed grid-adjacent neighbours of its own seed.
-function growPartition(tiles: ScanTile[], n: number): ScanTile[][] {
-	const result: ScanTile[][] = [];
-	if (tiles.length === 0 || n <= 0) { return result; }
+// Runs the (potentially expensive) seed-selection phase in small chunks
+// across game ticks via context.setTimeout so it never blocks the game loop;
+// onProgress reports 0..100 while seeds are being chosen.
+function growPartitionAsync(tiles: ScanTile[], n: number,
+	onProgress: (pct: number) => void, onDone: (regions: ScanTile[][]) => void): void {
+	if (tiles.length === 0 || n <= 0) { onDone([]); return; }
 	n = Math.min(n, tiles.length);
 
 	const byKey: { [key: string]: ScanTile } = {};
 	tiles.forEach(function (t) { byKey[tileKey(t)] = t; });
 
-	// Farthest-point sampling: spread seeds apart so regions grow evenly.
+	// Farthest-point sampling with an incrementally-maintained distance array:
+	// each new seed only requires one O(tiles) pass (not one per existing seed).
 	const seeds: ScanTile[] = [tiles[0]];
-	while (seeds.length < n) {
-		let bestT: ScanTile | null = null, bestD = -1;
-		for (let i = 0; i < tiles.length; i++) {
-			const t = tiles[i];
-			let minD = Infinity;
-			for (let s = 0; s < seeds.length; s++) {
-				const dx = t.x - seeds[s].x, dy = t.y - seeds[s].y;
+	const minDist: number[] = new Array(tiles.length);
+	for (let i = 0; i < tiles.length; i++) {
+		const dx = tiles[i].x - seeds[0].x, dy = tiles[i].y - seeds[0].y;
+		minDist[i] = dx * dx + dy * dy;
+	}
+
+	function growFromSeeds(): void {
+		const result: ScanTile[][] = [];
+		const regionOf: { [key: string]: number } = {};
+		const queue: string[] = [];
+		const queueRegion: number[] = [];
+		seeds.forEach(function (s, i) {
+			const k = tileKey(s);
+			regionOf[k] = i;
+			queue.push(k);
+			queueRegion.push(i);
+			result[i] = [];
+		});
+		let head = 0;
+		while (head < queue.length) {
+			const k = queue[head];
+			const region = queueRegion[head];
+			head++;
+			result[region].push(byKey[k]);
+			const parts = k.split(":");
+			const tx = +parts[0], ty = +parts[1];
+			for (let d = 0; d < 4; d++) {
+				const nk = (tx + DIR_DELTA[d].dx) + ":" + (ty + DIR_DELTA[d].dy);
+				if (byKey[nk] && regionOf[nk] === undefined) {
+					regionOf[nk] = region;
+					queue.push(nk);
+					queueRegion.push(region);
+				}
+			}
+		}
+		onDone(result.filter(function (r) { return r.length > 0; }));
+	}
+
+	function stepSeeds(): void {
+		let processed = 0;
+		while (seeds.length < n && processed < SEEDS_PER_TICK) {
+			let bestIdx = -1, bestD = -1;
+			for (let i = 0; i < tiles.length; i++) {
+				if (minDist[i] > bestD) { bestD = minDist[i]; bestIdx = i; }
+			}
+			if (bestIdx < 0) { break; }
+			const s = tiles[bestIdx];
+			seeds.push(s);
+			for (let i = 0; i < tiles.length; i++) {
+				const dx = tiles[i].x - s.x, dy = tiles[i].y - s.y;
 				const d = dx * dx + dy * dy;
-				if (d < minD) { minD = d; }
+				if (d < minDist[i]) { minDist[i] = d; }
 			}
-			if (minD > bestD) { bestD = minD; bestT = t; }
+			processed++;
 		}
-		if (!bestT) { break; }
-		seeds.push(bestT);
+		if (onProgress) { onProgress(Math.floor((seeds.length / n) * 100)); }
+		if (seeds.length < n) { context.setTimeout(stepSeeds, 1); }
+		else { growFromSeeds(); }
 	}
-
-	const regionOf: { [key: string]: number } = {};
-	const queue: string[] = [];
-	const queueRegion: number[] = [];
-	seeds.forEach(function (s, i) {
-		const k = tileKey(s);
-		regionOf[k] = i;
-		queue.push(k);
-		queueRegion.push(i);
-		result[i] = [];
-	});
-
-	let head = 0;
-	while (head < queue.length) {
-		const k = queue[head];
-		const region = queueRegion[head];
-		head++;
-		result[region].push(byKey[k]);
-		const parts = k.split(":");
-		const tx = +parts[0], ty = +parts[1];
-		for (let d = 0; d < 4; d++) {
-			const nk = (tx + DIR_DELTA[d].dx) + ":" + (ty + DIR_DELTA[d].dy);
-			if (byKey[nk] && regionOf[nk] === undefined) {
-				regionOf[nk] = region;
-				queue.push(nk);
-				queueRegion.push(region);
-			}
-		}
-	}
-	return result.filter(function (r) { return r.length > 0; });
+	stepSeeds();
 }
 
 // Splits a tile set into its grid-adjacency connected components (4-neighbour).
@@ -968,10 +988,12 @@ function connectedComponents(tiles: ScanTile[]): ScanTile[][] {
 // their size (each component keeps at least one zone), then grown within
 // each component via BFS so every resulting zone stays a single connected
 // region rather than an arbitrary slice of the sorted tile array.
-function partition(tiles: ScanTile[], n: number): ScanTile[][] {
-	if (tiles.length === 0 || n <= 0) { return []; }
+// Async: components are processed one at a time (each itself chunked across
+// ticks by growPartitionAsync) so large parks never block the game loop.
+function partitionAsync(tiles: ScanTile[], n: number,
+	onProgress: (pct: number) => void, onDone: (chunks: ScanTile[][]) => void): void {
+	if (tiles.length === 0 || n <= 0) { onDone([]); return; }
 	const components = connectedComponents(tiles);
-	if (components.length === 1) { return growPartition(components[0], n); }
 
 	const totalTiles = tiles.length;
 	const zonesPer: number[] = components.map(function (c) {
@@ -992,10 +1014,20 @@ function partition(tiles: ScanTile[], n: number): ScanTile[][] {
 	}
 
 	const chunks: ScanTile[][] = [];
-	components.forEach(function (c, i) {
-		growPartition(c, Math.min(zonesPer[i], c.length)).forEach(function (r) { chunks.push(r); });
-	});
-	return chunks;
+	function processComponent(ci: number): void {
+		if (ci >= components.length) { onDone(chunks); return; }
+		const c = components[ci];
+		growPartitionAsync(c, Math.min(zonesPer[ci], c.length), function (pct) {
+			if (onProgress) {
+				const overall = Math.floor(((ci + pct / 100) / components.length) * 100);
+				onProgress(overall);
+			}
+		}, function (regions) {
+			regions.forEach(function (r) { chunks.push(r); });
+			processComponent(ci + 1);
+		});
+	}
+	processComponent(0);
 }
 
 // Centre tile of a zone: the tile nearest the region's centroid, so it stays
@@ -1018,11 +1050,13 @@ function zoneCentre(chunk: ScanTile[]): ScanTile {
 // Repeatedly picks the globally-closest (staff, zone) pair until one side runs
 // out. Returns an array `assign` where assign[staffIndex] = zoneIndex (or -1).
 // `staff` are entities with x/y; `chunks` is an array of tile arrays.
-function matchNearestZones(staff: Staff[], chunks: ScanTile[][]): number[] {
+// Async: pairs are matched a few at a time per tick so large staff/zone
+// counts (each pairing pass is O(staff*zones)) never block the game loop.
+const MATCH_PAIRS_PER_TICK = 25;
+function matchNearestZonesAsync(staff: Staff[], chunks: ScanTile[][],
+	onDone: (assign: number[]) => void): void {
 	const assign: number[] = [];
 	for (let s = 0; s < staff.length; s++) { assign[s] = -1; }
-	const staffLeft = staff.length;
-	const zonesLeft = chunks.length;
 	const zoneTaken: boolean[] = [];
 	const staffTaken: boolean[] = [];
 	const centres: ScanTile[] = [];
@@ -1032,26 +1066,34 @@ function matchNearestZones(staff: Staff[], chunks: ScanTile[][]): number[] {
 	}
 	for (let s2 = 0; s2 < staff.length; s2++) { staffTaken[s2] = false; }
 
-	const pairs = Math.min(staffLeft, zonesLeft);
-	for (let n = 0; n < pairs; n++) {
-		let bestS = -1, bestZ = -1, bestD = Infinity;
-		for (let si = 0; si < staff.length; si++) {
-			if (staffTaken[si]) { continue; }
-			const px = staff[si].x, py = staff[si].y;
-			for (let zi = 0; zi < chunks.length; zi++) {
-				if (zoneTaken[zi]) { continue; }
-				const c = centres[zi];
-				const dx = px - (c.x + 16), dy = py - (c.y + 16);
-				const d = dx * dx + dy * dy;   // squared distance is fine
-				if (d < bestD) { bestD = d; bestS = si; bestZ = zi; }
+	const pairs = Math.min(staff.length, chunks.length);
+	let n = 0;
+	function step(): void {
+		let processed = 0;
+		while (n < pairs && processed < MATCH_PAIRS_PER_TICK) {
+			let bestS = -1, bestZ = -1, bestD = Infinity;
+			for (let si = 0; si < staff.length; si++) {
+				if (staffTaken[si]) { continue; }
+				const px = staff[si].x, py = staff[si].y;
+				for (let zi = 0; zi < chunks.length; zi++) {
+					if (zoneTaken[zi]) { continue; }
+					const c = centres[zi];
+					const dx = px - (c.x + 16), dy = py - (c.y + 16);
+					const d = dx * dx + dy * dy;   // squared distance is fine
+					if (d < bestD) { bestD = d; bestS = si; bestZ = zi; }
+				}
 			}
+			if (bestS < 0) { n = pairs; break; }
+			assign[bestS] = bestZ;
+			staffTaken[bestS] = true;
+			zoneTaken[bestZ] = true;
+			n++;
+			processed++;
 		}
-		if (bestS < 0) { break; }
-		assign[bestS] = bestZ;
-		staffTaken[bestS] = true;
-		zoneTaken[bestZ] = true;
+		if (n < pairs) { context.setTimeout(step, 1); }
+		else { onDone(assign); }
 	}
-	return assign;
+	step();
 }
 
 // Cached scan result (shared by all path staff).
@@ -1059,6 +1101,7 @@ let cachedTiles: ScanTile[] | null = null;        // reachable, owned, non-queue
 let cachedQueues: ScanTile[] | null = null;       // reachable, owned queue tiles
 let pathsScanned = false;
 let scanProgress = -1;
+let assignProgress = -1;   // -1 = idle; 0..100 while partitioning/assigning is running
 
 function sortTiles(a: ScanTile, b: ScanTile): number { return (a.x - b.x) || (a.y - b.y); }
 
@@ -1112,78 +1155,98 @@ function neededForKind(kind: StaffKind, tileCount: number): number {
 // Mascot placement. Each area holds `mascotsPerArea` mascots and spans
 // tilesPerMascot * mascotsPerArea tiles (so density stays tiles-per-mascot).
 // When mascotsPerArea > 1 the mascots in an area overlap.
-function assignMascots(tiles: ScanTile[]): void {
+// Async: partitioning and the greedy placement loop are both chunked across
+// ticks (via partitionAsync / setTimeout) so large parks never block the game.
+const MASCOT_PLACEMENTS_PER_TICK = 10;
+function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 	const mascots = assignableOfKind("entertainer");
 	if (mascots.length === 0) {
 		park.postMessage({ type: "blank", text: "No mascots available." });
 		refreshWindow();
+		if (onDone) { onDone(); }
 		return;
 	}
 	const tilesPer = mascotTilesPer();
 	const perArea = Math.max(1, getMascotPerArea());
 	const areaSize = Math.max(1, tilesPer);
 	const numAreas = Math.ceil(tiles.length / areaSize);
-	const areas = partition(tiles, numAreas);
 
-	// Nearest matching with capacity: each mascot takes the closest area that
-	// still has a free slot (perArea slots each). Minimises walking.
-	const cap: number[] = [];
-	const centres: ScanTile[] = [];
-	for (let a = 0; a < areas.length; a++) {
-		cap[a] = perArea;
-		centres[a] = zoneCentre(areas[a]);
-	}
-	const used: boolean[] = [];
-	for (let s = 0; s < mascots.length; s++) { used[s] = false; }
-
-	let assigned = 0;
-	const areaUsed: { [index: number]: boolean } = {};
-	const lastArea = getLastArea();
-	const counts: AssignCounts = { fresh: 0, moved: 0 };
-	const placements = Math.min(mascots.length, numAreas * perArea);
-
-	for (let n = 0; n < placements; n++) {
-		let bestS = -1, bestA = -1, bestD = Infinity;
-		for (let si = 0; si < mascots.length; si++) {
-			if (used[si]) { continue; }
-			const px = mascots[si].x, py = mascots[si].y;
-			for (let ai = 0; ai < areas.length; ai++) {
-				if (cap[ai] <= 0) { continue; }
-				const c = centres[ai];
-				const dx = px - (c.x + 16), dy = py - (c.y + 16);
-				const d = dx * dx + dy * dy;
-				if (d < bestD) { bestD = d; bestS = si; bestA = ai; }
-			}
-		}
-		if (bestS < 0) { break; }
-		const p = mascots[bestS];
-		used[bestS] = true;
-		cap[bestA]--;
-		areaUsed[bestA] = true;
-		if (p.patrolArea) {
-			const area = areas[bestA];
-			const t = centres[bestA];
-			p.patrolArea.clear();
-			p.patrolArea.add(area);
-			try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) { /* ignore */ }
-			recordAssignment(lastArea, p.id as number, t.x, t.y, counts);
-			assigned++;
-		}
-	}
-	let areasUsed = 0;
-	for (const k in areaUsed) { areasUsed++; }
-	setLastArea(lastArea);
-	const tileWord = getMascotQueues() ? "queue" : "path";
-	const overlapTxt = perArea > 1 ? (" (" + perArea + " per area, overlapping)") : "";
-	park.postMessage({ type: "blank",
-		text: "Mascots: " + assignSummary(counts) + " across " +
-			  areasUsed + " " + tileWord + " area(s)" + overlapTxt + "." });
+	assignProgress = 0;
 	refreshWindow();
+	partitionAsync(tiles, numAreas, function (pct) {
+		assignProgress = Math.floor(pct * 0.7); refreshWindow();
+	}, function (areas) {
+		// Nearest matching with capacity: each mascot takes the closest area that
+		// still has a free slot (perArea slots each). Minimises walking.
+		const cap: number[] = [];
+		const centres: ScanTile[] = [];
+		for (let a = 0; a < areas.length; a++) {
+			cap[a] = perArea;
+			centres[a] = zoneCentre(areas[a]);
+		}
+		const used: boolean[] = [];
+		for (let s = 0; s < mascots.length; s++) { used[s] = false; }
+
+		const areaUsed: { [index: number]: boolean } = {};
+		const lastArea = getLastArea();
+		const counts: AssignCounts = { fresh: 0, moved: 0 };
+		const placements = Math.min(mascots.length, numAreas * perArea);
+
+		let n = 0;
+		function step(): void {
+			let processed = 0;
+			while (n < placements && processed < MASCOT_PLACEMENTS_PER_TICK) {
+				let bestS = -1, bestA = -1, bestD = Infinity;
+				for (let si = 0; si < mascots.length; si++) {
+					if (used[si]) { continue; }
+					const px = mascots[si].x, py = mascots[si].y;
+					for (let ai = 0; ai < areas.length; ai++) {
+						if (cap[ai] <= 0) { continue; }
+						const c = centres[ai];
+						const dx = px - (c.x + 16), dy = py - (c.y + 16);
+						const d = dx * dx + dy * dy;
+						if (d < bestD) { bestD = d; bestS = si; bestA = ai; }
+					}
+				}
+				if (bestS < 0) { n = placements; break; }
+				const p = mascots[bestS];
+				used[bestS] = true;
+				cap[bestA]--;
+				areaUsed[bestA] = true;
+				if (p.patrolArea) {
+					const area = areas[bestA];
+					const t = centres[bestA];
+					p.patrolArea.clear();
+					p.patrolArea.add(area);
+					try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) { /* ignore */ }
+					recordAssignment(lastArea, p.id as number, t.x, t.y, counts);
+				}
+				n++;
+				processed++;
+			}
+			assignProgress = 70 + Math.floor((n / Math.max(1, placements)) * 30);
+			refreshWindow();
+			if (n < placements) { context.setTimeout(step, 1); return; }
+
+			let areasUsed = 0;
+			for (const k in areaUsed) { areasUsed++; }
+			setLastArea(lastArea);
+			const tileWord = getMascotQueues() ? "queue" : "path";
+			const overlapTxt = perArea > 1 ? (" (" + perArea + " per area, overlapping)") : "";
+			park.postMessage({ type: "blank",
+				text: "Mascots: " + assignSummary(counts) + " across " +
+					  areasUsed + " " + tileWord + " area(s)" + overlapTxt + "." });
+			assignProgress = -1;
+			refreshWindow();
+			if (onDone) { onDone(); }
+		}
+		step();
+	});
 }
 
-function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[]): void {
+function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[], onDone?: () => void): void {
 	if (kind === "entertainer") {
-		assignMascots(tiles);
+		assignMascots(tiles, onDone);
 		return;
 	}
 	const staff = assignableOfKind(kind);
@@ -1191,35 +1254,43 @@ function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[]): voi
 		park.postMessage({ type: "blank",
 			text: "No assignable " + niceName + " available." });
 		refreshWindow();
+		if (onDone) { onDone(); }
 		return;
 	}
-	const chunks = partition(tiles, staff.length);
-	// Match each staff member to its NEAREST zone (minimise walking).
-	const assign = matchNearestZones(staff, chunks);
-	let assigned = 0;
-	const lastArea = getLastArea();
-	const counts: AssignCounts = { fresh: 0, moved: 0 };
-	for (let i = 0; i < staff.length; i++) {
-		const p = staff[i];
-		if (!p.patrolArea) { continue; }
-		const zi = assign[i];
-		if (zi < 0) { continue; }
-		const chunk = chunks[zi];
-		p.patrolArea.clear();
-		if (chunk && chunk.length > 0) {
-			p.patrolArea.add(chunk);
-			const t = zoneCentre(chunk);
-			try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) { /* ignore */ }
-			recordAssignment(lastArea, p.id as number, t.x, t.y, counts);
-			assigned++;
-		}
-	}
-	setLastArea(lastArea);
-	const tileWord = "path tiles";
-	park.postMessage({ type: "blank",
-		text: niceName + ": " + assignSummary(counts) + " over " +
-			  tiles.length + " " + tileWord + "." });
+	assignProgress = 0;
 	refreshWindow();
+	partitionAsync(tiles, staff.length, function (pct) {
+		assignProgress = Math.floor(pct * 0.5); refreshWindow();
+	}, function (chunks) {
+		// Match each staff member to its NEAREST zone (minimise walking).
+		matchNearestZonesAsync(staff, chunks, function (assign) {
+			assignProgress = 90; refreshWindow();
+			const lastArea = getLastArea();
+			const counts: AssignCounts = { fresh: 0, moved: 0 };
+			for (let i = 0; i < staff.length; i++) {
+				const p = staff[i];
+				if (!p.patrolArea) { continue; }
+				const zi = assign[i];
+				if (zi < 0) { continue; }
+				const chunk = chunks[zi];
+				p.patrolArea.clear();
+				if (chunk && chunk.length > 0) {
+					p.patrolArea.add(chunk);
+					const t = zoneCentre(chunk);
+					try { p.x = t.x + 16; p.y = t.y + 16; p.z = t.z; } catch (e) { /* ignore */ }
+					recordAssignment(lastArea, p.id as number, t.x, t.y, counts);
+				}
+			}
+			setLastArea(lastArea);
+			const tileWord = "path tiles";
+			park.postMessage({ type: "blank",
+				text: niceName + ": " + assignSummary(counts) + " over " +
+					  tiles.length + " " + tileWord + "." });
+			assignProgress = -1;
+			refreshWindow();
+			if (onDone) { onDone(); }
+		});
+	});
 }
 
 // Button entry for path staff: scan, then offer to hire if short, then assign.
@@ -1241,6 +1312,8 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 		}
 		const have = assignableOfKind(kind).length;
 		const need = neededForKind(kind, tiles.length);
+		busy = true;
+		function finishAssign(): void { busy = false; refreshWindow(); }
 		if (need > have) {
 			const deficit = need - have;
 			confirmDialog([
@@ -1249,10 +1322,10 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 				"Hire " + staffWord(kind, deficit) + "?"
 			], "Hire " + staffWord(kind, deficit),
 			function () {
-				hireStaff(kind, deficit, function () { doPathAssign(kind, niceName, tiles); });
+				hireStaff(kind, deficit, function () { doPathAssign(kind, niceName, tiles, finishAssign); });
 			}, "Assign without hiring/firing",
 			function () {
-				doPathAssign(kind, niceName, tiles);
+				doPathAssign(kind, niceName, tiles, finishAssign);
 			});
 		} else if (need < have) {
 			const surplus = have - need;
@@ -1262,13 +1335,13 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 				"Fire " + staffWord(kind, surplus) + " (newest first)?"
 			], "Fire " + staffWord(kind, surplus),
 			function () {
-				fireStaff(kind, surplus, function () { doPathAssign(kind, niceName, tiles); });
+				fireStaff(kind, surplus, function () { doPathAssign(kind, niceName, tiles, finishAssign); });
 			}, "Assign without hiring/firing",
 			function () {
-				doPathAssign(kind, niceName, tiles);
+				doPathAssign(kind, niceName, tiles, finishAssign);
 			});
 		} else {
-			doPathAssign(kind, niceName, tiles);
+			doPathAssign(kind, niceName, tiles, finishAssign);
 		}
 	});
 }
@@ -1334,6 +1407,7 @@ function perLabelText(kind: StaffKind): string { return "Path tiles per staff: "
 
 function pathStatusText(kind: StaffKind, nice: string): string {
 	if (scanProgress >= 0) { return "Scanning map... " + scanProgress + "%"; }
+	if (assignProgress >= 0) { return "Assigning... " + assignProgress + "%"; }
 	// Mascots in queue mode count queue tiles; otherwise path tiles.
 	const useQueues = (kind === "entertainer" && getMascotQueues());
 	const srcLen = useQueues
