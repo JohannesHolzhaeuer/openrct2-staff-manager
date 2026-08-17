@@ -10,7 +10,7 @@ park changes — always sending each staff member to their **nearest** free zone
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
-- **File:** `staff-manager-plus.js`
+- **Source:** `staff-manager.ts` (TypeScript, compiles to `dist/staff-manager.js`)
 
 ---
 
@@ -81,15 +81,33 @@ reassigned** to a different spot, e.g.
 
 ---
 
+## Building
+
+This plugin is written in TypeScript against the official [OpenRCT2 plugin API
+typings](https://github.com/OpenRCT2/OpenRCT2/blob/develop/distribution/scripting/openrct2.d.ts)
+(`openrct2.d.ts`, included in this repository).
+
+1. Install dependencies: `npm install`.
+2. Build: `npm run build`.
+   - Compiles `staff-manager.ts` to `dist/staff-manager.js`.
+   - Then automatically copies (`deploy.js`) that file straight into your
+     local OpenRCT2 **plugin** folder:
+     - **Windows:** `Documents\OpenRCT2\plugin\`
+     - **macOS:** `~/Library/Application Support/OpenRCT2/plugin/`
+     - **Linux:** `~/.config/OpenRCT2/plugin/`
+   - Override the destination with the `OPENRCT2_PLUGIN_DIR` environment
+     variable if your OpenRCT2 user directory is somewhere else.
+3. Use `npm run watch` while developing to recompile on save (note: this only
+   recompiles; run `npm run build` again, or press the game's plugin
+   hot-reload, after a `watch` recompile to redeploy the file).
+
 ## Installation
 
-1. Download **`staff-manager-plus.js`**.
-2. Copy it into your OpenRCT2 **plugin** folder:
-   - **Windows:** `Documents\OpenRCT2\plugin\`
-   - **macOS:** `~/Library/Application Support/OpenRCT2/plugin/`
-   - **Linux:** `~/.config/OpenRCT2/plugin/`
-3. Start OpenRCT2 (or, in single‑player, use the plugin **hot‑reload**).
-4. Open it from the **map / red‑toolbox button → “Staff Manager Plus”**.
+1. Run `npm install` then `npm run build` (see [Building](#building)) — this
+   compiles and deploys `staff-manager.js` directly into your OpenRCT2 plugin
+   folder.
+2. Start OpenRCT2 (or, in single‑player, use the plugin **hot‑reload**).
+3. Open it from the **map / red‑toolbox button → “Staff Manager Plus”**.
 
 ---
 
@@ -146,7 +164,7 @@ If the entrance can't be found, it falls back to seeding from owned path tiles.
 
 ## Configuration (in‑file)
 
-Near the top of `staff-manager-plus.js` you can tweak:
+Near the top of `staff-manager.ts` you can tweak:
 
 | Constant | Purpose |
 | --- | --- |
