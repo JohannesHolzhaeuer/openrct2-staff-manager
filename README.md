@@ -41,7 +41,7 @@ Mascots have their own controls instead of the generic density spinner:
   (the area grows so the tiles‑per‑mascot density is preserved).
 
 ### 🔧 Mechanics
-- **One mechanic per ride exit**, each with a 4×4 patrol area at the exit.
+- **One mechanic per ride exit**, each patrolling the exit plus the 3 path tiles leading up to it.
 - **Nearest‑mechanic matching:** each uncovered exit gets the closest free,
   non‑busy mechanic.
 - **Inspection interval** dropdown (10 min … Never) applied to **all rides**,

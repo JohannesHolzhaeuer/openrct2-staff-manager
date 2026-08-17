@@ -6,7 +6,7 @@
  *   - HANDYMEN, SECURITY, MASCOTS (entertainers): split the park's paths into
  *     equal contiguous areas (mascots optionally into overlapping areas with
  *     several mascots each).
- *   - MECHANICS: assign to ride exits (one per exit, 4x4 area) + inspection.
+ *   - MECHANICS: assign to ride exits (one per exit, patrolling the 3 paths before the exit) + inspection.
  *
  * If an assignment needs more staff than are available, a dialog offers to
  * hire the missing staff. Path counting only considers footpaths reachable
@@ -304,12 +304,55 @@ function mechanicById(id: number): Staff | null {
 	return (e && e.type === "staff" && (e as Staff).staffType === "mechanic") ? (e as Staff) : null;
 }
 
-function patrol4x4(exit: CoordsXY): CoordsXY[] {
-	const tiles: CoordsXY[] = [];
-	for (let dx = 0; dx < 4; dx++) {
-		for (let dy = 0; dy < 4; dy++) {
-			tiles.push({ x: exit.x + dx * TILE, y: exit.y + dy * TILE });
+// Footpath edges (bitmask) of the tile at the given coordinate, or 0 if none.
+function tileEdges(tx: number, ty: number): { edges: number; z: number } | null {
+	const tile = map.getTile(tx, ty);
+	for (let i = 0; i < tile.numElements; i++) {
+		const el = tile.getElement(i);
+		if (el && el.type === "footpath" && !el.isGhost) {
+			const fp = el as FootpathElement;
+			return { edges: (typeof fp.edges === "number") ? fp.edges : 15, z: fp.baseZ };
 		}
+	}
+	return null;
+}
+
+// Mechanics patrol the exit tile plus the 3 connected footpath tiles leading
+// up to it (a short line of path `before` the exit), instead of a 4x4 block
+// right next to the exit.
+function patrolExitPath(exit: CoordsXY): CoordsXY[] {
+	const tiles: CoordsXY[] = [];
+	const tx0 = Math.floor(exit.x / TILE), ty0 = Math.floor(exit.y / TILE);
+	tiles.push({ x: tx0 * TILE, y: ty0 * TILE });
+	const startInfo = tileEdges(tx0, ty0);
+	if (!startInfo) { return tiles; }
+	const visited: { [key: string]: boolean } = {};
+	visited[tx0 + ":" + ty0] = true;
+	let layer: { tx: number; ty: number }[] = [{ tx: tx0, ty: ty0 }];
+	let collected = 0;
+	while (collected < 3 && layer.length > 0) {
+		const nextLayer: { tx: number; ty: number }[] = [];
+		for (let li = 0; li < layer.length; li++) {
+			const c = layer[li];
+			const info = tileEdges(c.tx, c.ty);
+			if (!info) { continue; }
+			for (let d = 0; d < 4; d++) {
+				if ((info.edges & (1 << d)) === 0) { continue; }
+				const ntx = c.tx + DIR_DELTA[d].dx, nty = c.ty + DIR_DELTA[d].dy;
+				const k = ntx + ":" + nty;
+				if (visited[k]) { continue; }
+				const ni = tileEdges(ntx, nty);
+				if (!ni || ni.z !== info.z) { continue; }
+				if ((ni.edges & (1 << ((d + 2) % 4))) === 0) { continue; }
+				visited[k] = true;
+				tiles.push({ x: ntx * TILE, y: nty * TILE });
+				collected++;
+				if (collected >= 3) { break; }
+				nextLayer.push({ tx: ntx, ty: nty });
+			}
+			if (collected >= 3) { break; }
+		}
+		layer = nextLayer;
 	}
 	return tiles;
 }
@@ -317,7 +360,7 @@ function patrol4x4(exit: CoordsXY): CoordsXY[] {
 function setPatrol(mechanic: Staff | null, exit: CoordsXY): void {
 	if (!mechanic || !mechanic.patrolArea) { return; }
 	mechanic.patrolArea.clear();
-	mechanic.patrolArea.add(patrol4x4(exit));
+	mechanic.patrolArea.add(patrolExitPath(exit));
 }
 
 // --- Hiring ----------------------------------------------------------------
