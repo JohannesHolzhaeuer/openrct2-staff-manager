@@ -152,8 +152,16 @@ function anyAutoPath(): boolean {
 }
 function getAssignments(): { [key: string]: number } { return store().get("assignments", {}); }
 function setAssignments(v: { [key: string]: number }): void { store().set("assignments", v); }
-function getPer(kind: StaffKind): number { return store().get("per_" + kind, 25); }
+function getPer(kind: StaffKind): number { return store().get("per_" + kind, defaultPer(kind)); }
 function setPer(kind: StaffKind, v: number): void { store().set("per_" + kind, v); }
+// Default path tiles per staff, by kind (used the first time a setting is read).
+function defaultPer(kind: StaffKind): number {
+	switch (kind) {
+		case "handyman": return 8;
+		case "security": return 16;
+		default: return 25;
+	}
+}
 // Last-assigned area centre per peep id, to detect reassignment ("moved").
 function getLastArea(): { [peepId: number]: string } { return store().get("lastArea", {}); }
 function setLastArea(v: { [peepId: number]: string }): void { store().set("lastArea", v); }
@@ -161,11 +169,11 @@ function setLastArea(v: { [peepId: number]: string }): void { store().set("lastA
 //  - queue tiles per mascot (max) : density when assigning to queue lines
 //  - path tiles per mascot        : density when assigning to general paths
 //  - mascots per area             : how many mascots share each area (>1 = overlap)
-function getMascotQueuePer(): number { return store().get("mascotQueuePer", 8); }
+function getMascotQueuePer(): number { return store().get("mascotQueuePer", 4); }
 function setMascotQueuePer(v: number): void { store().set("mascotQueuePer", v); }
-function getMascotPathPer(): number { return store().get("mascotPathPer", 25); }
+function getMascotPathPer(): number { return store().get("mascotPathPer", 16); }
 function setMascotPathPer(v: number): void { store().set("mascotPathPer", v); }
-function getMascotPerArea(): number { return store().get("mascotPerArea", 1); }
+function getMascotPerArea(): number { return store().get("mascotPerArea", 2); }
 function setMascotPerArea(v: number): void { store().set("mascotPerArea", v); }
 // Assign mascots to QUEUE lines instead of general paths.
 function getMascotQueues(): boolean { return store().get("mascotQueues", false); }
@@ -353,40 +361,61 @@ function fireStaff(kind: StaffKind, count: number, onDone?: (fired: number) => v
 	});
 }
 
-// --- Confirm dialog (small Yes/No window) ----------------------------------
+// --- Confirm dialog (small Yes/No/Cancel window) ---------------------------
 const CONFIRM_TAG = "smp_confirm";
 let confirmYesCb: (() => void) | null = null;
 let confirmNoCb: (() => void) | null = null;
+let confirmCancelCb: (() => void) | null = null;
 
 function closeConfirm(): void {
 	const w = ui.getWindow(CONFIRM_TAG);
 	if (w) { w.close(); }
 }
 
-function confirmDialog(lines: string[], yesLabel: string, onYes: () => void, onNo: () => void): void {
+// Three-way confirmation dialog:
+// - yesLabel  (e.g. "Hire/fire staff")  -> onYes
+// - noLabel   (e.g. "Assign without hiring/firing") -> onNo
+// - "Cancel"  -> onCancel (does nothing further)
+function confirmDialog(lines: string[], yesLabel: string, onYes: () => void, noLabel: string,
+	onNo: () => void, onCancel?: () => void): void {
 	closeConfirm();
 	confirmYesCb = onYes;
 	confirmNoCb = onNo;
+	confirmCancelCb = onCancel || null;
 	const widgets: WidgetDesc[] = [];
 	for (let i = 0; i < lines.length; i++) {
 		widgets.push({ type: "label", x: 12, y: 22 + i * 13, width: 296, height: 12, text: lines[i] });
 	}
 	const by = 26 + lines.length * 13;
 	widgets.push({
-		type: "button", x: 24, y: by, width: 130, height: 18, text: yesLabel || "Yes",
+		type: "button", x: 12, y: by, width: 296, height: 18, text: yesLabel || "Yes",
 		onClick: function () { const f = confirmYesCb; closeConfirm(); if (f) { f(); } }
 	});
 	widgets.push({
-		type: "button", x: 166, y: by, width: 130, height: 18, text: "Cancel",
+		type: "button", x: 12, y: by + 22, width: 296, height: 18, text: noLabel || "No",
 		onClick: function () { const f = confirmNoCb; closeConfirm(); if (f) { f(); } }
 	});
-	ui.openWindow({
+	widgets.push({
+		type: "button", x: 12, y: by + 44, width: 296, height: 18, text: "Cancel",
+		onClick: function () { const f = confirmCancelCb; closeConfirm(); if (f) { f(); } }
+	});
+	const dialogWidth = 320;
+	const dialogHeight = by + 70;
+	// Centre the dialog over the main plugin window (falls back to the
+	// default OpenRCT2 placement if the main window isn't open).
+	const main = ui.getWindow(WINDOW_TAG);
+	const winDesc: WindowDesc = {
 		classification: CONFIRM_TAG,
-		width: 320, height: by + 28,
+		width: dialogWidth, height: dialogHeight,
 		title: "Staff Manager",
 		colours: [24, 24],
 		widgets: widgets
-	});
+	};
+	if (main) {
+		winDesc.x = Math.round(main.x + (main.width - dialogWidth) / 2);
+		winDesc.y = Math.round(main.y + (main.height - dialogHeight) / 2);
+	}
+	ui.openWindow(winDesc);
 }
 
 // --- Inspection interval (chunked) -----------------------------------------
@@ -537,10 +566,11 @@ function assignMechanicsWithHire(): void {
 			"Covering all ride exits needs " + staffWord("mechanic", exits) + ",",
 			"but only " + have + " exist.",
 			"Hire " + staffWord("mechanic", deficit) + "?"
-		], "Hire " + staffWord("mechanic", deficit),
+		], "Hire/fire staff",
 		function () {
 			hireStaff("mechanic", deficit, function () { assignMechanicsReport(); });
-		}, function () { assignMechanicsReport(); });
+		}, "Assign without hiring/firing",
+		function () { assignMechanicsReport(); });
 	} else if (exits < have) {
 		// Only non-busy mechanics can actually be fired.
 		const fireable = allMechanics().filter(function (m) { return !mechanicIsBusy(m); }).length;
@@ -552,10 +582,11 @@ function assignMechanicsWithHire(): void {
 				"Only " + staffWord("mechanic", exits) + " needed for the exits,",
 				"but " + have + " exist.",
 				"Fire " + staffWord("mechanic", surplus) + " (newest, non-busy first)?"
-			], "Fire " + staffWord("mechanic", surplus),
+			], "Hire/fire staff",
 			function () {
 				fireStaff("mechanic", surplus, function () { assignMechanicsReport(); });
-			}, function () { assignMechanicsReport(); });
+			}, "Assign without hiring/firing",
+			function () { assignMechanicsReport(); });
 		}
 	} else {
 		assignMechanicsReport();
@@ -898,8 +929,15 @@ function tilesForKind(kind: StaffKind): ScanTile[] {
 // How many staff of a kind a full assignment needs for the given tile count.
 function neededForKind(kind: StaffKind, tileCount: number): number {
 	if (kind === "entertainer") {
-		// Mascots: density = tiles-per-mascot (queue or path mode).
-		return Math.ceil(tileCount / mascotTilesPer());
+		// Mascots: density = tiles-per-mascot (queue or path mode), with
+		// `mascotsPerArea` mascots sharing/overlapping each area of that size.
+		// Must mirror the area/capacity math in assignMascots() so the
+		// displayed "Needed" count matches what actually gets assigned.
+		const tilesPer = mascotTilesPer();
+		const perArea = Math.max(1, getMascotPerArea());
+		const areaSize = Math.max(1, tilesPer * perArea);
+		const numAreas = Math.ceil(tileCount / areaSize);
+		return numAreas * perArea;
 	}
 	return Math.ceil(tileCount / Math.max(1, getPer(kind)));
 }
@@ -1042,10 +1080,11 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 				"Full coverage needs " + staffWord(kind, need) + ",",
 				"but only " + have + " available.",
 				"Hire " + staffWord(kind, deficit) + "?"
-			], "Hire " + staffWord(kind, deficit),
+			], "Hire/fire staff",
 			function () {
 				hireStaff(kind, deficit, function () { doPathAssign(kind, niceName, tiles); });
-			}, function () {
+			}, "Assign without hiring/firing",
+			function () {
 				doPathAssign(kind, niceName, tiles);
 			});
 		} else if (need < have) {
@@ -1054,10 +1093,11 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 				"Coverage needs only " + staffWord(kind, need) + ",",
 				"but " + have + " are available.",
 				"Fire " + staffWord(kind, surplus) + " (newest first)?"
-			], "Fire " + staffWord(kind, surplus),
+			], "Hire/fire staff",
 			function () {
 				fireStaff(kind, surplus, function () { doPathAssign(kind, niceName, tiles); });
-			}, function () {
+			}, "Assign without hiring/firing",
+			function () {
 				doPathAssign(kind, niceName, tiles);
 			});
 		} else {
@@ -1390,7 +1430,11 @@ function openWindow(): void {
 		},
 		widgets: widgets
 	});
-	refreshWindow();
+	// Calculate the initial Needed/Hired numbers right away instead of
+	// waiting for the user to press "Recalculate needed".
+	ensureScan(false, function () {
+		refreshWindow();
+	});
 }
 
 // --- Main ------------------------------------------------------------------
