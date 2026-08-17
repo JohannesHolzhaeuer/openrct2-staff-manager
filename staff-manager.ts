@@ -1190,7 +1190,12 @@ function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 		const areaUsed: { [index: number]: boolean } = {};
 		const lastArea = getLastArea();
 		const counts: AssignCounts = { fresh: 0, moved: 0 };
-		const placements = Math.min(mascots.length, numAreas * perArea);
+		// Use the ACTUAL area count, not the pre-partition estimate: partitioning
+		// guarantees at least one area per disconnected queue/component, which can
+		// produce more areas than `numAreas` when several small queues exist. Using
+		// the stale estimate here would cut placements short and leave those small
+		// queues without any mascot.
+		const placements = Math.min(mascots.length, areas.length * perArea);
 
 		let n = 0;
 		function step(): void {
