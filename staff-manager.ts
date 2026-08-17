@@ -92,12 +92,43 @@ function assignSummary(counts: AssignCounts): string {
 // mechanic 3 = inspect(2)+fix(1).
 const STAFF_ORDERS: { [kind in StaffKind]: number } = { handyman: 7, mechanic: 3, security: 0, entertainer: 0 };
 
-// Staff-type icon sprite (2618 = SPR_TERRAIN_STAFF, always valid).
-const SPR_STAFF = 2618;
-const STAFF_SPRITE: { [kind in StaffKind]: number } = {
-	handyman: SPR_STAFF, security: SPR_STAFF,
-	entertainer: SPR_STAFF, mechanic: SPR_STAFF
-};
+// Staff-type icon, resolved via the official named-icon API (context.getIcon)
+// instead of a hardcoded raw sprite index, which was unreliable and showed up
+// as a broken/incorrect icon in the GUI. Resolved lazily (not at module load
+// time) since `context` is only guaranteed to be ready once the plugin's
+// main() has been invoked by the host.
+//
+// NOTE: The plugin scripting API only exposes a small, fixed set of named
+// icons (see `IconName` in @openrct2/types) and does not expose the native
+// game's staff-tab sprites (handyman/security/entertainer/mechanic mascots).
+// "patrol" (footprints) is therefore not usable to distinguish staff types;
+// the closest thematically-distinct icons available are used instead.
+let staffSpriteCache: { [kind in StaffKind]: number } | null = null;
+function staffSprite(kind: StaffKind): number {
+	if (!staffSpriteCache) {
+		staffSpriteCache = {
+			handyman: context.getIcon("paintbrush"), security: context.getIcon("no_entry"),
+			entertainer: context.getIcon("music"), mechanic: context.getIcon("mechanic")
+		};
+	}
+	return staffSpriteCache[kind];
+}
+
+// Draws a sprite directly (no button chrome) centred within the given area.
+function makeIconWidget(name: string, x: number, y: number, width: number, height: number,
+	sprite: number, tooltip: string): WidgetDesc {
+	return {
+		type: "custom", name: name, x: x, y: y, width: width, height: height, tooltip: tooltip,
+		onDraw: function (g: GraphicsContext) {
+			const info = g.getImage(sprite);
+			const iw = info ? info.width : 0;
+			const ih = info ? info.height : 0;
+			const dx = Math.floor((width - iw) / 2);
+			const dy = Math.floor((height - ih) / 2);
+			g.image(sprite, dx, dy);
+		}
+	};
+}
 
 const DIR_DELTA = [
 	{ dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 1, dy: 0 }, { dx: 0, dy: -1 }
@@ -1191,12 +1222,7 @@ function makePathSection(pk: PathKindDef, y: number): WidgetDesc[] {
 	const widgets: WidgetDesc[] = [
 		{ type: "groupbox", name: wBox(kind), x: 5, y: y, width: 290,
 		  height: sectionHeight(pk) - 6, text: pk.title },
-		{
-			type: "button", name: wIcon(kind),
-			x: 12, y: y + 16, width: 30, height: 30,
-			image: STAFF_SPRITE[kind], border: true, isDisabled: true,
-			tooltip: pk.title
-		}
+		makeIconWidget(wIcon(kind), 12, y + 16, 30, 30, staffSprite(kind), pk.title)
 	];
 
 	let yStatus: number, yBtn: number;
@@ -1305,12 +1331,7 @@ function openWindow(): void {
 	const mcw = 290 - CONTENT_X - RIGHT_PAD + 5;
 	widgets = widgets.concat([
 		{ type: "groupbox", name: W_GB_M, x: 5, y: my, width: 290, height: 150, text: "Mechanics" },
-		{
-			type: "button", name: wIcon("mechanic"),
-			x: 12, y: my + 16, width: 30, height: 30,
-			image: STAFF_SPRITE.mechanic, border: true, isDisabled: true,
-			tooltip: "Mechanics"
-		},
+		makeIconWidget(wIcon("mechanic"), 12, my + 16, 30, 30, staffSprite("mechanic"), "Mechanics"),
 		{ type: "label", x: CONTENT_X, y: my + 18, width: 60, height: 12, text: "Inspect:" },
 		{
 			type: "dropdown", name: W_INSPECT,
