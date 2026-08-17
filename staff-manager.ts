@@ -150,6 +150,25 @@ function setAutoKind(kind: StaffKind, v: boolean): void { store().set("auto_" + 
 function anyAutoPath(): boolean {
 	return getAutoKind("handyman") || getAutoKind("security") || getAutoKind("entertainer");
 }
+// True if EVERY staff type (all path-staff kinds + mechanics) has auto enabled.
+function allAutoEnabled(): boolean {
+	return getAutoKind("handyman") && getAutoKind("security") && getAutoKind("entertainer") && getAuto();
+}
+// Enable/disable auto mode for all staff types (path-staff kinds + mechanics) at once.
+function setAllAuto(v: boolean): void {
+	PATH_KINDS.forEach(function (pk) { setAutoKind(pk.kind, v); });
+	setAuto(v);
+	if (v) {
+		scheduleAutoPath();
+		scheduleAutoMech();
+	}
+}
+// Assign every staff type now (mechanics + all path-staff kinds), each
+// offering to hire/fire as needed via their usual confirmation dialogs.
+function assignAllNow(): void {
+	PATH_KINDS.forEach(function (pk) { assignPathStaff(pk.kind, pk.nice); });
+	assignMechanicsWithHire();
+}
 function getAssignments(): { [key: string]: number } { return store().get("assignments", {}); }
 function setAssignments(v: { [key: string]: number }): void { store().set("assignments", v); }
 function getPer(kind: StaffKind): number { return store().get("per_" + kind, defaultPer(kind)); }
@@ -597,9 +616,27 @@ function assignMechanicsWithHire(): void {
 // Silently right-sizes the mechanic workforce (hire missing / fire surplus,
 // newest & non-busy first) then assigns. No dialogs on the auto path.
 let autoBusy = false;   // re-entrancy guard: our own hire/fire retrigger this
+// Debounce token for mechanics-auto, mirroring the path-auto debounce below.
+// This coalesces bursts of trigger actions into a single run instead of
+// stacking overlapping autoRightSizeAndAssign() calls.
+let autoMechToken = 0;
+const AUTO_MECH_DEBOUNCE_MS = 250;
+
+function scheduleAutoMech(): void {
+	autoMechToken++;
+	const myToken = autoMechToken;
+	context.setTimeout(function () {
+		if (myToken !== autoMechToken) { return; }   // superseded by a newer trigger
+		autoRightSizeAndAssign();
+	}, AUTO_MECH_DEBOUNCE_MS);
+}
 
 function autoRightSizeAndAssign(): void {
-	if (autoBusy) { return; }
+	// Guard against both our own mechanics hire/fire AND the path-staff auto's
+	// hire/fire (staffhire/stafffire actions are shared triggers for both
+	// subsystems; without checking autoPathBusy too, the two auto systems can
+	// endlessly re-trigger each other and freeze the game).
+	if (autoBusy || autoPathBusy) { return; }
 	const exits = allExits().length;
 	const have = allMechanics().length;
 
@@ -647,7 +684,7 @@ function scheduleAutoPath(): void {
 }
 
 function autoPathRun(): void {
-	if (autoPathBusy || busy) {
+	if (autoPathBusy || autoBusy || busy) {
 		// Something is scanning/working; try again shortly.
 		scheduleAutoPath();
 		return;
@@ -700,17 +737,20 @@ function startAuto(): void {
 	autoSub = context.subscribe("action.execute", function (e) {
 		if (network.mode === "client") { return; }
 
-		// --- Mechanics auto (immediate) ---
+		// --- Mechanics auto (debounced) ---
 		if (getAuto() && TRIGGER_ACTIONS[e.action]) {
-			if (!(autoBusy && (e.action === "staffhire" || e.action === "stafffire"))) {
-				context.setTimeout(function () { autoRightSizeAndAssign(); }, 10);
+			// Ignore our own hire/fire AND the path-staff auto's hire/fire, to
+			// avoid the two auto systems endlessly re-triggering each other.
+			if (!((autoBusy || autoPathBusy) && (e.action === "staffhire" || e.action === "stafffire"))) {
+				scheduleAutoMech();
 			}
 		}
 
 		// --- Path staff auto (debounced) ---
 		if (anyAutoPath() && PATH_TRIGGER_ACTIONS[e.action]) {
-			// Ignore our own hire/fire actions to avoid a loop.
-			if (autoPathBusy && (e.action === "staffhire" || e.action === "stafffire")) { return; }
+			// Ignore our own hire/fire AND the mechanics auto's hire/fire, to
+			// avoid the two auto systems endlessly re-triggering each other.
+			if ((autoPathBusy || autoBusy) && (e.action === "staffhire" || e.action === "stafffire")) { return; }
 			scheduleAutoPath();
 		}
 	});
@@ -931,12 +971,13 @@ function neededForKind(kind: StaffKind, tileCount: number): number {
 	if (kind === "entertainer") {
 		// Mascots: density = tiles-per-mascot (queue or path mode), with
 		// `mascotsPerArea` mascots sharing/overlapping each area of that size.
-		// Must mirror the area/capacity math in assignMascots() so the
+		// Areas are sized by tilesPer alone; mascotsPerArea then multiplies the
+		// mascot count per area (it must NOT also inflate the area size, or the
+		// multiplier cancels itself out). Must mirror assignMascots() so the
 		// displayed "Needed" count matches what actually gets assigned.
 		const tilesPer = mascotTilesPer();
 		const perArea = Math.max(1, getMascotPerArea());
-		const areaSize = Math.max(1, tilesPer * perArea);
-		const numAreas = Math.ceil(tileCount / areaSize);
+		const numAreas = Math.ceil(tileCount / tilesPer);
 		return numAreas * perArea;
 	}
 	return Math.ceil(tileCount / Math.max(1, getPer(kind)));
@@ -954,7 +995,7 @@ function assignMascots(tiles: ScanTile[]): void {
 	}
 	const tilesPer = mascotTilesPer();
 	const perArea = Math.max(1, getMascotPerArea());
-	const areaSize = Math.max(1, tilesPer * perArea);
+	const areaSize = Math.max(1, tilesPer);
 	const numAreas = Math.ceil(tiles.length / areaSize);
 	const areas = partition(tiles, numAreas);
 
@@ -1156,6 +1197,12 @@ const W_GB_M = "smp_gb_m";
 const W_BTN_APPLY = "smp_btn_ap";
 const W_BTN_ASSIGN_M = "smp_btn_am";
 const W_BTN_RECALC_M = "smp_btn_recalc_m";
+const W_BTN_ASSIGN_ALL = "smp_btn_assign_all";
+const W_BTN_AUTO_ALL = "smp_btn_auto_all";
+
+function autoAllLabel(): string {
+	return allAutoEnabled() ? "Deactivate automatic mode for all" : "Activate automatic mode for all";
+}
 
 function perLabelText(kind: StaffKind): string { return "Path tiles per staff: " + getPer(kind); }
 
@@ -1219,6 +1266,8 @@ function refreshWindow(): void {
 		const au = w.findWidget<CheckboxWidget>(wAuto(pk.kind));
 		if (au) { au.isChecked = getAutoKind(pk.kind); }
 	});
+	const autoAllBtn = w.findWidget<ButtonWidget>(W_BTN_AUTO_ALL);
+	if (autoAllBtn) { autoAllBtn.text = autoAllLabel(); }
 }
 
 function stretch(w: Window, name: string, width: number): void {
@@ -1245,7 +1294,7 @@ function reflow(w: Window): void {
 	stretch(w, W_M_PPER, cw);
 	stretch(w, W_M_PERAREA, cw);
 	stretch(w, W_GB_M, w.width - 10);
-	[W_BTN_APPLY, W_BTN_ASSIGN_M, W_BTN_RECALC_M, W_AUTO, W_MSTATUS].forEach(function (n) {
+	[W_BTN_APPLY, W_BTN_ASSIGN_M, W_BTN_RECALC_M, W_AUTO, W_MSTATUS, W_BTN_ASSIGN_ALL, W_BTN_AUTO_ALL].forEach(function (n) {
 		stretch(w, n, full);
 	});
 	const dd = w.findWidget<DropdownWidget>(W_INSPECT);
@@ -1359,8 +1408,23 @@ function openWindow(): void {
 	const existing = ui.getWindow(WINDOW_TAG);
 	if (existing) { existing.bringToFront(); return; }
 
-	let widgets: WidgetDesc[] = [];
-	let y = 18;
+	let widgets: WidgetDesc[] = [
+		{
+			type: "button", name: W_BTN_ASSIGN_ALL,
+			x: 10, y: 18, width: 280, height: 18,
+			text: "Assign all",
+			tooltip: "Assign mechanics and all path-staff types now (offers to hire/fire as needed)",
+			onClick: function () { assignAllNow(); }
+		},
+		{
+			type: "button", name: W_BTN_AUTO_ALL,
+			x: 10, y: 38, width: 280, height: 18,
+			text: autoAllLabel(),
+			tooltip: "Toggle automatic hire/fire + assign for mechanics and all path-staff types",
+			onClick: function () { setAllAuto(!allAutoEnabled()); refreshWindow(); }
+		}
+	];
+	let y = 62;
 	PATH_KINDS.forEach(function (pk) {
 		widgets = widgets.concat(makePathSection(pk, y));
 		y += sectionHeight(pk) + 6;
