@@ -1,18 +1,21 @@
 <Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.5984942">
   <PropertyGroup>
-	<StartupCommand>npm run build</StartupCommand>
-	<JavaScriptTestRoot>.\</JavaScriptTestRoot>
-	<JavaScriptTestFramework>Jasmine</JavaScriptTestFramework>
-	<!-- Allows the build (F6/Ctrl+Shift+B) command to execute npm run build -->
-	<ShouldRunBuildScript>true</ShouldRunBuildScript>
-	<BuildScript>build</BuildScript>
+    <StartupCommand>npm run build</StartupCommand>
+    <JavaScriptTestRoot>.\</JavaScriptTestRoot>
+    <JavaScriptTestFramework>Jasmine</JavaScriptTestFramework>
+    <!-- Allows the build (F6/Ctrl+Shift+B) command to execute npm run build -->
+    <ShouldRunBuildScript>true</ShouldRunBuildScript>
+    <BuildScript>build</BuildScript>
   </PropertyGroup>
   <ItemGroup>
-	<Content Include="staff-manager.ts" />
-	<Content Include="deploy.js" />
-	<Content Include="tsconfig.json" />
-	<Content Include="package.json" />
-	<Content Include="README.md" />
-	<Content Include="openrct2.d.ts" />
+    <Content Include="staff-manager.ts" />
+    <Content Include="deploy.js" />
+    <Content Include="tsconfig.json" />
+    <Content Include="package.json" />
+    <Content Include="README.md" />
+    <Content Include="openrct2.d.ts" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include=".github\workflows\release.yml" />
   </ItemGroup>
 </Project>
