@@ -373,7 +373,7 @@ function closeConfirm(): void {
 }
 
 // Three-way confirmation dialog:
-// - yesLabel  (e.g. "Hire/fire staff")  -> onYes
+// - yesLabel  (e.g. "Hire 3 handymen" / "Fire 2 mechanics")  -> onYes
 // - noLabel   (e.g. "Assign without hiring/firing") -> onNo
 // - "Cancel"  -> onCancel (does nothing further)
 function confirmDialog(lines: string[], yesLabel: string, onYes: () => void, noLabel: string,
@@ -566,7 +566,7 @@ function assignMechanicsWithHire(): void {
 			"Covering all ride exits needs " + staffWord("mechanic", exits) + ",",
 			"but only " + have + " exist.",
 			"Hire " + staffWord("mechanic", deficit) + "?"
-		], "Hire/fire staff",
+		], "Hire " + staffWord("mechanic", deficit),
 		function () {
 			hireStaff("mechanic", deficit, function () { assignMechanicsReport(); });
 		}, "Assign without hiring/firing",
@@ -582,7 +582,7 @@ function assignMechanicsWithHire(): void {
 				"Only " + staffWord("mechanic", exits) + " needed for the exits,",
 				"but " + have + " exist.",
 				"Fire " + staffWord("mechanic", surplus) + " (newest, non-busy first)?"
-			], "Hire/fire staff",
+			], "Fire " + staffWord("mechanic", surplus),
 			function () {
 				fireStaff("mechanic", surplus, function () { assignMechanicsReport(); });
 			}, "Assign without hiring/firing",
@@ -1080,7 +1080,7 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 				"Full coverage needs " + staffWord(kind, need) + ",",
 				"but only " + have + " available.",
 				"Hire " + staffWord(kind, deficit) + "?"
-			], "Hire/fire staff",
+			], "Hire " + staffWord(kind, deficit),
 			function () {
 				hireStaff(kind, deficit, function () { doPathAssign(kind, niceName, tiles); });
 			}, "Assign without hiring/firing",
@@ -1093,7 +1093,7 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 				"Coverage needs only " + staffWord(kind, need) + ",",
 				"but " + have + " are available.",
 				"Fire " + staffWord(kind, surplus) + " (newest first)?"
-			], "Hire/fire staff",
+			], "Fire " + staffWord(kind, surplus),
 			function () {
 				fireStaff(kind, surplus, function () { doPathAssign(kind, niceName, tiles); });
 			}, "Assign without hiring/firing",
