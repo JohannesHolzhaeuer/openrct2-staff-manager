@@ -8,14 +8,35 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const SOURCE_FILE = path.join(__dirname, "dist", "staff-manager.js");
+
+// On Windows, "Documents" can be redirected (e.g. by OneDrive) away from
+// %USERPROFILE%\Documents. Ask the registry for the real "Personal" shell
+// folder instead of assuming the default path.
+function windowsDocumentsDir() {
+	try {
+		const output = execFileSync(
+			"reg",
+			["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders", "/v", "Personal"],
+			{ encoding: "utf8" }
+		);
+		const match = output.match(/Personal\s+REG_(?:EXPAND_)?SZ\s+(.+)/);
+		if (match) {
+			return path.normalize(match[1].trim().replace(/%USERPROFILE%/i, os.homedir()));
+		}
+	} catch (e) {
+		// Fall through to the default below.
+	}
+	return path.join(os.homedir(), "Documents");
+}
 
 function defaultPluginDir() {
 	const home = os.homedir();
 	switch (process.platform) {
 		case "win32":
-			return path.join(home, "Documents", "OpenRCT2", "plugin");
+			return path.join(windowsDocumentsDir(), "OpenRCT2", "plugin");
 		case "darwin":
 			return path.join(home, "Library", "Application Support", "OpenRCT2", "plugin");
 		default:
