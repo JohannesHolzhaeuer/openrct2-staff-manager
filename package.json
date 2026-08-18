@@ -6,12 +6,16 @@
   "license": "MIT",
   "author": "Johannes",
   "scripts": {
-    "build": "tsc && node deploy.js",
-    "watch": "tsc --watch"
+    "build": "tsc --noEmit && esbuild staff-manager.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2017 && node deploy.js",
+    "watch": "esbuild staff-manager.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2017 --watch"
   },
   "devDependencies": {
     "@openrct2/types": "^0.5.4",
+    "esbuild": "^0.28.2",
     "eslint": "^10.8.1",
     "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "openrct2-flexui": "^0.1.0-prerelease.0"
   }
 }

@@ -2,7 +2,8 @@
   "compilerOptions": {
     "target": "ES2017",
     "lib": ["ES2017"],
-    "module": "None",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "outDir": "dist",
     "rootDir": ".",
     "strict": true,

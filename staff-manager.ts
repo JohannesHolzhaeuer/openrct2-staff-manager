@@ -1,4 +1,8 @@
 /// <reference path="node_modules/@openrct2/types/openrct2.d.ts" />
+import {
+	window as flexWindow, box, horizontal, vertical, label, button, spinner, toggle, dropdown,
+	store as flexStore, compute as flexCompute, WindowTemplate, WidgetCreator, FlexiblePosition, Store
+} from "openrct2-flexui";
 /*****************************************************************************
  * Staff Manager
  * ---------------------------------------------------------------------------
@@ -115,19 +119,8 @@ function staffSprite(kind: StaffKind): number {
 }
 
 // Draws a sprite directly (no button chrome) centred within the given area.
-function makeIconWidget(name: string, x: number, y: number, width: number, height: number,
-	sprite: number, tooltip: string): WidgetDesc {
-	return {
-		type: "custom", name: name, x: x, y: y, width: width, height: height, tooltip: tooltip,
-		onDraw: function (g: GraphicsContext) {
-			const info = g.getImage(sprite);
-			const iw = info ? info.width : 0;
-			const ih = info ? info.height : 0;
-			const dx = Math.floor((width - iw) / 2);
-			const dy = Math.floor((height - ih) / 2);
-			g.image(sprite, dx, dy);
-		}
-	};
+function makeIconWidget(width: number, height: number, sprite: number, tooltip: string): WidgetCreator<FlexiblePosition> {
+	return button({ image: sprite, border: false, width: width, height: height, tooltip: tooltip });
 }
 
 const DIR_DELTA = [
@@ -424,14 +417,10 @@ function fireStaff(kind: StaffKind, count: number, onDone?: (fired: number) => v
 }
 
 // --- Confirm dialog (small Yes/No/Cancel window) ---------------------------
-const CONFIRM_TAG = "smp_confirm";
-let confirmYesCb: (() => void) | null = null;
-let confirmNoCb: (() => void) | null = null;
-let confirmCancelCb: (() => void) | null = null;
+let confirmTemplate: WindowTemplate | null = null;
 
 function closeConfirm(): void {
-	const w = ui.getWindow(CONFIRM_TAG);
-	if (w) { w.close(); }
+	if (confirmTemplate) { confirmTemplate.close(); }
 }
 
 // Three-way confirmation dialog:
@@ -441,43 +430,30 @@ function closeConfirm(): void {
 function confirmDialog(lines: string[], yesLabel: string, onYes: () => void, noLabel: string,
 	onNo: () => void, onCancel?: () => void): void {
 	closeConfirm();
-	confirmYesCb = onYes;
-	confirmNoCb = onNo;
-	confirmCancelCb = onCancel || null;
-	const widgets: WidgetDesc[] = [];
-	for (let i = 0; i < lines.length; i++) {
-		widgets.push({ type: "label", x: 12, y: 22 + i * 13, width: 296, height: 12, text: lines[i] });
-	}
-	const by = 26 + lines.length * 13;
-	widgets.push({
-		type: "button", x: 12, y: by, width: 296, height: 18, text: yesLabel || "Yes",
-		onClick: function () { const f = confirmYesCb; closeConfirm(); if (f) { f(); } }
+	const content: WidgetCreator<FlexiblePosition>[] = lines.map(function (line) {
+		return label({ text: line, height: 12 });
 	});
-	widgets.push({
-		type: "button", x: 12, y: by + 22, width: 296, height: 18, text: noLabel || "No",
-		onClick: function () { const f = confirmNoCb; closeConfirm(); if (f) { f(); } }
-	});
-	widgets.push({
-		type: "button", x: 12, y: by + 44, width: 296, height: 18, text: "Cancel",
-		onClick: function () { const f = confirmCancelCb; closeConfirm(); if (f) { f(); } }
-	});
-	const dialogWidth = 320;
-	const dialogHeight = by + 70;
-	// Centre the dialog over the main plugin window (falls back to the
-	// default OpenRCT2 placement if the main window isn't open).
-	const main = ui.getWindow(WINDOW_TAG);
-	const winDesc: WindowDesc = {
-		classification: CONFIRM_TAG,
-		width: dialogWidth, height: dialogHeight,
+	content.push(button({
+		text: yesLabel || "Yes", height: 18,
+		onClick: function () { closeConfirm(); onYes(); }
+	}));
+	content.push(button({
+		text: noLabel || "No", height: 18,
+		onClick: function () { closeConfirm(); onNo(); }
+	}));
+	content.push(button({
+		text: "Cancel", height: 18,
+		onClick: function () { closeConfirm(); if (onCancel) { onCancel(); } }
+	}));
+	const dialogHeight = 30 + lines.length * 16 + 3 * 22;
+	confirmTemplate = flexWindow({
 		title: "Staff Manager",
+		width: 320, height: dialogHeight,
 		colours: [24, 24],
-		widgets: widgets
-	};
-	if (main) {
-		winDesc.x = Math.round(main.x + (main.width - dialogWidth) / 2);
-		winDesc.y = Math.round(main.y + (main.height - dialogHeight) / 2);
-	}
-	ui.openWindow(winDesc);
+		spacing: 4,
+		content: content
+	});
+	confirmTemplate.open();
 }
 
 // --- Inspection interval (chunked) -----------------------------------------
@@ -1500,50 +1476,58 @@ function recalcPathNeeded(kind: StaffKind, niceName: string): void {
 }
 
 // --- GUI -------------------------------------------------------------------
-const WINDOW_TAG = "smp_window";
-const PROGRESS_TAG = "smp_progress";
-const W_PROG_BAR = "smp_prog_bar";
-const W_PROG_LABEL = "smp_prog_label";
 let teleportProgress = 0;   // 0..100 for the teleport progress window
 let teleportTotal = 0;
 let teleportLabel = "";
 let teleportActive = false;
 
+const progressLabelStore: Store<string> = flexStore("");
+const progressPercentStore: Store<number> = flexStore(0);
+const progressBarTextStore: Store<string> = flexCompute(progressPercentStore, function (pct) {
+	const totalTicks = 24;
+	const filled = Math.max(0, Math.min(totalTicks, Math.round((pct / 100) * totalTicks)));
+	return "[" + repeatChar("=", filled) + repeatChar(".", totalTicks - filled) + "] " + pct + "%";
+});
+
+function repeatChar(ch: string, count: number): string {
+	let s = "";
+	for (let i = 0; i < count; i++) { s += ch; }
+	return s;
+}
+
+let progressTemplate: WindowTemplate | null = null;
+
+function progressWindowTemplate(): WindowTemplate {
+	if (!progressTemplate) {
+		progressTemplate = flexWindow({
+			title: "Moving staff",
+			width: 260, height: 70,
+			minWidth: 260, maxWidth: 260, minHeight: 70, maxHeight: 70,
+			colours: [24, 24],
+			spacing: 4,
+			content: [
+				label({ text: progressLabelStore, height: 12, alignment: "centred" }),
+				label({ text: progressBarTextStore, height: 16, alignment: "centred" })
+			]
+		});
+	}
+	return progressTemplate;
+}
+
 function openProgressWindow(): void {
-	if (ui.getWindow(PROGRESS_TAG)) { return; }
-	ui.openWindow({
-		classification: PROGRESS_TAG,
-		x: 200, y: 200, width: 260, height: 70,
-		minWidth: 260, maxWidth: 260, minHeight: 70, maxHeight: 70,
-		title: "Moving staff",
-		colours: [24, 24],
-		widgets: [
-			{ type: "custom", name: W_PROG_BAR, x: 10, y: 40, width: 240, height: 16, tooltip: "",
-			  onDraw: function (g: GraphicsContext) {
-				g.colour = 23;
-				g.box(0, 0, 240, 16);
-				g.fill = 15;
-				g.rect(2, 2, Math.floor((240 - 4) * (teleportProgress / 100)), 12);
-			  } },
-			{ type: "label", name: W_PROG_LABEL, x: 10, y: 22, width: 240, height: 12,
-			  text: teleportLabel, textAlign: "centred" }
-		]
-	});
+	progressWindowTemplate().open();
 }
 
 function updateProgressWindow(pct: number, label: string): void {
 	teleportProgress = pct;
 	teleportLabel = label;
-	const w = ui.getWindow(PROGRESS_TAG);
-	if (!w) { return; }
-	const lb = w.findWidget<LabelWidget>(W_PROG_LABEL);
-	if (lb) { lb.text = label; }
+	progressPercentStore.set(pct);
+	progressLabelStore.set(label);
 }
 
 function closeProgressWindow(): void {
 	teleportActive = false;
-	const w = ui.getWindow(PROGRESS_TAG);
-	if (w) { w.close(); }
+	if (progressTemplate) { progressTemplate.close(); }
 }
 
 
@@ -1559,40 +1543,9 @@ const PATH_KINDS: PathKindDef[] = [
 	{ kind: "entertainer", nice: "mascots",   title: "Mascots (entertainers)" }
 ];
 
-function wPer(kind: StaffKind): string    { return "smp_per_" + kind; }
-function wStatus(kind: StaffKind): string { return "smp_st_" + kind; }
-function wBtn(kind: StaffKind): string    { return "smp_btn_" + kind; }
-function wRecalc(kind: StaffKind): string { return "smp_recalc_" + kind; }
-function wBox(kind: StaffKind): string    { return "smp_box_" + kind; }
-function wIcon(kind: StaffKind): string   { return "smp_icon_" + kind; }
-function wAuto(kind: StaffKind): string { return "smp_auto_" + kind; }
-function wReset(kind: StaffKind): string { return "smp_reset_" + kind; }
-
-const CONTENT_X = 44;
-const RIGHT_PAD = 10;
-
-const W_M_QUEUES = "smp_m_queues";
-const W_M_QPER = "smp_m_qper";
-const W_M_PPER = "smp_m_pper";
-const W_M_PERAREA = "smp_m_perarea";
-
-const W_INSPECT = "smp_inspect";
-const W_AUTO = "smp_auto";
-const W_MSTATUS = "smp_mstatus";
-const W_GB_M = "smp_gb_m";
-const W_BTN_APPLY = "smp_btn_ap";
-const W_BTN_ASSIGN_M = "smp_btn_am";
-const W_BTN_RECALC_M = "smp_btn_recalc_m";
-const W_BTN_ASSIGN_ALL = "smp_btn_assign_all";
-const W_BTN_AUTO_ALL = "smp_btn_auto_all";
-const W_BTN_RESET_ALL = "smp_btn_reset_all";
-const W_BTN_RESET_M = "smp_btn_reset_m";
-
 function autoAllLabel(): string {
 	return allAutoEnabled() ? "Deactivate automatic mode for all" : "Activate automatic mode for all";
 }
-
-function perLabelText(kind: StaffKind): string { return "Path tiles per staff: " + getPer(kind); }
 
 function pathStatusText(kind: StaffKind, nice: string): string {
 	if (scanProgress >= 0) { return "Scanning map... " + scanProgress + "%"; }
@@ -1630,283 +1583,203 @@ function mechStatusText(): string {
 		   "  |  Auto: " + (getAuto() ? "ON" : "OFF");
 }
 
+const statusStore: { [kind in StaffKind]: Store<string> } = {
+	handyman: flexStore(""), security: flexStore(""), entertainer: flexStore(""), mechanic: flexStore("")
+};
+const perStore: { handyman: Store<number>; security: Store<number> } = {
+	handyman: flexStore(getPer("handyman")),
+	security: flexStore(getPer("security"))
+};
+const autoKindStore: { [kind in StaffKind]: Store<boolean> } = {
+	handyman: flexStore(false), security: flexStore(false), entertainer: flexStore(false), mechanic: flexStore(false)
+};
+const mascotQueuesStore: Store<boolean> = flexStore(getMascotQueues());
+const mascotQueuePerStore: Store<number> = flexStore(getMascotQueuePer());
+const mascotPathPerStore: Store<number> = flexStore(getMascotPathPer());
+const mascotPerAreaStore: Store<number> = flexStore(getMascotPerArea());
+const inspectIndexStore: Store<number> = flexStore(getInspection());
+const mechStatusStore: Store<string> = flexStore("");
+const autoAllLabelStore: Store<string> = flexStore(autoAllLabel());
+
 function refreshWindow(): void {
-	const w = ui.getWindow(WINDOW_TAG);
-	if (!w) { return; }
 	PATH_KINDS.forEach(function (pk) {
-		const per = w.findWidget<SpinnerWidget>(wPer(pk.kind));
-		if (per) { per.text = perLabelText(pk.kind); }
-		const st = w.findWidget<LabelWidget>(wStatus(pk.kind));
-		if (st) { st.text = pathStatusText(pk.kind, pk.nice); }
+		statusStore[pk.kind].set(pathStatusText(pk.kind, pk.nice));
+		autoKindStore[pk.kind].set(getAutoKind(pk.kind));
 	});
-	const qz = w.findWidget<CheckboxWidget>(W_M_QUEUES);
-	if (qz) { qz.isChecked = getMascotQueues(); }
-	const qp = w.findWidget<SpinnerWidget>(W_M_QPER);
-	if (qp) { qp.text = "Queue tiles/mascot: " + getMascotQueuePer(); }
-	const pp = w.findWidget<SpinnerWidget>(W_M_PPER);
-	if (pp) { pp.text = "Path tiles/mascot: " + getMascotPathPer(); }
-	const pa = w.findWidget<SpinnerWidget>(W_M_PERAREA);
-	if (pa) { pa.text = "Mascots per area: " + getMascotPerArea(); }
-	const ms = w.findWidget<LabelWidget>(W_MSTATUS);
-	if (ms) { ms.text = mechStatusText(); }
-	const a = w.findWidget<CheckboxWidget>(W_AUTO);
-	if (a) { a.isChecked = getAuto(); }
-	PATH_KINDS.forEach(function (pk) {
-		const au = w.findWidget<CheckboxWidget>(wAuto(pk.kind));
-		if (au) { au.isChecked = getAutoKind(pk.kind); }
-	});
-	const autoAllBtn = w.findWidget<ButtonWidget>(W_BTN_AUTO_ALL);
-	if (autoAllBtn) { autoAllBtn.text = autoAllLabel(); }
+	perStore.handyman.set(getPer("handyman"));
+	perStore.security.set(getPer("security"));
+	mascotQueuesStore.set(getMascotQueues());
+	mascotQueuePerStore.set(getMascotQueuePer());
+	mascotPathPerStore.set(getMascotPathPer());
+	mascotPerAreaStore.set(getMascotPerArea());
+	inspectIndexStore.set(getInspection());
+	mechStatusStore.set(mechStatusText());
+	autoKindStore.mechanic.set(getAuto());
+	autoAllLabelStore.set(autoAllLabel());
 }
 
-function stretch(w: Window, name: string, width: number): void {
-	const wi = w.findWidget<Widget>(name);
-	if (wi) { wi.width = width; }
-}
-
-let lastReflowW = -1;
-function reflow(w: Window): void {
-	if (w.width === lastReflowW) { return; }
-	lastReflowW = w.width;
-	const full = w.width - 20;
-	const cw = w.width - CONTENT_X - RIGHT_PAD;
-	PATH_KINDS.forEach(function (pk) {
-		stretch(w, wBox(pk.kind), w.width - 10);
-		stretch(w, wPer(pk.kind), cw);
-		stretch(w, wStatus(pk.kind), cw);
-		stretch(w, wBtn(pk.kind), full);
-		stretch(w, wRecalc(pk.kind), full);
-		stretch(w, wAuto(pk.kind), full);
-		stretch(w, wReset(pk.kind), full);
-	});
-	stretch(w, W_M_QUEUES, cw);
-	stretch(w, W_M_QPER, cw);
-	stretch(w, W_M_PPER, cw);
-	stretch(w, W_M_PERAREA, cw);
-	stretch(w, W_GB_M, w.width - 10);
-	[W_BTN_APPLY, W_BTN_ASSIGN_M, W_BTN_RECALC_M, W_AUTO, W_MSTATUS, W_BTN_ASSIGN_ALL, W_BTN_AUTO_ALL, W_BTN_RESET_ALL, W_BTN_RESET_M].forEach(function (n) {
-		stretch(w, n, full);
-	});
-	const dd = w.findWidget<DropdownWidget>(W_INSPECT);
-	if (dd) { dd.width = Math.max(80, cw - 72); }
-}
-
-// Section height: mascots have a checkbox + 3 spinners; others one spinner.
-// (+36 for the "Recalculate" and "Reset" button rows.)
-function sectionHeight(pk: PathKindDef): number { return (pk.kind === "entertainer" ? 168 : 88) + 36; }
-
-function makePathSection(pk: PathKindDef, y: number): WidgetDesc[] {
+function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 	const kind = pk.kind;
-	const cw = 290 - CONTENT_X - RIGHT_PAD + 5;
-	const widgets: WidgetDesc[] = [
-		{ type: "groupbox", name: wBox(kind), x: 5, y: y, width: 290,
-		  height: sectionHeight(pk) - 6, text: pk.title },
-		makeIconWidget(wIcon(kind), 12, y + 16, 30, 30, staffSprite(kind), pk.title)
-	];
+	const nice = pk.nice;
+	const icon = makeIconWidget(30, 30, staffSprite(kind), pk.title);
+	const controls: WidgetCreator<FlexiblePosition>[] = [];
 
-	let yStatus: number, yBtn: number;
 	if (kind === "entertainer") {
 		// Mascots: queue toggle + three dedicated density options.
-		widgets.push({
-			type: "checkbox", name: W_M_QUEUES,
-			x: CONTENT_X, y: y + 16, width: cw, height: 12,
-			text: "Assign to queue lines (not paths)",
+		controls.push(toggle({
+			text: "Assign to queue lines (not paths)", height: 14,
 			tooltip: "Place mascots along ride queues to keep queuing guests happy",
-			isChecked: getMascotQueues(),
+			isPressed: mascotQueuesStore,
 			onChange: function (checked) { setMascotQueues(checked); refreshWindow(); }
-		});
-		widgets.push({
-			type: "spinner", name: W_M_QPER,
-			x: CONTENT_X, y: y + 32, width: cw, height: 14,
-			text: "Queue tiles/mascot: " + getMascotQueuePer(),
+		}));
+		controls.push(spinner({
+			value: mascotQueuePerStore, minimum: 1, maximum: 9999, height: 14,
 			tooltip: "Maximum queue tiles each mascot covers (queue mode)",
-			onIncrement: function () { setMascotQueuePer(getMascotQueuePer() + 1); refreshWindow(); },
-			onDecrement: function () { setMascotQueuePer(Math.max(1, getMascotQueuePer() - 1)); refreshWindow(); }
-		});
-		widgets.push({
-			type: "spinner", name: W_M_PPER,
-			x: CONTENT_X, y: y + 48, width: cw, height: 14,
-			text: "Path tiles/mascot: " + getMascotPathPer(),
+			format: function (v) { return "Queue tiles/mascot: " + v; },
+			onChange: function (v) { setMascotQueuePer(Math.max(1, v)); refreshWindow(); }
+		}));
+		controls.push(spinner({
+			value: mascotPathPerStore, minimum: 1, maximum: 9999, height: 14,
 			tooltip: "Path tiles each mascot covers (path mode)",
-			onIncrement: function () { setMascotPathPer(getMascotPathPer() + 1); refreshWindow(); },
-			onDecrement: function () { setMascotPathPer(Math.max(1, getMascotPathPer() - 1)); refreshWindow(); }
-		});
-		widgets.push({
-			type: "spinner", name: W_M_PERAREA,
-			x: CONTENT_X, y: y + 64, width: cw, height: 14,
-			text: "Mascots per area: " + getMascotPerArea(),
+			format: function (v) { return "Path tiles/mascot: " + v; },
+			onChange: function (v) { setMascotPathPer(Math.max(1, v)); refreshWindow(); }
+		}));
+		controls.push(spinner({
+			value: mascotPerAreaStore, minimum: 1, maximum: 9999, height: 14,
 			tooltip: "How many mascots share each area (>1 = overlapping)",
-			onIncrement: function () { setMascotPerArea(getMascotPerArea() + 1); refreshWindow(); },
-			onDecrement: function () { setMascotPerArea(Math.max(1, getMascotPerArea() - 1)); refreshWindow(); }
-		});
-		yStatus = y + 82;
-		yBtn = y + 96;
+			format: function (v) { return "Mascots per area: " + v; },
+			onChange: function (v) { setMascotPerArea(Math.max(1, v)); refreshWindow(); }
+		}));
 	} else {
 		// Handymen / security: single density spinner.
-		widgets.push({
-			type: "spinner", name: wPer(kind),
-			x: CONTENT_X, y: y + 16, width: cw, height: 14,
-			text: perLabelText(kind),
-			tooltip: "Path tiles each " + pk.nice + " member covers",
-			onIncrement: (function (k) { return function () {
-				setPer(k, getPer(k) + 1); refreshWindow();
-			}; })(kind),
-			onDecrement: (function (k) { return function () {
-				setPer(k, Math.max(1, getPer(k) - 1)); refreshWindow();
-			}; })(kind)
-		});
-		yStatus = y + 34;
-		yBtn = y + 48;
+		const perS: Store<number> = kind === "handyman" ? perStore.handyman : perStore.security;
+		controls.push(spinner({
+			value: perS, minimum: 1, maximum: 9999, height: 14,
+			tooltip: "Path tiles each " + nice + " member covers",
+			format: function (v) { return "Path tiles per staff: " + v; },
+			onChange: function (v) { setPer(kind, Math.max(1, v)); refreshWindow(); }
+		}));
 	}
 
-	widgets.push({ type: "label", name: wStatus(kind), x: CONTENT_X, y: yStatus,
-		width: cw, height: 12, text: pathStatusText(kind, pk.nice) });
-	widgets.push({
-		type: "button", name: wBtn(kind),
-		x: 10, y: yBtn, width: 280, height: 16,
-		text: "Calculate & assign " + pk.nice + " areas",
-		tooltip: "Scan (non-blocking) and split reachable/owned paths among " + pk.nice,
-		onClick: (function (k, nice) { return function () {
-			assignPathStaff(k, nice);
-		}; })(kind, pk.nice)
-	});
-	widgets.push({
-		type: "button", name: wRecalc(kind),
-		x: 10, y: yBtn + 18, width: 280, height: 16,
-		text: "Recalculate needed " + pk.nice,
+	controls.push(label({ text: statusStore[kind], height: 12 }));
+	controls.push(button({
+		text: "Calculate & assign " + nice + " areas", height: 16,
+		tooltip: "Scan (non-blocking) and split reachable/owned paths among " + nice,
+		onClick: function () { assignPathStaff(kind, nice); }
+	}));
+	controls.push(button({
+		text: "Recalculate needed " + nice, height: 16,
 		tooltip: "Rescan and refresh the Needed/Hired counts, without hiring, firing or (re)assigning anyone",
-		onClick: (function (k, nice) { return function () {
-			recalcPathNeeded(k, nice);
-		}; })(kind, pk.nice)
-	});
-	widgets.push({
-		type: "checkbox", name: wAuto(kind),
-		x: 10, y: yBtn + 36, width: 280, height: 12,
-		text: "Auto: hire/fire + assign on path changes",
-		tooltip: "Automatically keep " + pk.nice + " right-sized and assigned when paths, land rights or staff change (newest first)",
-		isChecked: getAutoKind(kind),
-		onChange: (function (k) { return function (checked: boolean) {
-			setAutoKind(k, checked);
+		onClick: function () { recalcPathNeeded(kind, nice); }
+	}));
+	controls.push(toggle({
+		text: "Auto: hire/fire + assign on path changes", height: 12,
+		tooltip: "Automatically keep " + nice + " right-sized and assigned when paths, land rights or staff change (newest first)",
+		isPressed: autoKindStore[kind],
+		onChange: function (checked) {
+			setAutoKind(kind, checked);
 			if (checked) { scheduleAutoPath(); }
 			refreshWindow();
-		}; })(kind)
+		}
+	}));
+	controls.push(button({
+		text: "Reset " + nice + " assignments", height: 14,
+		tooltip: "Clear the patrol areas (and persisted assignments) of all " + nice + " without hiring or firing anyone",
+		onClick: function () { resetStaffType(kind); }
+	}));
+
+	return box({
+		text: pk.title,
+		content: horizontal({
+			spacing: 6,
+			content: [icon, vertical({ spacing: 2, content: controls })]
+		})
 	});
-	widgets.push({
-		type: "button", name: wReset(kind),
-		x: 10, y: yBtn + 54, width: 280, height: 14,
-		text: "Reset " + pk.nice + " assignments",
-		tooltip: "Clear the patrol areas (and persisted assignments) of all " + pk.nice + " without hiring or firing anyone",
-		onClick: (function (k) { return function () {
-			resetStaffType(k);
-		}; })(kind)
-	});
-	return widgets;
 }
 
-function openWindow(): void {
-	const existing = ui.getWindow(WINDOW_TAG);
-	if (existing) { existing.bringToFront(); return; }
+let mainWindowTemplate: WindowTemplate | null = null;
 
-	let widgets: WidgetDesc[] = [
-		{
-			type: "button", name: W_BTN_ASSIGN_ALL,
-			x: 10, y: 18, width: 280, height: 18,
-			text: "Assign all",
+function buildMainWindowTemplate(): WindowTemplate {
+	const sections: WidgetCreator<FlexiblePosition>[] = [
+		button({
+			text: "Assign all", height: 18,
 			tooltip: "Assign mechanics and all path-staff types now (offers to hire/fire as needed)",
 			onClick: function () { assignAllNow(); }
-		},
-		{
-			type: "button", name: W_BTN_AUTO_ALL,
-			x: 10, y: 38, width: 280, height: 18,
-			text: autoAllLabel(),
+		}),
+		button({
+			text: autoAllLabelStore, height: 18,
 			tooltip: "Toggle automatic hire/fire + assign for mechanics and all path-staff types",
 			onClick: function () { setAllAuto(!allAutoEnabled()); refreshWindow(); }
-		},
-		{
-			type: "button", name: W_BTN_RESET_ALL,
-			x: 10, y: 58, width: 280, height: 18,
-			text: "Reset all assignments",
+		}),
+		button({
+			text: "Reset all assignments", height: 18,
 			tooltip: "Clear the patrol areas and persisted assignments of every staff type (mechanics included) without hiring or firing anyone",
 			onClick: function () { resetAllStaff(); }
-		}
+		})
 	];
-	let y = 84;
-	PATH_KINDS.forEach(function (pk) {
-		widgets = widgets.concat(makePathSection(pk, y));
-		y += sectionHeight(pk) + 6;
-	});
 
+	PATH_KINDS.forEach(function (pk) { sections.push(makePathSection(pk)); });
 
-	const my = y;
-	const mcw = 290 - CONTENT_X - RIGHT_PAD + 5;
-	widgets = widgets.concat([
-		{ type: "groupbox", name: W_GB_M, x: 5, y: my, width: 290, height: 168, text: "Mechanics" },
-		makeIconWidget(wIcon("mechanic"), 12, my + 16, 30, 30, staffSprite("mechanic"), "Mechanics"),
-		{ type: "label", x: CONTENT_X, y: my + 18, width: 60, height: 12, text: "Inspect:" },
-		{
-			type: "dropdown", name: W_INSPECT,
-			x: CONTENT_X + 62, y: my + 16, width: mcw - 62, height: 14,
-			items: INSPECTION_LABELS, selectedIndex: getInspection(),
-			tooltip: "Applies to all rides, independent of ride type",
-			onChange: function (index) { setInspection(index); applyInspectionAll(); }
-		},
-		{
-			type: "button", name: W_BTN_APPLY,
-			x: 10, y: my + 50, width: 280, height: 16,
-			text: "Apply inspection interval to all rides",
-			onClick: function () { applyInspectionAll(); }
-		},
-		{
-			type: "button", name: W_BTN_ASSIGN_M,
-			x: 10, y: my + 70, width: 280, height: 18,
-			text: "Assign mechanics to exits now",
+	const mechanicIcon = makeIconWidget(30, 30, staffSprite("mechanic"), "Mechanics");
+	const mechanicControls: WidgetCreator<FlexiblePosition>[] = [
+		horizontal({
+			spacing: 4,
+			content: [
+				label({ text: "Inspect:", width: 60, height: 12 }),
+				dropdown({
+					items: INSPECTION_LABELS, selectedIndex: inspectIndexStore,
+					tooltip: "Applies to all rides, independent of ride type",
+					onChange: function (index) { setInspection(index); applyInspectionAll(); }
+				})
+			]
+		}),
+		button({ text: "Apply inspection interval to all rides", height: 16, onClick: function () { applyInspectionAll(); } }),
+		button({
+			text: "Assign mechanics to exits now", height: 18,
 			tooltip: "Assign mechanics to ride exits (offers to hire if there aren't enough)",
 			onClick: function () { assignMechanicsWithHire(); }
-		},
-		{
-			type: "button", name: W_BTN_RECALC_M,
-			x: 10, y: my + 90, width: 280, height: 16,
-			text: "Recalculate needed mechanics",
+		}),
+		button({
+			text: "Recalculate needed mechanics", height: 16,
 			tooltip: "Refresh the exits-covered/mechanics counts, without hiring, firing or (re)assigning anyone",
 			onClick: function () { refreshWindow(); }
-		},
-		{
-			type: "checkbox", name: W_AUTO,
-			x: 10, y: my + 110, width: 280, height: 12,
-			text: "Auto mechanics (hire/fire + assign)",
+		}),
+		toggle({
+			text: "Auto mechanics (hire/fire + assign)", height: 12,
 			tooltip: "On exit/staff changes, automatically hire missing or fire surplus mechanics (newest, non-busy first) and assign them to exits",
-			isChecked: getAuto(),
+			isPressed: autoKindStore.mechanic,
 			onChange: function (checked) {
 				setAuto(checked);
 				if (checked) { autoRightSizeAndAssign(); }
 				refreshWindow();
 			}
-		},
-		{
-			type: "button", name: W_BTN_RESET_M,
-			x: 10, y: my + 126, width: 280, height: 16,
-			text: "Reset mechanics assignments",
+		}),
+		button({
+			text: "Reset mechanics assignments", height: 16,
 			tooltip: "Clear every mechanic's patrol area and the persisted exit->mechanic map, without hiring or firing anyone",
 			onClick: function () { resetStaffType("mechanic"); }
-		},
-		{ type: "label", name: W_MSTATUS, x: 10, y: my + 148, width: 280, height: 16, text: mechStatusText() }
-	]);
+		}),
+		label({ text: mechStatusStore, height: 16 })
+	];
+	sections.push(box({
+		text: "Mechanics",
+		content: horizontal({ spacing: 6, content: [mechanicIcon, vertical({ spacing: 2, content: mechanicControls })] })
+	}));
 
-	const winH = my + 176 + 8;
-	lastReflowW = -1;
-	ui.openWindow({
-		classification: WINDOW_TAG,
-		width: 300, height: winH,
-		minWidth: 280, maxWidth: 620,
-		minHeight: winH, maxHeight: winH + 260,
+	return flexWindow({
 		title: "Staff Manager",
+		width: 300, height: 500,
+		minWidth: 280, maxWidth: 620, minHeight: 400, maxHeight: 900,
 		colours: [24, 24],
-		onUpdate: function () {
-			const w = ui.getWindow(WINDOW_TAG);
-			if (w) { reflow(w); }
-		},
-		widgets: widgets
+		spacing: 6,
+		content: sections
 	});
+}
+
+function openWindow(): void {
+	if (!mainWindowTemplate) { mainWindowTemplate = buildMainWindowTemplate(); }
+	mainWindowTemplate.open();
+	mainWindowTemplate.focus();
 	// Calculate the initial Needed/Hired numbers right away instead of
 	// waiting for the user to press "Recalculate needed".
 	ensureScan(false, function () {
