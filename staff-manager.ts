@@ -1,7 +1,8 @@
 /// <reference path="node_modules/@openrct2/types/openrct2.d.ts" />
 import {
 	window as flexWindow, box, horizontal, vertical, label, button, spinner, toggle, dropdown,
-	store as flexStore, compute as flexCompute, WindowTemplate, WidgetCreator, FlexiblePosition, Store, ElementVisibility
+	store as flexStore, compute as flexCompute, WindowTemplate, WidgetCreator, FlexiblePosition, Store, ElementVisibility,
+	BuildOutput, Layoutable, WidgetMap, Rectangle, ElementParams
 } from "openrct2-flexui";
 /*****************************************************************************
  * Staff Manager
@@ -23,19 +24,6 @@ import {
 
 const TILE = 32;
 const RIDE_SETTING_INSPECTION_INTERVAL = 5;
-
-const TRIGGER_ACTIONS: { [action: string]: boolean } = {
-	staffhire: true, stafffire: true,
-	rideentranceexitplace: true, rideentranceexitremove: true,
-	ridedemolish: true
-};
-
-// Actions that change the park's path layout / ownership -> re-run path staff.
-const PATH_TRIGGER_ACTIONS: { [action: string]: boolean } = {
-	footpathplace: true, footpathremove: true,
-	landsetrights: true, landbuyrights: true,
-	staffhire: true, stafffire: true
-};
 
 const INSPECTION_LABELS = ["10 min", "20 min", "30 min", "45 min",
 							"60 min", "2 hours", "Never"];
@@ -134,33 +122,57 @@ const ACTIONS_PER_TICK = 20;
 function store(): Configuration { return context.getParkStorage(NS); }
 function getInspection(): number { return store().get("inspection", 2); }
 function setInspection(v: number): void { store().set("inspection", v); }
-function getAuto(): boolean { return store().get("auto", false); }
-function setAuto(v: boolean): void { store().set("auto", v); }
-// Auto hire/fire + assign per path-staff type (handyman/security/entertainer).
-function getAutoKind(kind: StaffKind): boolean { return store().get("auto_" + kind, false); }
-function setAutoKind(kind: StaffKind, v: boolean): void { store().set("auto_" + kind, v); }
-// True if ANY path-staff type has auto enabled.
-function anyAutoPath(): boolean {
-	return getAutoKind("handyman") || getAutoKind("security") || getAutoKind("entertainer");
-}
-// True if EVERY staff type (all path-staff kinds + mechanics) has auto enabled.
-function allAutoEnabled(): boolean {
-	return getAutoKind("handyman") && getAutoKind("security") && getAutoKind("entertainer") && getAuto();
-}
-// Enable/disable auto mode for all staff types (path-staff kinds + mechanics) at once.
-function setAllAuto(v: boolean): void {
-	PATH_KINDS.forEach(function (pk) { setAutoKind(pk.kind, v); });
-	setAuto(v);
-	if (v) {
-		scheduleAutoPath();
-		scheduleAutoMech();
-	}
-}
 // Assign every staff type now (mechanics + all path-staff kinds), each
 // offering to hire/fire as needed via their usual confirmation dialogs.
 function assignAllNow(): void {
-	PATH_KINDS.forEach(function (pk) { assignPathStaff(pk.kind, pk.nice); });
-	assignMechanicsWithHire();
+	const steps: ((next: () => void) => void)[] = [];
+	PATH_KINDS.forEach(function (pk) {
+		steps.push(function (next) { assignPathStaff(pk.kind, pk.nice, next); });
+	});
+	steps.push(function (next) { assignMechanicsWithHire(next); });
+	runStepsWithProgress(steps);
+}
+
+// Reset every staff type's assignments (mechanics + all path-staff kinds).
+function resetAllStaffWithProgress(): void {
+	const steps: ((next: () => void) => void)[] = [];
+	PATH_KINDS.forEach(function (pk) {
+		steps.push(function (next) { resetStaffType(pk.kind); next(); });
+	});
+	steps.push(function (next) { resetStaffType("mechanic"); next(); });
+	runStepsWithProgress(steps);
+}
+
+// Assign/Reset for whichever tab is currently active.
+function assignActiveTab(): void {
+	const kind = tabIndexToKind(activeTabStore.get());
+	if (kind === null) {
+		// Mechanics tab.
+		runStepsWithProgress([function (next) { assignMechanicsWithHire(next); }]);
+		return;
+	}
+	const pk = PATH_KINDS.filter(function (p) { return p.kind === kind; })[0];
+	runStepsWithProgress([function (next) { assignPathStaff(pk.kind, pk.nice, next); }]);
+}
+
+function resetActiveTab(): void {
+	const kind = tabIndexToKind(activeTabStore.get()) || "mechanic";
+	const nice = kind === "mechanic" ? "mechanics" : STAFF_WORD[kind].many;
+	confirm2Dialog([
+		"Clear all patrol area assignments for " + nice + "?",
+		"No staff will be hired or fired."
+	], "Reset " + nice, function () {
+		runStepsWithProgress([function (next) { resetStaffType(kind); next(); }]);
+	});
+}
+
+function resetAllStaffConfirm(): void {
+	confirm2Dialog([
+		"Clear all patrol area assignments for every staff type?",
+		"No staff will be hired or fired."
+	], "Reset all", function () {
+		resetAllStaffWithProgress();
+	});
 }
 function getAssignments(): { [key: string]: number } { return store().get("assignments", {}); }
 function setAssignments(v: { [key: string]: number }): void { store().set("assignments", v); }
@@ -456,6 +468,31 @@ function confirmDialog(lines: string[], yesLabel: string, onYes: () => void, noL
 	confirmTemplate.open();
 }
 
+// Simple two-way confirm/cancel dialog (e.g. for "Reset" actions).
+function confirm2Dialog(lines: string[], confirmLabel: string, onConfirm: () => void, cancelLabel?: string): void {
+	closeConfirm();
+	const content: WidgetCreator<FlexiblePosition>[] = lines.map(function (line) {
+		return label({ text: line, height: 12 });
+	});
+	content.push(button({
+		text: confirmLabel || "Confirm", height: 18,
+		onClick: function () { closeConfirm(); onConfirm(); }
+	}));
+	content.push(button({
+		text: cancelLabel || "Cancel", height: 18,
+		onClick: function () { closeConfirm(); }
+	}));
+	const dialogHeight = 30 + lines.length * 16 + 2 * 22;
+	confirmTemplate = flexWindow({
+		title: "Staff Manager",
+		width: 320, height: dialogHeight,
+		colours: [24, 24],
+		spacing: 4,
+		content: content
+	});
+	confirmTemplate.open();
+}
+
 // --- Inspection interval (chunked) -----------------------------------------
 function applyInspectionAll(): void {
 	const value = getInspection();
@@ -506,7 +543,12 @@ interface AssignMechanicsResult {
 	totalExits: number;
 }
 
-function assignMechanics(): AssignMechanicsResult {
+// Matching pairs handled per tick when greedily pairing uncovered exits with
+// free mechanics. Keeps the O(exits * mechanics) search from blocking the
+// game loop on parks with many rides/mechanics.
+const MECH_MATCH_PAIRS_PER_TICK = 40;
+
+function assignMechanicsAsync(onDone: (result: AssignMechanicsResult) => void): void {
 	const state = cleanAssignments();
 	const assignments = state.assignments;
 	const usedMech = state.usedMech;
@@ -539,65 +581,81 @@ function assignMechanics(): AssignMechanicsResult {
 	for (let f = 0; f < free.length; f++) { usedFree[f] = false; }
 	const doneExit: { [index: number]: boolean } = {};
 
-	for (let n = 0; n < pairs; n++) {
-		let bestE = -1, bestF = -1, bestD = Infinity;
-		for (let ei = 0; ei < uncovered.length; ei++) {
-			if (doneExit[ei]) { continue; }
-			const ex = uncovered[ei].exit;
-			for (let fi = 0; fi < free.length; fi++) {
-				if (usedFree[fi]) { continue; }
-				const dx = free[fi].x - (ex.x + 16), dy = free[fi].y - (ex.y + 16);
-				const d = dx * dx + dy * dy;
-				if (d < bestD) { bestD = d; bestE = ei; bestF = fi; }
-			}
+	function finish(): void {
+		setAssignments(assignments);
+		setLastArea(lastArea);
+
+		let inspected = 0;
+		const value = getInspection();
+		for (const rid in newRideIds) {
+			context.executeAction("ridesetsetting", {
+				ride: Number(rid),
+				setting: RIDE_SETTING_INSPECTION_INTERVAL,
+				value: value
+			}, function () { /* no-op */ });
+			inspected++;
 		}
-		if (bestE < 0) { break; }
-		const e = uncovered[bestE];
-		const mech = free[bestF];
-		doneExit[bestE] = true;
-		usedFree[bestF] = true;
-		assignments[e.key] = mech.id as number;
-		setPatrol(mech, e.exit);
-		recordAssignment(lastArea, mech.id as number, e.exit.x, e.exit.y, counts);
-		newRideIds[keyRideId(e.key)] = true;
-		assigned++;
-	}
-	setAssignments(assignments);
-	setLastArea(lastArea);
 
-	let inspected = 0;
-	const value = getInspection();
-	for (const rid in newRideIds) {
-		context.executeAction("ridesetsetting", {
-			ride: Number(rid),
-			setting: RIDE_SETTING_INSPECTION_INTERVAL,
-			value: value
-		}, function () { /* no-op */ });
-		inspected++;
+		let covered = 0;
+		for (const k in assignments) { covered++; }
+		onDone({ assigned: assigned, reassigned: counts.moved, inspected: inspected,
+				 covered: covered, totalExits: exits.length });
 	}
 
-	let covered = 0;
-	for (const k in assignments) { covered++; }
-	return { assigned: assigned, reassigned: counts.moved, inspected: inspected,
-			 covered: covered, totalExits: exits.length };
+	let n = 0;
+	function step(): void {
+		let processed = 0;
+		while (n < pairs && processed < MECH_MATCH_PAIRS_PER_TICK) {
+			let bestE = -1, bestF = -1, bestD = Infinity;
+			for (let ei = 0; ei < uncovered.length; ei++) {
+				if (doneExit[ei]) { continue; }
+				const ex = uncovered[ei].exit;
+				for (let fi = 0; fi < free.length; fi++) {
+					if (usedFree[fi]) { continue; }
+					const dx = free[fi].x - (ex.x + 16), dy = free[fi].y - (ex.y + 16);
+					const d = dx * dx + dy * dy;
+					if (d < bestD) { bestD = d; bestE = ei; bestF = fi; }
+				}
+			}
+			if (bestE < 0) { n = pairs; break; }
+			const e = uncovered[bestE];
+			const mech = free[bestF];
+			doneExit[bestE] = true;
+			usedFree[bestF] = true;
+			assignments[e.key] = mech.id as number;
+			setPatrol(mech, e.exit);
+			recordAssignment(lastArea, mech.id as number, e.exit.x, e.exit.y, counts);
+			newRideIds[keyRideId(e.key)] = true;
+			assigned++;
+			n++;
+			processed++;
+		}
+		setWorkProgress(Math.floor((n / Math.max(1, pairs)) * 100));
+		if (n < pairs) { context.setTimeout(step, 1); }
+		else { setWorkProgress(100); finish(); }
+	}
+	step();
 }
 
-function assignMechanicsReport(): void {
-	const r = assignMechanics();
-	const reassignTxt = r.reassigned > 0 ? (" (" + r.reassigned + " reassigned)") : "";
-	park.postMessage({
-		type: "blank",
-		text: "Mechanics: " + r.assigned + " assigned" + reassignTxt +
-			  ", inspection on " + r.inspected + " ride(s). Covered " +
-			  r.covered + "/" + r.totalExits + " exits."
+function assignMechanicsReport(onDone?: () => void): void {
+	assignMechanicsAsync(function (r) {
+		const reassignTxt = r.reassigned > 0 ? (" (" + r.reassigned + " reassigned)") : "";
+		park.postMessage({
+			type: "blank",
+			text: "Mechanics: " + r.assigned + " assigned" + reassignTxt +
+				  ", inspection on " + r.inspected + " ride(s). Covered " +
+				  r.covered + "/" + r.totalExits + " exits."
+		});
+		refreshWindow();
+		if (onDone) { onDone(); }
 	});
-	refreshWindow();
 }
 
 // Button entry: offer to hire mechanics if there aren't enough for all exits.
-function assignMechanicsWithHire(): void {
+function assignMechanicsWithHire(onDone?: () => void): void {
 	const exits = allExits().length;
 	const have = allMechanics().length;
+	function finish(): void { if (onDone) { onDone(); } }
 	if (exits > have) {
 		const deficit = exits - have;
 		confirmDialog([
@@ -606,15 +664,15 @@ function assignMechanicsWithHire(): void {
 			"Hire " + staffWord("mechanic", deficit) + "?"
 		], "Hire " + staffWord("mechanic", deficit),
 		function () {
-			hireStaff("mechanic", deficit, function () { assignMechanicsReport(); });
-		}, "Assign without hiring/firing",
-		function () { assignMechanicsReport(); });
+			hireStaff("mechanic", deficit, function () { assignMechanicsReport(finish); });
+		}, "Use only existing",
+		function () { assignMechanicsReport(finish); }, finish);
 	} else if (exits < have) {
 		// Only non-busy mechanics can actually be fired.
 		const fireable = allMechanics().filter(function (m) { return !mechanicIsBusy(m); }).length;
 		const surplus = Math.min(have - exits, fireable);
 		if (surplus <= 0) {
-			assignMechanicsReport();
+			assignMechanicsReport(finish);
 		} else {
 			confirmDialog([
 				"Only " + staffWord("mechanic", exits) + " needed for the exits,",
@@ -622,154 +680,13 @@ function assignMechanicsWithHire(): void {
 				"Fire " + staffWord("mechanic", surplus) + " (newest, non-busy first)?"
 			], "Fire " + staffWord("mechanic", surplus),
 			function () {
-				fireStaff("mechanic", surplus, function () { assignMechanicsReport(); });
-			}, "Assign without hiring/firing",
-			function () { assignMechanicsReport(); });
+				fireStaff("mechanic", surplus, function () { assignMechanicsReport(finish); });
+			}, "Use only existing",
+			function () { assignMechanicsReport(finish); }, finish);
 		}
 	} else {
-		assignMechanicsReport();
+		assignMechanicsReport(finish);
 	}
-}
-
-// --- Automatic mechanic assignment (event-driven) --------------------------
-// Silently right-sizes the mechanic workforce (hire missing / fire surplus,
-// newest & non-busy first) then assigns. No dialogs on the auto path.
-let autoBusy = false;   // re-entrancy guard: our own hire/fire retrigger this
-// Debounce token for mechanics-auto, mirroring the path-auto debounce below.
-// This coalesces bursts of trigger actions into a single run instead of
-// stacking overlapping autoRightSizeAndAssign() calls.
-let autoMechToken = 0;
-const AUTO_MECH_DEBOUNCE_MS = 250;
-
-function scheduleAutoMech(): void {
-	autoMechToken++;
-	const myToken = autoMechToken;
-	context.setTimeout(function () {
-		if (myToken !== autoMechToken) { return; }   // superseded by a newer trigger
-		autoRightSizeAndAssign();
-	}, AUTO_MECH_DEBOUNCE_MS);
-}
-
-function autoRightSizeAndAssign(): void {
-	// Guard against both our own mechanics hire/fire AND the path-staff auto's
-	// hire/fire (staffhire/stafffire actions are shared triggers for both
-	// subsystems; without checking autoPathBusy too, the two auto systems can
-	// endlessly re-trigger each other and freeze the game).
-	if (autoBusy || autoPathBusy) { return; }
-	const exits = allExits().length;
-	const have = allMechanics().length;
-
-	if (exits > have) {
-		autoBusy = true;
-		hireStaff("mechanic", exits - have, function () {
-			autoBusy = false;
-			assignMechanics();
-			refreshWindow();
-		});
-	} else if (exits < have) {
-		const fireable = allMechanics().filter(function (m) { return !mechanicIsBusy(m); }).length;
-		const surplus = Math.min(have - exits, fireable);
-		if (surplus > 0) {
-			autoBusy = true;
-			fireStaff("mechanic", surplus, function () {
-				autoBusy = false;
-				assignMechanics();
-				refreshWindow();
-			});
-		} else {
-			assignMechanics();
-			refreshWindow();
-		}
-	} else {
-		assignMechanics();
-		refreshWindow();
-	}
-}
-
-// --- Auto path staff (handymen/security/mascots): hire/fire + assign --------
-// Path staff need a full map scan, and path-dragging fires MANY footpathplace
-// actions, so runs are COALESCED (debounced) into a single pass.
-let autoPathBusy = false;      // re-entrancy guard for our own hire/fire
-let autoPathToken = 0;         // debounce token
-const AUTO_PATH_DEBOUNCE_MS = 1500;
-
-function scheduleAutoPath(): void {
-	autoPathToken++;
-	const myToken = autoPathToken;
-	context.setTimeout(function () {
-		if (myToken !== autoPathToken) { return; }   // superseded by a newer trigger
-		autoPathRun();
-	}, AUTO_PATH_DEBOUNCE_MS);
-}
-
-function autoPathRun(): void {
-	if (autoPathBusy || autoBusy || busy) {
-		// Something is scanning/working; try again shortly.
-		scheduleAutoPath();
-		return;
-	}
-	ensureScan(true, function (tiles) {
-		if (!tiles || tiles.length === 0) { refreshWindow(); return; }
-		autoPathBusy = true;
-		rightSizePathKindsSequential(0, tiles, function () {
-			autoPathBusy = false;
-			refreshWindow();
-		});
-	});
-}
-
-// Process PATH_KINDS one at a time (hire/fire then assign), chaining callbacks.
-// Only kinds whose per-type auto toggle is enabled are processed.
-function rightSizePathKindsSequential(i: number, ignored: ScanTile[], done: () => void): void {
-	if (i >= PATH_KINDS.length) { done(); return; }
-	const pk = PATH_KINDS[i];
-	const next = function () { rightSizePathKindsSequential(i + 1, ignored, done); };
-
-	if (!getAutoKind(pk.kind)) { next(); return; }   // this type's auto is off
-
-	// Each kind may target a different tile set (mascots -> queues).
-	const tiles = tilesForKind(pk.kind);
-	if (!tiles || tiles.length === 0) { next(); return; }
-
-	const have = assignableOfKind(pk.kind).length;
-	const need = neededForKind(pk.kind, tiles.length);
-
-	if (need > have) {
-		hireStaff(pk.kind, need - have, function () {
-			doPathAssign(pk.kind, pk.nice, tiles, next);
-		});
-	} else if (need < have) {
-		fireStaff(pk.kind, have - need, function () {
-			doPathAssign(pk.kind, pk.nice, tiles, next);
-		});
-	} else {
-		doPathAssign(pk.kind, pk.nice, tiles, next);
-	}
-}
-
-let autoSub: IDisposable | null = null;
-function startAuto(): void {
-	if (autoSub !== null) { return; }
-	autoSub = context.subscribe("action.execute", function (e) {
-		if (network.mode === "client") { return; }
-
-		// --- Mechanics auto (debounced) ---
-		if (getAuto() && TRIGGER_ACTIONS[e.action]) {
-			// Ignore our own hire/fire AND the path-staff auto's hire/fire, to
-			// avoid the two auto systems endlessly re-triggering each other.
-			if (!((autoBusy || autoPathBusy) && (e.action === "staffhire" || e.action === "stafffire"))) {
-				scheduleAutoMech();
-			}
-		}
-
-		// --- Path staff auto (debounced) ---
-		if (anyAutoPath() && PATH_TRIGGER_ACTIONS[e.action]) {
-			// Ignore our own hire/fire AND the mechanics auto's hire/fire, to
-			// avoid the two auto systems endlessly re-triggering each other.
-			if ((autoPathBusy || autoBusy) && (e.action === "staffhire" || e.action === "stafffire")) { return; }
-			scheduleAutoPath();
-		}
-	});
 }
 
 // --- Shared path scan (chunked) --------------------------------------------
@@ -849,10 +766,19 @@ interface ReachableTiles {
 	queues: ScanTile[];
 }
 
+// How many BFS nodes to expand per tick. Keeps the O(tiles) breadth-first
+// traversal from blocking the game on large parks (this runs right after the
+// row-scan phase, so it must be chunked too or progress appears to "freeze"
+// near 100% while this step still runs synchronously).
+const BFS_NODES_PER_TICK = 400;
+
 // BFS from the entrance over connected footpaths. Returns reachable, owned
 // tiles split into { paths: [...], queues: [...] } (queues are traversed so
-// paths beyond a queue are still reached).
-function reachableOwnedTiles(pathInfo: { [key: string]: PathTileInfo }, seeds: ScanSeed[]): ReachableTiles {
+// paths beyond a queue are still reached). Chunked across game ticks via
+// context.setTimeout so it never blocks the game loop; onProgress reports
+// 0..100 while nodes are being expanded.
+function reachableOwnedTilesAsync(pathInfo: { [key: string]: PathTileInfo }, seeds: ScanSeed[],
+	onProgress: (pct: number) => void, onDone: (result: ReachableTiles) => void): void {
 	const visited: { [key: string]: boolean } = {};
 	const q: string[] = [];
 	const paths: ScanTile[] = [];
@@ -870,22 +796,32 @@ function reachableOwnedTiles(pathInfo: { [key: string]: PathTileInfo }, seeds: S
 		}
 	}
 	let head = 0;
-	while (head < q.length) {
-		const k = q[head++];
-		const info = pathInfo[k];
-		const parts = k.split(":");
-		const tx = +parts[0], ty = +parts[1];
-		if (info.owned) {
-			const tile = { x: tx * TILE, y: ty * TILE, z: info.z };
-			if (info.isQueue) { queues.push(tile); }
-			else { paths.push(tile); }
+	function step(): void {
+		let processed = 0;
+		while (head < q.length && processed < BFS_NODES_PER_TICK) {
+			const k = q[head++];
+			const info = pathInfo[k];
+			const parts = k.split(":");
+			const tx = +parts[0], ty = +parts[1];
+			if (info.owned) {
+				const tile = { x: tx * TILE, y: ty * TILE, z: info.z };
+				if (info.isQueue) { queues.push(tile); }
+				else { paths.push(tile); }
+			}
+			for (let d = 0; d < 4; d++) {
+				if ((info.edges & (1 << d)) === 0) { continue; }
+				enq(tx + DIR_DELTA[d].dx, ty + DIR_DELTA[d].dy);
+			}
+			processed++;
 		}
-		for (let d = 0; d < 4; d++) {
-			if ((info.edges & (1 << d)) === 0) { continue; }
-			enq(tx + DIR_DELTA[d].dx, ty + DIR_DELTA[d].dy);
+		if (head < q.length) {
+			if (onProgress) { onProgress(Math.floor((head / Math.max(1, q.length)) * 100)); }
+			context.setTimeout(step, 1);
+		} else {
+			onDone({ paths: paths, queues: queues });
 		}
 	}
-	return { paths: paths, queues: queues };
+	step();
 }
 
 function tileKey(t: ScanTile): string { return (t.x / TILE) + ":" + (t.y / TILE); }
@@ -1071,7 +1007,7 @@ function zoneCentre(chunk: ScanTile[]): ScanTile {
 // `staff` are entities with x/y; `chunks` is an array of tile arrays.
 // Async: pairs are matched a few at a time per tick so large staff/zone
 // counts (each pairing pass is O(staff*zones)) never block the game loop.
-const MATCH_PAIRS_PER_TICK = 25;
+const MATCH_PAIRS_PER_TICK = 60;
 function matchNearestZonesAsync(staff: Staff[], chunks: ScanTile[][],
 	onDone: (assign: number[]) => void): void {
 	const assign: number[] = [];
@@ -1129,18 +1065,25 @@ function ensureScan(force: boolean, onDone: (tiles: ScanTile[] | null) => void):
 	if (busy) { return; }
 	busy = true;
 	scanProgress = 0;
-	refreshWindow();
 	scanMapAsync(function (pct) {
-		scanProgress = pct; refreshWindow();
+		// Only the lightweight percentage store is touched per tick here;
+		// refreshWindow() recomputes ~10 stores across every staff kind and
+		// must not run on every tick or it dominates the whole scan's cost.
+		// This phase covers the first 70% of the overall scan progress; the
+		// BFS phase below covers the remaining 30%.
+		scanProgress = pct; setWorkProgress(Math.floor(pct * 0.7));
 	}, function (pathInfo, seeds) {
-		const res = reachableOwnedTiles(pathInfo, seeds);
-		cachedTiles = res.paths.sort(sortTiles);
-		cachedQueues = res.queues.sort(sortTiles);
-		pathsScanned = true;
-		scanProgress = -1;
-		busy = false;
-		refreshWindow();
-		onDone(cachedTiles);
+		reachableOwnedTilesAsync(pathInfo, seeds, function (pct) {
+			setWorkProgress(70 + Math.floor(pct * 0.3));
+		}, function (res) {
+			cachedTiles = res.paths.sort(sortTiles);
+			cachedQueues = res.queues.sort(sortTiles);
+			pathsScanned = true;
+			scanProgress = -1;
+			busy = false;
+			refreshWindow();
+			onDone(cachedTiles);
+		});
 	});
 }
 
@@ -1176,7 +1119,7 @@ function neededForKind(kind: StaffKind, tileCount: number): number {
 // When mascotsPerArea > 1 the mascots in an area overlap.
 // Async: partitioning and the greedy placement loop are both chunked across
 // ticks (via partitionAsync / setTimeout) so large parks never block the game.
-const MASCOT_PLACEMENTS_PER_TICK = 10;
+const MASCOT_PLACEMENTS_PER_TICK = 40;
 function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 	const mascots = assignableOfKind("entertainer");
 	if (mascots.length === 0) {
@@ -1191,9 +1134,9 @@ function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 	const numAreas = Math.ceil(tiles.length / areaSize);
 
 	assignProgress = 0;
-	refreshWindow();
+	setWorkProgress(0);
 	partitionAsync(tiles, numAreas, function (pct) {
-		assignProgress = Math.floor(pct * 0.7); refreshWindow();
+		assignProgress = Math.floor(pct * 0.7); setWorkProgress(assignProgress);
 	}, function (areas) {
 		// Nearest matching with capacity: each mascot takes the closest area that
 		// still has a free slot (perArea slots each). Minimises walking.
@@ -1251,7 +1194,7 @@ function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 			const pct = 70 + Math.floor((n / Math.max(1, placements)) * 30);
 			updateProgressWindow(pct, "Moving mascots (" + n + "/" + placements + ")");
 			assignProgress = pct;
-			refreshWindow();
+			setWorkProgress(pct);
 			if (n < placements) {
 				// Pause after every 10 so the game settles between moves.
 				context.setTimeout(step, 25);
@@ -1268,6 +1211,7 @@ function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 				text: "Mascots: " + assignSummary(counts) + " across " +
 					  areasUsed + " " + tileWord + " area(s)" + overlapTxt + "." });
 			assignProgress = -1;
+			setWorkProgress(100);
 			refreshWindow();
 			if (onDone) { onDone(); }
 		}
@@ -1290,9 +1234,9 @@ function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[], onDo
 		return;
 	}
 	assignProgress = 0;
-	refreshWindow();
+	setWorkProgress(0);
 	partitionAsync(tiles, staff.length, function (pct) {
-		assignProgress = Math.floor(pct * 0.5); refreshWindow();
+		assignProgress = Math.floor(pct * 0.5); setWorkProgress(assignProgress);
 	}, function (chunks) {
 		// Match each staff member to its NEAREST zone (minimise walking).
 		matchNearestZonesAsync(staff, chunks, function (assign) {
@@ -1326,7 +1270,7 @@ function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[], onDo
 			teleportTotal = targets.length;
 			teleportActive = true;
 			assignProgress = 90;
-			refreshWindow();
+			setWorkProgress(90);
 			openProgressWindow();
 			updateProgressWindow(90, "Moving " + niceName + " (" + 0 + "/" + teleportTotal + ")");
 			const lastArea = getLastArea();
@@ -1344,6 +1288,7 @@ function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[], onDo
 				}
 				const pct = 90 + Math.floor((cursor / Math.max(1, teleportTotal)) * 10);
 				updateProgressWindow(pct, "Moving " + niceName + " (" + cursor + "/" + teleportTotal + ")");
+				setWorkProgress(pct);
 				if (cursor < targets.length) {
 					// Pause after every 10 so the game settles and no staff
 					// are dropped from moving. The pause is the timeout delay.
@@ -1366,9 +1311,10 @@ function doPathAssign(kind: StaffKind, niceName: string, tiles: ScanTile[], onDo
 }
 
 // Button entry for path staff: scan, then offer to hire if short, then assign.
-function assignPathStaff(kind: StaffKind, niceName: string): void {
+function assignPathStaff(kind: StaffKind, niceName: string, onDone?: () => void): void {
 	if (busy) {
 		park.postMessage({ type: "blank", text: "Staff Manager is busy scanning..." });
+		if (onDone) { onDone(); }
 		return;
 	}
 	ensureScan(true, function () {
@@ -1380,12 +1326,13 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 					? "No reachable queue tiles found."
 					: "No reachable owned path tiles found." });
 			refreshWindow();
+			if (onDone) { onDone(); }
 			return;
 		}
 		const have = assignableOfKind(kind).length;
 		const need = neededForKind(kind, tiles.length);
 		busy = true;
-		function finishAssign(): void { busy = false; refreshWindow(); }
+		function finishAssign(): void { busy = false; refreshWindow(); if (onDone) { onDone(); } }
 		if (need > have) {
 			const deficit = need - have;
 			confirmDialog([
@@ -1395,10 +1342,10 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 			], "Hire " + staffWord(kind, deficit),
 			function () {
 				hireStaff(kind, deficit, function () { doPathAssign(kind, niceName, tiles, finishAssign); });
-			}, "Assign without hiring/firing",
+			}, "Use only existing",
 			function () {
 				doPathAssign(kind, niceName, tiles, finishAssign);
-			});
+			}, finishAssign);
 		} else if (need < have) {
 			const surplus = have - need;
 			confirmDialog([
@@ -1408,10 +1355,10 @@ function assignPathStaff(kind: StaffKind, niceName: string): void {
 			], "Fire " + staffWord(kind, surplus),
 			function () {
 				fireStaff(kind, surplus, function () { doPathAssign(kind, niceName, tiles, finishAssign); });
-			}, "Assign without hiring/firing",
+			}, "Use only existing",
 			function () {
 				doPathAssign(kind, niceName, tiles, finishAssign);
-			});
+			}, finishAssign);
 		} else {
 			doPathAssign(kind, niceName, tiles, finishAssign);
 		}
@@ -1445,24 +1392,6 @@ function resetStaffType(kind: StaffKind): void {
 }
 
 // Remove all assignments for every staff type at once.
-function resetAllStaff(): void {
-	const ids: number[] = [];
-	PATH_KINDS.forEach(function (pk) {
-		allStaffOfType(pk.kind).forEach(function (s) {
-			if (s.patrolArea) { s.patrolArea.clear(); }
-			ids.push(s.id as number);
-		});
-	});
-	allStaffOfType("mechanic").forEach(function (s) {
-		if (s.patrolArea) { s.patrolArea.clear(); }
-		ids.push(s.id as number);
-	});
-	setAssignments({});
-	forgetLastArea(ids);
-	park.postMessage({ type: "blank", text: "Cleared all assignments." });
-	refreshWindow();
-}
-
 // Button entry: just rescan and refresh the Needed/Hired counts, without
 // hiring, firing or (re)assigning anyone.
 function recalcPathNeeded(kind: StaffKind, niceName: string): void {
@@ -1485,27 +1414,116 @@ const progressLabelStore: Store<string> = flexStore("");
 const progressPercentStore: Store<number> = flexStore(0);
 const progressPctTextStore: Store<string> = flexCompute(progressPercentStore, function (pct) { return pct + "%"; });
 
-// Visual progress bar made of fixed-width segments (flexui has no bindable
-// widget width in this prerelease, so a real filled/empty bar is simulated by
-// toggling each segment's `text` between a filled and empty block character).
-const PROGRESS_SEGMENTS = 24;
-const progressSegmentStores: Store<string>[] = [];
-for (let i = 0; i < PROGRESS_SEGMENTS; i++) { progressSegmentStores.push(flexStore("\u2591")); }
+// --- Overall "work done" progress bar (bottom of the main window) ---------
+// Shared across all buttons (Assign/Reset/Assign all/Reset all) so the user
+// always sees a single, consistent non-blocking progress indicator.
+// Rendered as a single text label (RCT2's bitmap font does not include the
+// solid/shade block characters, so those showed up as "?????"); "=" / "-"
+// are part of the game's normal character set and render correctly.
+const workPercentStore: Store<number> = flexStore(0);
+const workPctTextStore: Store<string> = flexCompute(workPercentStore, function (pct) { return pct + "%"; });
+const WORK_BAR_WIDTH = 40;
+const workBarTextStore: Store<string> = flexCompute(workPercentStore, function (pct) {
+	const filled = Math.round((Math.max(0, Math.min(100, pct)) / 100) * WORK_BAR_WIDTH);
+	let s = "";
+	for (let i = 0; i < WORK_BAR_WIDTH; i++) { s += (i < filled ? "=" : "-"); }
+	return s;
+});
 
-function updateProgressSegments(pct: number): void {
-	const filled = Math.max(0, Math.min(PROGRESS_SEGMENTS, Math.round((pct / 100) * PROGRESS_SEGMENTS)));
-	for (let i = 0; i < PROGRESS_SEGMENTS; i++) {
-		progressSegmentStores[i].set(i < filled ? "\u2588" : "\u2591");
+// Only push a store update when the percentage actually changes, since each
+// store write triggers a flexui re-bind of every widget bound to it; calling
+// this every single tick during a fine-grained scan is a major source of
+// perceived freezing.
+let lastWorkPercent = -1;
+function setWorkProgress(pct: number): void {
+	const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+	if (clamped === lastWorkPercent) { return; }
+	lastWorkPercent = clamped;
+	workPercentStore.set(clamped);
+}
+
+// Real filled-rectangle progress bar, drawn with a "custom" widget's onDraw
+// callback (see GraphicsContext in @openrct2/types), the same technique used
+// by openrct2-dynamicdashboard's progress_bar.ts. This renders an actual bar
+// instead of simulating one with text characters, and only repaints when the
+// bound percent store changes, so it does not add any per-tick overhead.
+const PROGRESS_BAR_BORDER_COLOUR = 12; // dark grey well border
+const PROGRESS_BAR_FILL_COLOUR = 30;   // bright green fill
+let progressBarNameCounter = 0;
+
+function makeMiniProgressBar(percentStore: Store<number>, visibility?: Store<ElementVisibility>): WidgetCreator<FlexiblePosition> {
+	let pct = Math.max(0, Math.min(100, percentStore.get()));
+	const name = "progressbar" + (progressBarNameCounter++);
+	const params: ElementParams & FlexiblePosition = { visibility: visibility, height: 14 };
+	return {
+		params: params,
+		create: function (output: BuildOutput): Layoutable {
+			const widget = {
+				type: "custom",
+				name: name,
+				x: 0, y: 0, width: 0, height: 14,
+				onDraw: function (g: GraphicsContext): void {
+					const w = g.width, h = g.height;
+					g.colour = PROGRESS_BAR_BORDER_COLOUR;
+					g.well(0, 0, w, h);
+					const inset = 1;
+					const innerW = Math.max(0, w - inset * 2);
+					const innerH = Math.max(0, h - inset * 2);
+					const filledW = Math.round((innerW * pct) / 100);
+					if (filledW > 0) {
+						g.colour = PROGRESS_BAR_FILL_COLOUR;
+						g.rect(inset, inset, filledW, innerH);
+					}
+				}
+			} as unknown as Widget;
+			output.add(widget);
+			output.binder.add(widget, "isVisible", visibility, function (v) { return v === "visible"; });
+			output.binder.on(percentStore, function (value: number) {
+				pct = Math.max(0, Math.min(100, value));
+				const win = (widget as unknown as { window?: Window }).window;
+				if (win) { try { win.findWidget<Widget>(name); } catch (e) { /* ignore */ } }
+			});
+			return {
+				layout: function (widgets: WidgetMap, area: Rectangle): void {
+					const w = widgets[name];
+					w.x = Math.round(area.x);
+					w.y = Math.round(area.y);
+					w.width = Math.round(area.width);
+					w.height = Math.round(area.height);
+				}
+			};
+		}
+	};
+}
+
+// Runs a list of independently-async steps one after another, reporting
+// combined progress (0..100) via setWorkProgress as each step completes.
+// Each step function receives a "next" callback it must call when done.
+function runStepsWithProgress(steps: ((next: () => void) => void)[], onAllDone?: () => void): void {
+	if (steps.length === 0) { setWorkProgress(0); if (onAllDone) { onAllDone(); } return; }
+	let i = 0;
+	setWorkProgress(0);
+	function runNext(): void {
+		if (i >= steps.length) {
+			setWorkProgress(100);
+			context.setTimeout(function () { setWorkProgress(0); }, 600);
+			if (onAllDone) { onAllDone(); }
+			return;
+		}
+		const step = steps[i];
+		step(function () {
+			i++;
+			setWorkProgress(Math.floor((i / steps.length) * 100));
+			runNext();
+		});
 	}
+	runNext();
 }
 
 let progressTemplate: WindowTemplate | null = null;
 
 function progressWindowTemplate(): WindowTemplate {
 	if (!progressTemplate) {
-		const segmentWidgets: WidgetCreator<FlexiblePosition>[] = progressSegmentStores.map(function (segStore) {
-			return label({ text: segStore, width: 8, height: 14, alignment: "centred" });
-		});
 		progressTemplate = flexWindow({
 			title: "Moving staff",
 			width: 260, height: 76,
@@ -1514,7 +1532,7 @@ function progressWindowTemplate(): WindowTemplate {
 			spacing: 4,
 			content: [
 				label({ text: progressLabelStore, height: 12, alignment: "centred" }),
-				horizontal({ spacing: 0, content: segmentWidgets }),
+				makeMiniProgressBar(progressPercentStore),
 				label({ text: progressPctTextStore, height: 12, alignment: "centred" })
 			]
 		});
@@ -1531,7 +1549,6 @@ function updateProgressWindow(pct: number, label: string): void {
 	teleportLabel = label;
 	progressPercentStore.set(pct);
 	progressLabelStore.set(label);
-	updateProgressSegments(pct);
 }
 
 function closeProgressWindow(): void {
@@ -1551,10 +1568,6 @@ const PATH_KINDS: PathKindDef[] = [
 	{ kind: "security",    nice: "security",  title: "Security" },
 	{ kind: "entertainer", nice: "entertainers", title: "Entertainers" }
 ];
-
-function autoAllLabel(): string {
-	return allAutoEnabled() ? "Deactivate automatic mode for all" : "Activate automatic mode for all";
-}
 
 function pathStatusText(kind: StaffKind, nice: string): string {
 	if (scanProgress >= 0) { return "Scanning map... " + scanProgress + "%"; }
@@ -1588,19 +1601,28 @@ function mechStatusText(): string {
 	let covered = 0;
 	for (const k in assignments) { covered++; }
 	return "Mechanics: " + allMechanics().length +
-		   "  |  Exits covered: " + covered +
-		   "  |  Auto: " + (getAuto() ? "ON" : "OFF");
+		   "  |  Exits covered: " + covered;
 }
 
 const statusStore: { [kind in StaffKind]: Store<string> } = {
 	handyman: flexStore(""), security: flexStore(""), entertainer: flexStore(""), mechanic: flexStore("")
 };
+// Needed-count text, e.g. "Needed: 5" (shown separately from the full status line).
+const neededTextStore: { [kind in StaffKind]: Store<string> } = {
+	handyman: flexStore(""), security: flexStore(""), entertainer: flexStore(""), mechanic: flexStore("")
+};
+// 0..100, percentage of needed staff of this kind already hired/available.
+const availPercentStore: { [kind in StaffKind]: Store<number> } = {
+	handyman: flexStore(0), security: flexStore(0), entertainer: flexStore(0), mechanic: flexStore(0)
+};
+// Text describing how many more (or fewer) staff of this kind are needed,
+// e.g. "Need 3 more handymen" / "3 handymen surplus" / "Fully staffed".
+const deltaTextStore: { [kind in StaffKind]: Store<string> } = {
+	handyman: flexStore(""), security: flexStore(""), entertainer: flexStore(""), mechanic: flexStore("")
+};
 const perStore: { handyman: Store<number>; security: Store<number> } = {
 	handyman: flexStore(getPer("handyman")),
 	security: flexStore(getPer("security"))
-};
-const autoKindStore: { [kind in StaffKind]: Store<boolean> } = {
-	handyman: flexStore(false), security: flexStore(false), entertainer: flexStore(false), mechanic: flexStore(false)
 };
 const mascotQueuesStore: Store<boolean> = flexStore(getMascotQueues());
 const mascotQueuePerStore: Store<number> = flexStore(getMascotQueuePer());
@@ -1608,13 +1630,49 @@ const mascotPathPerStore: Store<number> = flexStore(getMascotPathPer());
 const mascotPerAreaStore: Store<number> = flexStore(getMascotPerArea());
 const inspectIndexStore: Store<number> = flexStore(getInspection());
 const mechStatusStore: Store<string> = flexStore("");
-const autoAllLabelStore: Store<string> = flexStore(autoAllLabel());
+
+// Needed count for a path-staff kind, based on the currently cached scan.
+function pathNeededCount(kind: StaffKind): number | null {
+	const useQueues = (kind === "entertainer" && getMascotQueues());
+	const srcLen = useQueues
+		? (pathsScanned && cachedQueues ? cachedQueues.length : null)
+		: (pathsScanned && cachedTiles ? cachedTiles.length : null);
+	if (srcLen === null) { return null; }
+	return neededForKind(kind, srcLen);
+}
+
+// Builds a "Need N more X" / "N X surplus" / "Fully staffed" delta message.
+function deltaText(kind: StaffKind, have: number, needed: number | null): string {
+	if (needed === null) { return "Needed: ?"; }
+	const diff = needed - have;
+	if (diff > 0) { return "Need " + staffWord(kind, diff) + " more"; }
+	if (diff < 0) { return staffWord(kind, -diff) + " surplus"; }
+	return "Fully staffed";
+}
+
+function refreshPathKindStores(pk: PathKindDef): void {
+	const kind = pk.kind;
+	statusStore[kind].set(pathStatusText(kind, pk.nice));
+	const needed = pathNeededCount(kind);
+	const have = allStaffOfType(kind).length;
+	neededTextStore[kind].set(needed === null ? "Needed: ?" : "Needed: " + needed);
+	availPercentStore[kind].set(needed === null || needed === 0 ? (have > 0 ? 100 : 0) : Math.max(0, Math.min(100, Math.round((have / needed) * 100))));
+	deltaTextStore[kind].set(deltaText(kind, have, needed));
+}
+
+function refreshMechanicStores(): void {
+	const needed = allExits().length;
+	const have = allMechanics().length;
+	neededTextStore.mechanic.set("Needed: " + needed);
+	availPercentStore.mechanic.set(needed === 0 ? (have > 0 ? 100 : 0) : Math.max(0, Math.min(100, Math.round((have / needed) * 100))));
+	deltaTextStore.mechanic.set(deltaText("mechanic", have, needed));
+}
 
 function refreshWindow(): void {
 	PATH_KINDS.forEach(function (pk) {
-		statusStore[pk.kind].set(pathStatusText(pk.kind, pk.nice));
-		autoKindStore[pk.kind].set(getAutoKind(pk.kind));
+		refreshPathKindStores(pk);
 	});
+	refreshMechanicStores();
 	perStore.handyman.set(getPer("handyman"));
 	perStore.security.set(getPer("security"));
 	mascotQueuesStore.set(getMascotQueues());
@@ -1623,8 +1681,6 @@ function refreshWindow(): void {
 	mascotPerAreaStore.set(getMascotPerArea());
 	inspectIndexStore.set(getInspection());
 	mechStatusStore.set(mechStatusText());
-	autoKindStore.mechanic.set(getAuto());
-	autoAllLabelStore.set(autoAllLabel());
 }
 
 // --- Tabbed main window ------------------------------------------------
@@ -1654,6 +1710,29 @@ const TABS: TabDef[] = [
 
 const activeTabStore: Store<number> = flexStore(TAB_HANDYMAN);
 
+// --- Calculate gate ----------------------------------------------------
+// The main window opens showing only a big "Calculate" button + progress
+// bar. Tabs and action buttons are revealed only after the (potentially
+// expensive) map scan/needed-count calculation has finished, so the window
+// never shows stale/zeroed numbers and the heavy scan is always an explicit,
+// user-initiated, chunked (non-blocking) action.
+// Plain boolean (not a store): toggling a top-level weighted ("1w") box's
+// visibility does not reliably relayout in this flexui prerelease, so the
+// gate->main transition rebuilds and reopens the window instead (same
+// approach already used for tab switching).
+let calculated = false;
+
+function runCalculation(): void {
+	if (busy) { return; }
+	setWorkProgress(0);
+	ensureScan(true, function () {
+		refreshWindow();
+		setWorkProgress(100);
+		calculated = true;
+		context.setTimeout(function () { setWorkProgress(0); openWindow(); }, 400);
+	});
+}
+
 function kindToTabIndex(kind: StaffKind): number {
 	if (kind === "handyman") { return TAB_HANDYMAN; }
 	if (kind === "security") { return TAB_GUARD; }
@@ -1679,23 +1758,12 @@ function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 	const controls: WidgetCreator<FlexiblePosition>[] = [];
 
 	if (kind === "entertainer") {
-		// Entertainers: queue toggle + three dedicated density options.
-		controls.push(toggle({
-			text: "Assign to queue lines (not paths)", height: 14,
-			tooltip: "Place entertainers along ride queues to keep queuing guests happy",
-			isPressed: mascotQueuesStore, visibility: vis,
-			onChange: function (checked) { setMascotQueues(checked); refreshWindow(); }
-		}));
-		controls.push(spinner({
-			value: mascotQueuePerStore, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "Maximum queue tiles each entertainer covers (queue mode)", visibility: vis,
-			format: function (v) { return "Queue tiles/entertainer: " + v; },
-			onChange: function (v) { setMascotQueuePer(Math.max(1, v)); refreshWindow(); }
-		}));
+		// Entertainers: tiles-per-entertainer spinner, mascots-per-area spinner,
+		// and a queueline-areas checkbox (toggle).
 		controls.push(spinner({
 			value: mascotPathPerStore, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "Path tiles each entertainer covers (path mode)", visibility: vis,
-			format: function (v) { return "Path tiles/entertainer: " + v; },
+			tooltip: "Path tiles each entertainer covers", visibility: vis,
+			format: function (v) { return "Tiles per entertainer: " + v; },
 			onChange: function (v) { setMascotPathPer(Math.max(1, v)); refreshWindow(); }
 		}));
 		controls.push(spinner({
@@ -1704,43 +1772,32 @@ function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 			format: function (v) { return "Entertainers per area: " + v; },
 			onChange: function (v) { setMascotPerArea(Math.max(1, v)); refreshWindow(); }
 		}));
+		controls.push(toggle({
+			text: "Assign to queueline areas", height: 14,
+			tooltip: "Place entertainers along ride queues instead of general paths",
+			isPressed: mascotQueuesStore, visibility: vis,
+			onChange: function (checked) { setMascotQueues(checked); refreshWindow(); }
+		}));
+		controls.push(spinner({
+			value: mascotQueuePerStore, minimum: 1, maximum: 9999, height: 14,
+			tooltip: "Maximum queue tiles each entertainer covers (queueline mode)", visibility: vis,
+			format: function (v) { return "Queue tiles per entertainer: " + v; },
+			onChange: function (v) { setMascotQueuePer(Math.max(1, v)); refreshWindow(); }
+		}));
 	} else {
-		// Handymen / security: single density spinner.
+		// Handymen / security: single "tiles per staff" spinner.
 		const perS: Store<number> = kind === "handyman" ? perStore.handyman : perStore.security;
 		controls.push(spinner({
 			value: perS, minimum: 1, maximum: 9999, height: 14,
 			tooltip: "Path tiles each " + nice + " member covers", visibility: vis,
-			format: function (v) { return "Path tiles per staff: " + v; },
+			format: function (v) { return "Tiles per " + STAFF_WORD[kind].one + ": " + v; },
 			onChange: function (v) { setPer(kind, Math.max(1, v)); refreshWindow(); }
 		}));
 	}
 
-	controls.push(label({ text: statusStore[kind], height: 12, visibility: vis }));
-	controls.push(button({
-		text: "Calculate & assign " + nice + " areas", height: 16,
-		tooltip: "Scan (non-blocking) and split reachable/owned paths among " + nice, visibility: vis,
-		onClick: function () { assignPathStaff(kind, nice); }
-	}));
-	controls.push(button({
-		text: "Recalculate needed " + nice, height: 16,
-		tooltip: "Rescan and refresh the Needed/Hired counts, without hiring, firing or (re)assigning anyone", visibility: vis,
-		onClick: function () { recalcPathNeeded(kind, nice); }
-	}));
-	controls.push(toggle({
-		text: "Auto: hire/fire + assign on path changes", height: 12,
-		tooltip: "Automatically keep " + nice + " right-sized and assigned when paths, land rights or staff change (newest first)",
-		isPressed: autoKindStore[kind], visibility: vis,
-		onChange: function (checked) {
-			setAutoKind(kind, checked);
-			if (checked) { scheduleAutoPath(); }
-			refreshWindow();
-		}
-	}));
-	controls.push(button({
-		text: "Reset " + nice + " assignments", height: 14,
-		tooltip: "Clear the patrol areas (and persisted assignments) of all " + nice + " without hiring or firing anyone", visibility: vis,
-		onClick: function () { resetStaffType(kind); }
-	}));
+	controls.push(label({ text: neededTextStore[kind], height: 12, visibility: vis }));
+	controls.push(makeMiniProgressBar(availPercentStore[kind], vis));
+	controls.push(label({ text: deltaTextStore[kind], height: 12, visibility: vis }));
 
 	return box({
 		text: pk.title,
@@ -1770,32 +1827,8 @@ function buildMechanicsBox(): WidgetCreator<FlexiblePosition> {
 			]
 		}),
 		button({ text: "Apply inspection interval to all rides", height: 16, visibility: vis, onClick: function () { applyInspectionAll(); } }),
-		button({
-			text: "Assign mechanics to exits now", height: 18,
-			tooltip: "Assign mechanics to ride exits (offers to hire if there aren't enough)", visibility: vis,
-			onClick: function () { assignMechanicsWithHire(); }
-		}),
-		button({
-			text: "Recalculate needed mechanics", height: 16,
-			tooltip: "Refresh the exits-covered/mechanics counts, without hiring, firing or (re)assigning anyone", visibility: vis,
-			onClick: function () { refreshWindow(); }
-		}),
-		toggle({
-			text: "Auto mechanics (hire/fire + assign)", height: 12,
-			tooltip: "On exit/staff changes, automatically hire missing or fire surplus mechanics (newest, non-busy first) and assign them to exits",
-			isPressed: autoKindStore.mechanic, visibility: vis,
-			onChange: function (checked) {
-				setAuto(checked);
-				if (checked) { autoRightSizeAndAssign(); }
-				refreshWindow();
-			}
-		}),
-		button({
-			text: "Reset mechanics assignments", height: 16,
-			tooltip: "Clear every mechanic's patrol area and the persisted exit->mechanic map, without hiring or firing anyone", visibility: vis,
-			onClick: function () { resetStaffType("mechanic"); }
-		}),
-		label({ text: mechStatusStore, height: 16, visibility: vis })
+		makeMiniProgressBar(availPercentStore.mechanic, vis),
+		label({ text: deltaTextStore.mechanic, height: 12, visibility: vis })
 	];
 	return box({
 		text: "Mechanics",
@@ -1808,7 +1841,7 @@ function switchTab(tabIndex: number): void {
 	activeTabStore.set(tabIndex);
 }
 
-function buildMainWindowTemplate(): WindowTemplate {
+function buildMainWindowTemplate(calculated: boolean): WindowTemplate {
 	// Icon-style tab strip (mirrors the native ride/staff window tabs): each
 	// tab is an image button showing that staff type's icon, with a pressed/
 	// border state indicating the active tab.
@@ -1828,46 +1861,117 @@ function buildMainWindowTemplate(): WindowTemplate {
 	const handymanBox = makePathSection(PATH_KINDS.filter(function (p) { return p.kind === "handyman"; })[0]);
 	const guardBox = makePathSection(PATH_KINDS.filter(function (p) { return p.kind === "security"; })[0]);
 	const mascotBox = makePathSection(PATH_KINDS.filter(function (p) { return p.kind === "entertainer"; })[0]);
-	const sections: WidgetCreator<FlexiblePosition>[] = [
-		horizontal({ spacing: 2, content: tabButtons }),
-		handymanBox, buildMechanicsBox(), guardBox, mascotBox,
-		box({
-			text: "All staff types",
-			content: vertical({
-				spacing: 4,
-				content: [
-					button({
-						text: "Assign all", height: 18,
-						tooltip: "Assign mechanics and all path-staff types now (offers to hire/fire as needed)",
-						onClick: function () { assignAllNow(); }
-					}),
-					button({
-						text: autoAllLabelStore, height: 18,
-						tooltip: "Toggle automatic hire/fire + assign for mechanics and all path-staff types",
-						onClick: function () { setAllAuto(!allAutoEnabled()); refreshWindow(); }
-					}),
-					button({
-						text: "Reset all assignments", height: 18,
-						tooltip: "Clear the patrol areas and persisted assignments of every staff type (mechanics included) without hiring or firing anyone",
-						onClick: function () { resetAllStaff(); }
-					})
-				]
-			})
-		})
-	];
 
-	return flexWindow({
-		title: "Staff Manager",
-		width: 300, height: 260,
-		minWidth: 280, maxWidth: 620, minHeight: 260, maxHeight: 900,
-		colours: [24, 24],
-		spacing: 6,
-		content: sections
+	// Bordered group: tab strip + active tab's content + Assign/Reset buttons
+	// that act on whichever tab is currently selected. Hidden until the
+	// calculation has been run at least once.
+	const tabsAndActionsBox: WidgetCreator<FlexiblePosition> = box({
+		text: "Selected staff type",
+		height: 220,
+		content: vertical({
+			spacing: 4,
+			content: [
+				horizontal({ spacing: 2, content: tabButtons }),
+				handymanBox, buildMechanicsBox(), guardBox, mascotBox,
+				horizontal({
+					spacing: 4,
+					content: [
+						button({
+							text: "Assign", height: 18,
+							tooltip: "Assign the selected staff type now (offers to hire, fire, or use only existing staff)",
+							onClick: function () { assignActiveTab(); }
+						}),
+						button({
+							text: "Reset", height: 18,
+							tooltip: "Clear the patrol area assignments of the selected staff type (after confirming)",
+							onClick: function () { resetActiveTab(); }
+						})
+					]
+				})
+			]
+		})
 	});
-}
+
+	// Gate shown before the first calculation: a big "Calculate" button
+	// plus a progress bar, filling the entire window content area and
+	// completely replacing (not just dimming) the tabs/buttons until the scan
+	// finishes. Wrapped in a single box with one visibility toggle so it acts
+	// as one overlay unit instead of many individually-gated widgets.
+	const gateBox: WidgetCreator<FlexiblePosition> = box({
+		width: "1w", height: "1w",
+		content: vertical({
+			spacing: 6,
+			content: [
+				button({
+					text: "Calculate",
+					border: true,
+					width: "1w", height: 64,
+					tooltip: "Scan the park and calculate staff needs (non-blocking, runs in the background)",
+					onClick: function () { runCalculation(); }
+				}),
+							vertical({
+								spacing: 2,
+								content: [
+									label({ text: workBarTextStore, height: 14, alignment: "centred" }),
+									label({ text: workPctTextStore, height: 12, alignment: "centred" })
+								]
+							})
+						]
+						})
+					});
+
+					// Main content shown once calculation has completed at least once.
+					const mainBox: WidgetCreator<FlexiblePosition> = vertical({
+						spacing: 6,
+						content: [
+								tabsAndActionsBox,
+									horizontal({
+										height: 18,
+										spacing: 4,
+										content: [
+											button({
+												text: "Assign all", height: 18,
+												tooltip: "Assign mechanics and all path-staff types now (offers to hire/fire as needed)",
+												onClick: function () { assignAllNow(); }
+											}),
+											button({
+												text: "Reset all", height: 18,
+												tooltip: "Clear the patrol areas and persisted assignments of every staff type (mechanics included), after confirming",
+												onClick: function () { resetAllStaffConfirm(); }
+											})
+										]
+									}),
+									vertical({
+										height: 30,
+										spacing: 2,
+										content: [
+											label({ text: workBarTextStore, height: 14, alignment: "centred" }),
+											label({ text: workPctTextStore, height: 12, alignment: "centred" })
+										]
+									})
+								]
+							});
+
+					// Only the relevant top-level section is ever included in the window's
+					// content array (rather than including both and toggling visibility),
+					// since toggling visibility on top-level weighted ("1w") boxes does not
+					// reliably relayout in this flexui prerelease - the same reason tabs are
+					// implemented by rebuilding/reopening the window instead of hiding boxes.
+					const sections: WidgetCreator<FlexiblePosition>[] = calculated ? [mainBox] : [gateBox];
+
+					return flexWindow({
+						title: "Staff Manager",
+						width: 300, height: 300,
+						minWidth: 280, maxWidth: 620, minHeight: 300, maxHeight: 900,
+						colours: [24, 24],
+						spacing: 6,
+						content: sections
+					});
+				}
 
 function openWindow(): void {
-	mainWindowTemplate = buildMainWindowTemplate();
+	if (mainWindowTemplate) { mainWindowTemplate.close(); }
+	mainWindowTemplate = buildMainWindowTemplate(calculated);
 	mainWindowTemplate.open();
 	mainWindowTemplate.focus();
 	// flexui only updates a widget's "skip" (layout-exclusion) flag inside a
@@ -1877,11 +1981,6 @@ function openWindow(): void {
 	// active tab here forces all tab boxes to apply their correct skip state
 	// before the user sees the window.
 	activeTabStore.set(activeTabStore.get());
-	// Calculate the initial Needed/Hired numbers right away instead of
-	// waiting for the user to press "Recalculate needed".
-	ensureScan(false, function () {
-		refreshWindow();
-	});
 }
 
 // --- Main ------------------------------------------------------------------
@@ -1889,7 +1988,6 @@ function main(): void {
 	if (typeof ui !== "undefined") {
 		ui.registerMenuItem("Staff Manager", function () { openWindow(); });
 	}
-	startAuto();
 }
 
 registerPlugin({
