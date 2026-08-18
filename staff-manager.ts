@@ -54,7 +54,7 @@ const STAFF_WORD: { [kind in StaffKind]: { one: string, many: string } } = {
 	handyman:    { one: "handyman",  many: "handymen"  },
 	mechanic:    { one: "mechanic",  many: "mechanics" },
 	security:    { one: "guard",     many: "guards"    },
-	entertainer: { one: "mascot",    many: "mascots"   }
+	entertainer: { one: "entertainer", many: "entertainers" }
 };
 // Grammatically correct "<n> handyman/handymen" etc.
 function staffWord(kind: StaffKind, n: number): string {
@@ -1180,7 +1180,7 @@ const MASCOT_PLACEMENTS_PER_TICK = 10;
 function assignMascots(tiles: ScanTile[], onDone?: () => void): void {
 	const mascots = assignableOfKind("entertainer");
 	if (mascots.length === 0) {
-		park.postMessage({ type: "blank", text: "No mascots available." });
+		park.postMessage({ type: "blank", text: "No entertainers available." });
 		refreshWindow();
 		if (onDone) { onDone(); }
 		return;
@@ -1549,7 +1549,7 @@ interface PathKindDef {
 const PATH_KINDS: PathKindDef[] = [
 	{ kind: "handyman",    nice: "handymen",  title: "Handymen" },
 	{ kind: "security",    nice: "security",  title: "Security" },
-	{ kind: "entertainer", nice: "mascots",   title: "Mascots (entertainers)" }
+	{ kind: "entertainer", nice: "entertainers", title: "Entertainers" }
 ];
 
 function autoAllLabel(): string {
@@ -1642,13 +1642,14 @@ const TAB_MASCOT = 3;
 interface TabDef {
 	index: number;
 	label: string;
+	kind: StaffKind;
 }
 
 const TABS: TabDef[] = [
-	{ index: TAB_HANDYMAN, label: "Handymen" },
-	{ index: TAB_MECHANIC, label: "Mechanics" },
-	{ index: TAB_GUARD, label: "Guards" },
-	{ index: TAB_MASCOT, label: "Mascots" }
+	{ index: TAB_HANDYMAN, label: "Handymen", kind: "handyman" },
+	{ index: TAB_MECHANIC, label: "Mechanics", kind: "mechanic" },
+	{ index: TAB_GUARD, label: "Guards", kind: "security" },
+	{ index: TAB_MASCOT, label: "Entertainers", kind: "entertainer" }
 ];
 
 const activeTabStore: Store<number> = flexStore(TAB_HANDYMAN);
@@ -1678,29 +1679,29 @@ function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 	const controls: WidgetCreator<FlexiblePosition>[] = [];
 
 	if (kind === "entertainer") {
-		// Mascots: queue toggle + three dedicated density options.
+		// Entertainers: queue toggle + three dedicated density options.
 		controls.push(toggle({
 			text: "Assign to queue lines (not paths)", height: 14,
-			tooltip: "Place mascots along ride queues to keep queuing guests happy",
+			tooltip: "Place entertainers along ride queues to keep queuing guests happy",
 			isPressed: mascotQueuesStore, visibility: vis,
 			onChange: function (checked) { setMascotQueues(checked); refreshWindow(); }
 		}));
 		controls.push(spinner({
 			value: mascotQueuePerStore, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "Maximum queue tiles each mascot covers (queue mode)", visibility: vis,
-			format: function (v) { return "Queue tiles/mascot: " + v; },
+			tooltip: "Maximum queue tiles each entertainer covers (queue mode)", visibility: vis,
+			format: function (v) { return "Queue tiles/entertainer: " + v; },
 			onChange: function (v) { setMascotQueuePer(Math.max(1, v)); refreshWindow(); }
 		}));
 		controls.push(spinner({
 			value: mascotPathPerStore, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "Path tiles each mascot covers (path mode)", visibility: vis,
-			format: function (v) { return "Path tiles/mascot: " + v; },
+			tooltip: "Path tiles each entertainer covers (path mode)", visibility: vis,
+			format: function (v) { return "Path tiles/entertainer: " + v; },
 			onChange: function (v) { setMascotPathPer(Math.max(1, v)); refreshWindow(); }
 		}));
 		controls.push(spinner({
 			value: mascotPerAreaStore, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "How many mascots share each area (>1 = overlapping)", visibility: vis,
-			format: function (v) { return "Mascots per area: " + v; },
+			tooltip: "How many entertainers share each area (>1 = overlapping)", visibility: vis,
+			format: function (v) { return "Entertainers per area: " + v; },
 			onChange: function (v) { setMascotPerArea(Math.max(1, v)); refreshWindow(); }
 		}));
 	} else {
@@ -1808,9 +1809,13 @@ function switchTab(tabIndex: number): void {
 }
 
 function buildMainWindowTemplate(): WindowTemplate {
+	// Icon-style tab strip (mirrors the native ride/staff window tabs): each
+	// tab is an image button showing that staff type's icon, with a pressed/
+	// border state indicating the active tab.
 	const tabButtons: WidgetCreator<FlexiblePosition>[] = TABS.map(function (tab) {
 		return button({
-			text: tab.label, height: 16,
+			image: staffSprite(tab.kind), width: 31, height: 27,
+			tooltip: tab.label,
 			isPressed: flexCompute(activeTabStore, function (active) { return active === tab.index; }),
 			onClick: function () { switchTab(tab.index); }
 		});
