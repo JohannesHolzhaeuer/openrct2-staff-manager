@@ -1,7 +1,7 @@
 /// <reference path="node_modules/@openrct2/types/openrct2.d.ts" />
 import {
 	window as flexWindow, box, horizontal, vertical, label, button, spinner, toggle, dropdown,
-	store as flexStore, compute as flexCompute, WindowTemplate, WidgetCreator, FlexiblePosition, Store
+	store as flexStore, compute as flexCompute, WindowTemplate, WidgetCreator, FlexiblePosition, Store, ElementVisibility
 } from "openrct2-flexui";
 /*****************************************************************************
  * Staff Manager
@@ -119,8 +119,8 @@ function staffSprite(kind: StaffKind): number {
 }
 
 // Draws a sprite directly (no button chrome) centred within the given area.
-function makeIconWidget(width: number, height: number, sprite: number, tooltip: string): WidgetCreator<FlexiblePosition> {
-	return button({ image: sprite, border: false, width: width, height: height, tooltip: tooltip });
+function makeIconWidget(width: number, height: number, sprite: number, tooltip: string, visibility?: Store<ElementVisibility>): WidgetCreator<FlexiblePosition> {
+	return button({ image: sprite, border: false, width: width, height: height, tooltip: tooltip, visibility: visibility });
 }
 
 const DIR_DELTA = [
@@ -1483,31 +1483,39 @@ let teleportActive = false;
 
 const progressLabelStore: Store<string> = flexStore("");
 const progressPercentStore: Store<number> = flexStore(0);
-const progressBarTextStore: Store<string> = flexCompute(progressPercentStore, function (pct) {
-	const totalTicks = 24;
-	const filled = Math.max(0, Math.min(totalTicks, Math.round((pct / 100) * totalTicks)));
-	return "[" + repeatChar("=", filled) + repeatChar(".", totalTicks - filled) + "] " + pct + "%";
-});
+const progressPctTextStore: Store<string> = flexCompute(progressPercentStore, function (pct) { return pct + "%"; });
 
-function repeatChar(ch: string, count: number): string {
-	let s = "";
-	for (let i = 0; i < count; i++) { s += ch; }
-	return s;
+// Visual progress bar made of fixed-width segments (flexui has no bindable
+// widget width in this prerelease, so a real filled/empty bar is simulated by
+// toggling each segment's `text` between a filled and empty block character).
+const PROGRESS_SEGMENTS = 24;
+const progressSegmentStores: Store<string>[] = [];
+for (let i = 0; i < PROGRESS_SEGMENTS; i++) { progressSegmentStores.push(flexStore("\u2591")); }
+
+function updateProgressSegments(pct: number): void {
+	const filled = Math.max(0, Math.min(PROGRESS_SEGMENTS, Math.round((pct / 100) * PROGRESS_SEGMENTS)));
+	for (let i = 0; i < PROGRESS_SEGMENTS; i++) {
+		progressSegmentStores[i].set(i < filled ? "\u2588" : "\u2591");
+	}
 }
 
 let progressTemplate: WindowTemplate | null = null;
 
 function progressWindowTemplate(): WindowTemplate {
 	if (!progressTemplate) {
+		const segmentWidgets: WidgetCreator<FlexiblePosition>[] = progressSegmentStores.map(function (segStore) {
+			return label({ text: segStore, width: 8, height: 14, alignment: "centred" });
+		});
 		progressTemplate = flexWindow({
 			title: "Moving staff",
-			width: 260, height: 70,
-			minWidth: 260, maxWidth: 260, minHeight: 70, maxHeight: 70,
+			width: 260, height: 76,
+			minWidth: 260, maxWidth: 260, minHeight: 76, maxHeight: 76,
 			colours: [24, 24],
 			spacing: 4,
 			content: [
 				label({ text: progressLabelStore, height: 12, alignment: "centred" }),
-				label({ text: progressBarTextStore, height: 16, alignment: "centred" })
+				horizontal({ spacing: 0, content: segmentWidgets }),
+				label({ text: progressPctTextStore, height: 12, alignment: "centred" })
 			]
 		});
 	}
@@ -1523,6 +1531,7 @@ function updateProgressWindow(pct: number, label: string): void {
 	teleportLabel = label;
 	progressPercentStore.set(pct);
 	progressLabelStore.set(label);
+	updateProgressSegments(pct);
 }
 
 function closeProgressWindow(): void {
@@ -1618,10 +1627,54 @@ function refreshWindow(): void {
 	autoAllLabelStore.set(autoAllLabel());
 }
 
+// --- Tabbed main window ------------------------------------------------
+// This flexui prerelease's built-in `tabs` window param is a no-op, and
+// binding a box's `visibility` to "none" does not remove it from layout at
+// runtime (widgets still overlap/render on top of each other). Instead, tabs
+// are implemented by only ever including the *active* tab's content box in
+// the window's `content` array, and rebuilding + reopening the window
+// whenever the user switches tabs.
+const TAB_HANDYMAN = 0;
+const TAB_MECHANIC = 1;
+const TAB_GUARD = 2;
+const TAB_MASCOT = 3;
+
+interface TabDef {
+	index: number;
+	label: string;
+}
+
+const TABS: TabDef[] = [
+	{ index: TAB_HANDYMAN, label: "Handymen" },
+	{ index: TAB_MECHANIC, label: "Mechanics" },
+	{ index: TAB_GUARD, label: "Guards" },
+	{ index: TAB_MASCOT, label: "Mascots" }
+];
+
+const activeTabStore: Store<number> = flexStore(TAB_HANDYMAN);
+
+function kindToTabIndex(kind: StaffKind): number {
+	if (kind === "handyman") { return TAB_HANDYMAN; }
+	if (kind === "security") { return TAB_GUARD; }
+	return TAB_MASCOT;
+}
+
+function tabIndexToKind(tabIndex: number): StaffKind | null {
+	if (tabIndex === TAB_HANDYMAN) { return "handyman"; }
+	if (tabIndex === TAB_GUARD) { return "security"; }
+	if (tabIndex === TAB_MASCOT) { return "entertainer"; }
+	return null;
+}
+
+function tabVisibility(tabIndex: number): Store<ElementVisibility> {
+	return flexCompute(activeTabStore, function (active) { return active === tabIndex ? "visible" : "none"; });
+}
+
 function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 	const kind = pk.kind;
 	const nice = pk.nice;
-	const icon = makeIconWidget(30, 30, staffSprite(kind), pk.title);
+	const vis: Store<ElementVisibility> = tabVisibility(kindToTabIndex(kind));
+	const icon = makeIconWidget(30, 30, staffSprite(kind), pk.title, vis);
 	const controls: WidgetCreator<FlexiblePosition>[] = [];
 
 	if (kind === "entertainer") {
@@ -1629,24 +1682,24 @@ function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 		controls.push(toggle({
 			text: "Assign to queue lines (not paths)", height: 14,
 			tooltip: "Place mascots along ride queues to keep queuing guests happy",
-			isPressed: mascotQueuesStore,
+			isPressed: mascotQueuesStore, visibility: vis,
 			onChange: function (checked) { setMascotQueues(checked); refreshWindow(); }
 		}));
 		controls.push(spinner({
 			value: mascotQueuePerStore, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "Maximum queue tiles each mascot covers (queue mode)",
+			tooltip: "Maximum queue tiles each mascot covers (queue mode)", visibility: vis,
 			format: function (v) { return "Queue tiles/mascot: " + v; },
 			onChange: function (v) { setMascotQueuePer(Math.max(1, v)); refreshWindow(); }
 		}));
 		controls.push(spinner({
 			value: mascotPathPerStore, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "Path tiles each mascot covers (path mode)",
+			tooltip: "Path tiles each mascot covers (path mode)", visibility: vis,
 			format: function (v) { return "Path tiles/mascot: " + v; },
 			onChange: function (v) { setMascotPathPer(Math.max(1, v)); refreshWindow(); }
 		}));
 		controls.push(spinner({
 			value: mascotPerAreaStore, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "How many mascots share each area (>1 = overlapping)",
+			tooltip: "How many mascots share each area (>1 = overlapping)", visibility: vis,
 			format: function (v) { return "Mascots per area: " + v; },
 			onChange: function (v) { setMascotPerArea(Math.max(1, v)); refreshWindow(); }
 		}));
@@ -1655,27 +1708,27 @@ function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 		const perS: Store<number> = kind === "handyman" ? perStore.handyman : perStore.security;
 		controls.push(spinner({
 			value: perS, minimum: 1, maximum: 9999, height: 14,
-			tooltip: "Path tiles each " + nice + " member covers",
+			tooltip: "Path tiles each " + nice + " member covers", visibility: vis,
 			format: function (v) { return "Path tiles per staff: " + v; },
 			onChange: function (v) { setPer(kind, Math.max(1, v)); refreshWindow(); }
 		}));
 	}
 
-	controls.push(label({ text: statusStore[kind], height: 12 }));
+	controls.push(label({ text: statusStore[kind], height: 12, visibility: vis }));
 	controls.push(button({
 		text: "Calculate & assign " + nice + " areas", height: 16,
-		tooltip: "Scan (non-blocking) and split reachable/owned paths among " + nice,
+		tooltip: "Scan (non-blocking) and split reachable/owned paths among " + nice, visibility: vis,
 		onClick: function () { assignPathStaff(kind, nice); }
 	}));
 	controls.push(button({
 		text: "Recalculate needed " + nice, height: 16,
-		tooltip: "Rescan and refresh the Needed/Hired counts, without hiring, firing or (re)assigning anyone",
+		tooltip: "Rescan and refresh the Needed/Hired counts, without hiring, firing or (re)assigning anyone", visibility: vis,
 		onClick: function () { recalcPathNeeded(kind, nice); }
 	}));
 	controls.push(toggle({
 		text: "Auto: hire/fire + assign on path changes", height: 12,
 		tooltip: "Automatically keep " + nice + " right-sized and assigned when paths, land rights or staff change (newest first)",
-		isPressed: autoKindStore[kind],
+		isPressed: autoKindStore[kind], visibility: vis,
 		onChange: function (checked) {
 			setAutoKind(kind, checked);
 			if (checked) { scheduleAutoPath(); }
@@ -1684,12 +1737,13 @@ function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 	}));
 	controls.push(button({
 		text: "Reset " + nice + " assignments", height: 14,
-		tooltip: "Clear the patrol areas (and persisted assignments) of all " + nice + " without hiring or firing anyone",
+		tooltip: "Clear the patrol areas (and persisted assignments) of all " + nice + " without hiring or firing anyone", visibility: vis,
 		onClick: function () { resetStaffType(kind); }
 	}));
 
 	return box({
 		text: pk.title,
+		visibility: vis,
 		content: horizontal({
 			spacing: 6,
 			content: [icon, vertical({ spacing: 2, content: controls })]
@@ -1699,55 +1753,36 @@ function makePathSection(pk: PathKindDef): WidgetCreator<FlexiblePosition> {
 
 let mainWindowTemplate: WindowTemplate | null = null;
 
-function buildMainWindowTemplate(): WindowTemplate {
-	const sections: WidgetCreator<FlexiblePosition>[] = [
-		button({
-			text: "Assign all", height: 18,
-			tooltip: "Assign mechanics and all path-staff types now (offers to hire/fire as needed)",
-			onClick: function () { assignAllNow(); }
-		}),
-		button({
-			text: autoAllLabelStore, height: 18,
-			tooltip: "Toggle automatic hire/fire + assign for mechanics and all path-staff types",
-			onClick: function () { setAllAuto(!allAutoEnabled()); refreshWindow(); }
-		}),
-		button({
-			text: "Reset all assignments", height: 18,
-			tooltip: "Clear the patrol areas and persisted assignments of every staff type (mechanics included) without hiring or firing anyone",
-			onClick: function () { resetAllStaff(); }
-		})
-	];
-
-	PATH_KINDS.forEach(function (pk) { sections.push(makePathSection(pk)); });
-
-	const mechanicIcon = makeIconWidget(30, 30, staffSprite("mechanic"), "Mechanics");
+function buildMechanicsBox(): WidgetCreator<FlexiblePosition> {
+	const vis: Store<ElementVisibility> = tabVisibility(TAB_MECHANIC);
+	const mechanicIcon = makeIconWidget(30, 30, staffSprite("mechanic"), "Mechanics", vis);
 	const mechanicControls: WidgetCreator<FlexiblePosition>[] = [
 		horizontal({
 			spacing: 4,
 			content: [
-				label({ text: "Inspect:", width: 60, height: 12 }),
+				label({ text: "Inspect:", width: 60, height: 12, visibility: vis }),
 				dropdown({
-					items: INSPECTION_LABELS, selectedIndex: inspectIndexStore,
+					items: INSPECTION_LABELS, selectedIndex: inspectIndexStore, visibility: vis,
 					tooltip: "Applies to all rides, independent of ride type",
 					onChange: function (index) { setInspection(index); applyInspectionAll(); }
 				})
 			]
 		}),
-		button({ text: "Apply inspection interval to all rides", height: 16, onClick: function () { applyInspectionAll(); } }),
+		button({ text: "Apply inspection interval to all rides", height: 16, visibility: vis, onClick: function () { applyInspectionAll(); } }),
 		button({
 			text: "Assign mechanics to exits now", height: 18,
-			tooltip: "Assign mechanics to ride exits (offers to hire if there aren't enough)",
+			tooltip: "Assign mechanics to ride exits (offers to hire if there aren't enough)", visibility: vis,
 			onClick: function () { assignMechanicsWithHire(); }
 		}),
 		button({
 			text: "Recalculate needed mechanics", height: 16,
-			tooltip: "Refresh the exits-covered/mechanics counts, without hiring, firing or (re)assigning anyone",
+			tooltip: "Refresh the exits-covered/mechanics counts, without hiring, firing or (re)assigning anyone", visibility: vis,
 			onClick: function () { refreshWindow(); }
 		}),
 		toggle({
 			text: "Auto mechanics (hire/fire + assign)", height: 12,
 			tooltip: "On exit/staff changes, automatically hire missing or fire surplus mechanics (newest, non-busy first) and assign them to exits",
-			isPressed: autoKindStore.mechanic,
+			isPressed: autoKindStore.mechanic, visibility: vis,
 			onChange: function (checked) {
 				setAuto(checked);
 				if (checked) { autoRightSizeAndAssign(); }
@@ -1756,20 +1791,70 @@ function buildMainWindowTemplate(): WindowTemplate {
 		}),
 		button({
 			text: "Reset mechanics assignments", height: 16,
-			tooltip: "Clear every mechanic's patrol area and the persisted exit->mechanic map, without hiring or firing anyone",
+			tooltip: "Clear every mechanic's patrol area and the persisted exit->mechanic map, without hiring or firing anyone", visibility: vis,
 			onClick: function () { resetStaffType("mechanic"); }
 		}),
-		label({ text: mechStatusStore, height: 16 })
+		label({ text: mechStatusStore, height: 16, visibility: vis })
 	];
-	sections.push(box({
+	return box({
 		text: "Mechanics",
+		visibility: vis,
 		content: horizontal({ spacing: 6, content: [mechanicIcon, vertical({ spacing: 2, content: mechanicControls })] })
-	}));
+	});
+}
+
+function switchTab(tabIndex: number): void {
+	activeTabStore.set(tabIndex);
+}
+
+function buildMainWindowTemplate(): WindowTemplate {
+	const tabButtons: WidgetCreator<FlexiblePosition>[] = TABS.map(function (tab) {
+		return button({
+			text: tab.label, height: 16,
+			isPressed: flexCompute(activeTabStore, function (active) { return active === tab.index; }),
+			onClick: function () { switchTab(tab.index); }
+		});
+	});
+
+	// All tab boxes are always present in the layout; only the active one is
+	// visible (visibility: "none" removes it from layout entirely), so
+	// switching tabs never needs to close/rebuild/reopen the native window -
+	// avoiding duplicate/stacked windows.
+	const handymanBox = makePathSection(PATH_KINDS.filter(function (p) { return p.kind === "handyman"; })[0]);
+	const guardBox = makePathSection(PATH_KINDS.filter(function (p) { return p.kind === "security"; })[0]);
+	const mascotBox = makePathSection(PATH_KINDS.filter(function (p) { return p.kind === "entertainer"; })[0]);
+	const sections: WidgetCreator<FlexiblePosition>[] = [
+		horizontal({ spacing: 2, content: tabButtons }),
+		handymanBox, buildMechanicsBox(), guardBox, mascotBox,
+		box({
+			text: "All staff types",
+			content: vertical({
+				spacing: 4,
+				content: [
+					button({
+						text: "Assign all", height: 18,
+						tooltip: "Assign mechanics and all path-staff types now (offers to hire/fire as needed)",
+						onClick: function () { assignAllNow(); }
+					}),
+					button({
+						text: autoAllLabelStore, height: 18,
+						tooltip: "Toggle automatic hire/fire + assign for mechanics and all path-staff types",
+						onClick: function () { setAllAuto(!allAutoEnabled()); refreshWindow(); }
+					}),
+					button({
+						text: "Reset all assignments", height: 18,
+						tooltip: "Clear the patrol areas and persisted assignments of every staff type (mechanics included) without hiring or firing anyone",
+						onClick: function () { resetAllStaff(); }
+					})
+				]
+			})
+		})
+	];
 
 	return flexWindow({
 		title: "Staff Manager",
-		width: 300, height: 500,
-		minWidth: 280, maxWidth: 620, minHeight: 400, maxHeight: 900,
+		width: 300, height: 260,
+		minWidth: 280, maxWidth: 620, minHeight: 260, maxHeight: 900,
 		colours: [24, 24],
 		spacing: 6,
 		content: sections
@@ -1777,9 +1862,16 @@ function buildMainWindowTemplate(): WindowTemplate {
 }
 
 function openWindow(): void {
-	if (!mainWindowTemplate) { mainWindowTemplate = buildMainWindowTemplate(); }
+	mainWindowTemplate = buildMainWindowTemplate();
 	mainWindowTemplate.open();
 	mainWindowTemplate.focus();
+	// flexui only updates a widget's "skip" (layout-exclusion) flag inside a
+	// store's change subscription, never on initial creation - so every tab
+	// box starts included in the layout (all stacked on top of each other)
+	// until its visibility store fires at least one change. Re-emitting the
+	// active tab here forces all tab boxes to apply their correct skip state
+	// before the user sees the window.
+	activeTabStore.set(activeTabStore.get());
 	// Calculate the initial Needed/Hired numbers right away instead of
 	// waiting for the user to press "Recalculate needed".
 	ensureScan(false, function () {
