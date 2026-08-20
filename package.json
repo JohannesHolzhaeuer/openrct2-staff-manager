@@ -6,8 +6,8 @@
   "license": "MIT",
   "author": "Johannes",
   "scripts": {
-    "build": "tsc --noEmit && esbuild staff-assigner.ts --bundle --outfile=dist/staff-assigner.js --format=iife --target=es2017 && node deploy.js",
-    "watch": "esbuild staff-assigner.ts --bundle --outfile=dist/staff-assigner.js --format=iife --target=es2017 --watch"
+    "build": "tsc --noEmit && esbuild staff-assigner.ts --bundle --outfile=dist/staff-assigner.js --format=iife --target=es2023 && node deploy.js",
+    "watch": "esbuild staff-assigner.ts --bundle --outfile=dist/staff-assigner.js --format=iife --target=es2023 --watch"
   },
   "devDependencies": {
     "@openrct2/types": "^0.5.4",
@@ -17,5 +17,8 @@
   },
   "dependencies": {
     "openrct2-flexui": "^0.1.0-prerelease.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
   }
 }
