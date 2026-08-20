@@ -16,7 +16,7 @@
     "removeComments": false
   },
   "include": [
-    "staff-manager.ts",
+    "staff-assigner.ts",
     "node_modules/@openrct2/types/openrct2.d.ts"
   ]
 }

@@ -29,7 +29,7 @@ jobs:
       - name: Create release and upload asset
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/staff-manager.js
+          files: dist/staff-assigner.js
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

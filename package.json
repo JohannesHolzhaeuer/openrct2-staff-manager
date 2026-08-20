@@ -1,13 +1,13 @@
 {
-  "name": "staff-manager-plus",
+  "name": "staff-assigner",
   "version": "1.0.0",
   "description": "An OpenRCT2 plugin that automates park staff management (handymen, security, mascots, mechanics).",
-  "main": "dist/staff-manager.js",
+  "main": "dist/staff-assigner.js",
   "license": "MIT",
   "author": "Johannes",
   "scripts": {
-    "build": "tsc --noEmit && esbuild staff-manager.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2017 && node deploy.js",
-    "watch": "esbuild staff-manager.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2017 --watch"
+    "build": "tsc --noEmit && esbuild staff-assigner.ts --bundle --outfile=dist/staff-assigner.js --format=iife --target=es2017 && node deploy.js",
+    "watch": "esbuild staff-assigner.ts --bundle --outfile=dist/staff-assigner.js --format=iife --target=es2017 --watch"
   },
   "devDependencies": {
     "@openrct2/types": "^0.5.4",

@@ -1,4 +1,4 @@
-# Staff Manager
+# Staff Assigner
 
 An [OpenRCT2](https://openrct2.org/) plugin that automates park staff management:
 it splits your paths (or ride **queues**) among **handymen, security guards and
@@ -10,7 +10,7 @@ park changes — always sending each staff member to their **nearest** free zone
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
-- **Source:** `staff-manager.ts` (TypeScript, compiles to `dist/staff-manager.js`)
+- **Source:** `staff-assigner.ts` (TypeScript, compiles to `dist/staff-assigner.js`)
 
 ---
 
@@ -99,12 +99,12 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 - **OpenRCT2** installed at least once, so the local `plugin` folder (or your own custom
   location) exists to deploy into.
 - Optional: **Visual Studio 2022/2026** with the Node.js/JavaScript workload if you want to open
-  `openrct2-staff-manager.sln` and build from the IDE instead of the command line (this runs the
+  `openrct2-staff-assigner.sln` and build from the IDE instead of the command line (this runs the
   same `npm run build` script under the hood).
 
 1. Install dependencies: `npm install`.
 2. Build: `npm run build`.
-   - Compiles `staff-manager.ts` to `dist/staff-manager.js`.
+   - Compiles `staff-assigner.ts` to `dist/staff-assigner.js`.
    - Then automatically copies (`deploy.js`) that file straight into your
      local OpenRCT2 **plugin** folder:
      - **Windows:** `Documents\OpenRCT2\plugin\`
@@ -119,10 +119,10 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 ## Installation
 
 1. Run `npm install` then `npm run build` (see [Building](#building)) — this
-   compiles and deploys `staff-manager.js` directly into your OpenRCT2 plugin
+   compiles and deploys `staff-assigner.js` directly into your OpenRCT2 plugin
    folder.
 2. Start OpenRCT2 (or, in single‑player, use the plugin **hot‑reload**).
-3. Open it from the **map / red‑toolbox button → “Staff Manager”**.
+3. Open it from the **map / red‑toolbox button → “Staff Assigner”**.
 
 ---
 
@@ -179,7 +179,7 @@ If the entrance can't be found, it falls back to seeding from owned path tiles.
 
 ## Configuration (in‑file)
 
-Near the top of `staff-manager.ts` you can tweak:
+Near the top of `staff-assigner.ts` you can tweak:
 
 | Constant | Purpose |
 | --- | --- |
