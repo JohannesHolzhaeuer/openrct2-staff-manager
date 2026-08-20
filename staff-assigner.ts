@@ -2,7 +2,7 @@
 import {
 	window as flexWindow, box, horizontal, vertical, label, button, spinner, toggle,
 	store as flexStore, WindowTemplate, WidgetCreator, FlexiblePosition, Store, ElementVisibility,
-	BuildOutput, Layoutable, WidgetMap, Rectangle, ElementParams
+	BuildOutput, Layoutable, WidgetMap, Rectangle, ElementParams, Scale
 } from "openrct2-flexui";
 /*****************************************************************************
  * Staff Assigner
@@ -23,7 +23,7 @@ const PROGRESS_BAR_BORDER_COLOUR = 12; // dark grey well border
 const PROGRESS_BAR_FILL_COLOUR = 30;   // bright blue fill
 let progressBarNameCounter = 0;
 
-function progressBar(percentStore: Store<number>, width: number, height: number, visibility?: Store<ElementVisibility>): WidgetCreator<FlexiblePosition> {
+function progressBar(percentStore: Store<number>, width: Scale, height: Scale, visibility?: Store<ElementVisibility>): WidgetCreator<FlexiblePosition> {
 	let pct = Math.max(0, Math.min(100, percentStore.get()));
 	const name = "progressbar" + (progressBarNameCounter++);
 	const params: ElementParams & FlexiblePosition = { visibility: visibility, width: width, height: height };
@@ -33,7 +33,7 @@ function progressBar(percentStore: Store<number>, width: number, height: number,
 			const widget = {
 				type: "custom",
 				name: name,
-				x: 0, y: 0, width: width, height: height,
+				x: 0, y: 0, width: 0, height: 0,
 				onDraw: function (g: GraphicsContext): void {
 					const w = g.width, h = g.height;
 					g.colour = PROGRESS_BAR_BORDER_COLOUR;
@@ -73,7 +73,7 @@ const capacityProgressStore = flexStore<number>(80);
 // One bordered box per staff type: title, count spinner, "current/target"
 // text, apply and reset buttons. Mirrors the marginRect groups in the
 // mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, count: number, ratioText: string, width: number, height: number): WidgetCreator<FlexiblePosition> {
+function staffGroup(title: string, count: number, ratioText: string, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
@@ -85,16 +85,16 @@ function staffGroup(title: string, count: number, ratioText: string, width: numb
 					spacing: 4,
 					height: 14,
 					content: [
-						spinner({ value: count, minimum: 0, maximum: 999, width: 46, height: 14 }),
-						label({ text: ratioText, width: 50, height: 14, alignment: "centred" })
+						spinner({ value: count, minimum: 0, maximum: 999, width: "5w", height: 14 }),
+						label({ text: ratioText, width: "8w", height: 14, alignment: "centred" })
 					]
 				}),
 				horizontal({
 					spacing: 4,
 					height: 16,
 					content: [
-						button({ text: "apply", width: 44, height: 16 }),
-						button({ text: "reset", width: 40, height: 16 })
+						button({ text: "apply", width: "11w", height: 16 }),
+						button({ text: "reset", width: "10w", height: 16 })
 					]
 				})
 			]
@@ -104,7 +104,7 @@ function staffGroup(title: string, count: number, ratioText: string, width: numb
 
 // One bordered box for entertainers: same as staffGroup plus a "Queue"
 // toggle underneath, laid out vertically like in the mockup.
-function entertainersGroup(width: number, height: number): WidgetCreator<FlexiblePosition> {
+function entertainersGroup(width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: "Entertainers",
 		width: width,
@@ -116,17 +116,17 @@ function entertainersGroup(width: number, height: number): WidgetCreator<Flexibl
 					spacing: 4,
 					height: 14,
 					content: [
-						spinner({ value: 16, minimum: 0, maximum: 999, width: 46, height: 14 }),
-						label({ text: "160 / 150", width: 50, height: 14, alignment: "centred" })
+						spinner({ value: 16, minimum: 0, maximum: 999, width: "5w", height: 14 }),
+						label({ text: "160 / 150", width: "8w", height: 14, alignment: "centred" })
 					]
 				}),
-				toggle({ text: "Queue", width: 60, height: 12 }),
+				toggle({ text: "Queue", width: "100%", height: 12 }),
 				horizontal({
 					spacing: 4,
 					height: 16,
 					content: [
-						button({ text: "apply", width: 44, height: 16 }),
-						button({ text: "reset", width: 40, height: 16 })
+						button({ text: "apply", width: "11w", height: 16 }),
+						button({ text: "reset", width: "10w", height: 16 })
 					]
 				})
 			]
@@ -137,18 +137,18 @@ function entertainersGroup(width: number, height: number): WidgetCreator<Flexibl
 // --- Window ------------------------------------------------------------------
 let windowTemplate: WindowTemplate | null = null;
 
-const GROUP_WIDTH = 150;
-const GROUP_HEIGHT = 58;
+const GROUP_WIDTH: Scale = "1w"; // each column takes an equal share of the available width
+const GROUP_HEIGHT = 48;
 const STACK_HEIGHT = GROUP_HEIGHT * 2 + 4; // two stacked groups + spacing
 
 function staffAssignerWindowTemplate(): WindowTemplate {
 	if (!windowTemplate) {
 		windowTemplate = flexWindow({
 			title: "Staff Assigner",
-			width: 480,
-			height: 200,
-			minWidth: 480,
-			minHeight: 200,
+			width: 420,
+			height: 180,
+			minWidth: 420,
+			minHeight: 180,
 			spacing: 4,
 			content: [
 				horizontal({
@@ -156,15 +156,15 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 					height: 30,
 					content: [
 						button({ text: "Calculate", width: 70, height: 30 }),
-						vertical({
-							spacing: 2,
-							width: 390,
-							height: 30,
-							content: [
-								progressBar(capacityProgressStore, 390, 14),
-								label({ text: "500 path / 100 queue / 80 exits", width: 390, height: 12 })
-							]
-						})
+							vertical({
+								spacing: 2,
+								width: "1w",
+								height: 30,
+								content: [
+									progressBar(capacityProgressStore, "100%", 14),
+									label({ text: "500 path / 100 queue / 80 exits", width: "100%", height: 12 })
+								]
+							})
 					]
 				}),
 				horizontal({
@@ -176,8 +176,8 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 							width: GROUP_WIDTH,
 							height: STACK_HEIGHT,
 							content: [
-								staffGroup("Handymen", 8, "160 / 150", GROUP_WIDTH, GROUP_HEIGHT),
-								staffGroup("Guards", 16, "160 / 150", GROUP_WIDTH, GROUP_HEIGHT)
+								staffGroup("Handymen", 8, "160 / 150", "100%", GROUP_HEIGHT),
+								staffGroup("Guards", 16, "160 / 150", "100%", GROUP_HEIGHT)
 							]
 						}),
 						entertainersGroup(GROUP_WIDTH, STACK_HEIGHT),
