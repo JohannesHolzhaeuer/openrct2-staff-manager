@@ -380,26 +380,51 @@ function finishCalculation(state: CalculationState): void {
 	calculation = null;
 }
 
+// --- Staff stat table ---------------------------------------------------------
+// A single row of the per-staff-type table: a left-aligned name and a
+// right-aligned value, e.g. "Needed        nnn".
+const STAT_ROW_HEIGHT = 12;
+
+function statRow(name: string, value: number): WidgetCreator<FlexiblePosition> {
+	return horizontal({
+		spacing: 4,
+		height: STAT_ROW_HEIGHT,
+		content: [
+			label({ text: name, width: "1w", height: STAT_ROW_HEIGHT }),
+			label({ text: String(value), width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred" })
+		]
+	});
+}
+
+function statTable(needed: number, hired: number, assigned: number): Array<WidgetCreator<FlexiblePosition>> {
+	return [
+		statRow("Needed", needed),
+		statRow("Hired", hired),
+		statRow("Assigned", assigned),
+		statRow("Difference", hired - needed)
+	];
+}
+
 // --- Staff group widget ------------------------------------------------------
-// One bordered box per staff type: title, count spinner, "current/target"
-// text, apply and reset buttons. Mirrors the marginRect groups in the
-// mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, count: number, ratioText: string, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
+// One bordered box per staff type: title, count spinner, a Needed/Hired/
+// Assigned/Difference stat table, apply and reset buttons. Mirrors the
+// marginRect groups in the mockup (Handymen, Guards, Mechanics).
+function staffGroup(title: string, count: number, needed: number, hired: number, assigned: number, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
 		height: height,
 		content: vertical({
-			spacing: 4,
+			spacing: 3,
 			content: [
 				horizontal({
 					spacing: 4,
 					height: 14,
 					content: [
-						spinner({ value: count, minimum: 0, maximum: 999, width: "5w", height: 14 }),
-						label({ text: ratioText, width: "8w", height: 14, alignment: "centred" })
+						spinner({ value: count, minimum: 0, maximum: 999, width: "5w", height: 14 })
 					]
 				}),
+				...statTable(needed, hired, assigned),
 				horizontal({
 					spacing: 4,
 					height: 16,
@@ -415,22 +440,22 @@ function staffGroup(title: string, count: number, ratioText: string, width: Scal
 
 // One bordered box for entertainers: same as staffGroup plus a "Queue"
 // toggle underneath, laid out vertically like in the mockup.
-function entertainersGroup(width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
+function entertainersGroup(needed: number, hired: number, assigned: number, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: "Entertainers",
 		width: width,
 		height: height,
 		content: vertical({
-			spacing: 4,
+			spacing: 3,
 			content: [
 				horizontal({
 					spacing: 4,
 					height: 14,
 					content: [
-						spinner({ value: 16, minimum: 0, maximum: 999, width: "5w", height: 14 }),
-						label({ text: "160 / 150", width: "8w", height: 14, alignment: "centred" })
+						spinner({ value: 16, minimum: 0, maximum: 999, width: "5w", height: 14 })
 					]
 				}),
+				...statTable(needed, hired, assigned),
 				toggle({ text: "Queue", width: "100%", height: 12 }),
 				horizontal({
 					spacing: 4,
@@ -449,17 +474,21 @@ function entertainersGroup(width: Scale, height: Scale): WidgetCreator<FlexibleP
 let windowTemplate: WindowTemplate | null = null;
 
 const GROUP_WIDTH: Scale = "1w"; // each column takes an equal share of the available width
-const GROUP_HEIGHT = 48;
+const GROUP_HEIGHT = 110; // spinner row + 4 stat rows + apply/reset row + spacing + box chrome
+const ENTERTAINERS_EXTRA_HEIGHT = 16; // extra "Queue" toggle row + spacing
+const ENTERTAINERS_HEIGHT = GROUP_HEIGHT + ENTERTAINERS_EXTRA_HEIGHT;
 const STACK_HEIGHT = GROUP_HEIGHT * 2 + 4; // two stacked groups + spacing
+const MECHANICS_ENTERTAINERS_STACK_HEIGHT = GROUP_HEIGHT + ENTERTAINERS_HEIGHT + 4;
+const COLUMN_ROW_HEIGHT = Math.max(STACK_HEIGHT, MECHANICS_ENTERTAINERS_STACK_HEIGHT);
 
 function staffAssignerWindowTemplate(): WindowTemplate {
 	if (!windowTemplate) {
 		windowTemplate = flexWindow({
 			title: "Staff Assigner",
-			width: 420,
-			height: 180,
-			minWidth: 420,
-			minHeight: 180,
+			width: 320,
+			height: COLUMN_ROW_HEIGHT + 60,
+			minWidth: 320,
+			minHeight: COLUMN_ROW_HEIGHT + 60,
 			spacing: 4,
 			content: [
 				horizontal({
@@ -480,19 +509,26 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 				}),
 				horizontal({
 					spacing: 6,
-					height: STACK_HEIGHT,
+					height: COLUMN_ROW_HEIGHT,
 					content: [
 						vertical({
 							spacing: 4,
 							width: GROUP_WIDTH,
-							height: STACK_HEIGHT,
+							height: "100%",
 							content: [
-								staffGroup("Handymen", 8, "160 / 150", "100%", GROUP_HEIGHT),
-								staffGroup("Guards", 16, "160 / 150", "100%", GROUP_HEIGHT)
-							]
-						}),
-						entertainersGroup(GROUP_WIDTH, STACK_HEIGHT),
-						staffGroup("Mechanics", 4, "160 / 150", GROUP_WIDTH, STACK_HEIGHT)
+									staffGroup("Handymen", 8, 160, 150, 145, "100%", "1w"),
+									staffGroup("Guards", 16, 160, 150, 145, "100%", "1w")
+								]
+							}),
+						vertical({
+							spacing: 4,
+							width: GROUP_WIDTH,
+							height: "100%",
+							content: [
+									staffGroup("Mechanics", 4, 160, 150, 145, "100%", (GROUP_HEIGHT + "w") as Scale),
+									entertainersGroup(160, 150, 145, "100%", (ENTERTAINERS_HEIGHT + "w") as Scale)
+								]
+						})
 					]
 				})
 			]
