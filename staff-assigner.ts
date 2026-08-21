@@ -474,7 +474,6 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: 
 	return [
 		statRow("Needed", needed, "The number of staff of this type needed to patrol the reachable pathway network, assuming the network is split into consecutive (contiguous) sections of \"tiles per staff\" tiles each."),
 		statRow("Hired", hired, "The number of staff of this type currently hired in the park."),
-		statRow("Assigned", assigned, "The number of hired staff of this type that already have a patrol area assigned."),
 		statRow("Difference", difference, "Needed minus Hired: a negative number means staff of this type need to be hired, a positive number means staff can be fired.")
 	];
 }
@@ -506,15 +505,7 @@ function staffGroup(title: string, tilesPerStaff: Store<number>, needed: Bindabl
 						})
 					]
 				}),
-				...statTable(needed, hired, assigned),
-				horizontal({
-					spacing: 4,
-					height: 16,
-					content: [
-						button({ text: "apply", width: "11w", height: 16 }),
-						button({ text: "reset", width: "10w", height: 16 })
-					]
-				})
+				...statTable(needed, hired, assigned)
 			]
 		})
 	});
@@ -537,16 +528,8 @@ function entertainersGroup(needed: number, hired: number, assigned: number, widt
 						spinner({ value: 16, minimum: 0, maximum: 999, width: "5w", height: 14 })
 					]
 				}),
-				...statTable(needed, hired, assigned),
-				toggle({ text: "Queue", width: "100%", height: 12 }),
-				horizontal({
-					spacing: 4,
-					height: 16,
-					content: [
-						button({ text: "apply", width: "11w", height: 16 }),
-						button({ text: "reset", width: "10w", height: 16 })
-					]
-				})
+				toggle({ text: "Queue", width: "100%", height: 14, isPressed: true }),
+				...statTable(needed, hired, assigned)
 			]
 		})
 	});
@@ -556,37 +539,39 @@ function entertainersGroup(needed: number, hired: number, assigned: number, widt
 let windowTemplate: WindowTemplate | null = null;
 
 const GROUP_WIDTH: Scale = "1w"; // each column takes an equal share of the available width
-const GROUP_HEIGHT = 110; // spinner row + 4 stat rows + apply/reset row + spacing + box chrome
-const ENTERTAINERS_EXTRA_HEIGHT = 16; // extra "Queue" toggle row + spacing
+const BOX_TITLE_HEIGHT = 11; // height reserved for the box's own title label
+const BOX_PADDING = 12; // 6px top + 6px bottom default box content padding
+const GROUP_CONTENT_HEIGHT = 14 + 3 + (STAT_ROW_HEIGHT * 3) + (3 * 2); // spinner row + spacing + 3 stat rows + spacing between them
+const GROUP_HEIGHT = BOX_TITLE_HEIGHT + BOX_PADDING + GROUP_CONTENT_HEIGHT;
+const ENTERTAINERS_EXTRA_HEIGHT = 14 + 3; // extra "Queue" toggle row + spacing
 const ENTERTAINERS_HEIGHT = GROUP_HEIGHT + ENTERTAINERS_EXTRA_HEIGHT;
 const STACK_HEIGHT = GROUP_HEIGHT * 2 + 4; // two stacked groups + spacing
 const MECHANICS_ENTERTAINERS_STACK_HEIGHT = GROUP_HEIGHT + ENTERTAINERS_HEIGHT + 4;
 const COLUMN_ROW_HEIGHT = Math.max(STACK_HEIGHT, MECHANICS_ENTERTAINERS_STACK_HEIGHT);
 
+const TOP_ROW_HEIGHT = 14;
+const APPLY_ROW_HEIGHT = 20;
+const CONTENT_SPACING = 4; // spacing between the window's top-level content rows
+const WINDOW_CHROME_HEIGHT = 29; // title bar + top/bottom window padding
+const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
+
 function staffAssignerWindowTemplate(): WindowTemplate {
 	if (!windowTemplate) {
+		const windowWidth = 320;
 		windowTemplate = flexWindow({
 			title: "Staff Assigner",
-			width: 320,
-			height: COLUMN_ROW_HEIGHT + 60,
-			minWidth: 320,
-			minHeight: COLUMN_ROW_HEIGHT + 60,
+			width: windowWidth,
+			height: WINDOW_HEIGHT,
+			x: Math.round((ui.width - windowWidth) / 2),
+			y: Math.round((ui.height - WINDOW_HEIGHT) / 2),
 			spacing: 4,
 			content: [
 				horizontal({
 					spacing: 6,
-					height: 30,
+					height: 14,
 					content: [
-						button({ text: "Calculate", width: 70, height: 30, onClick: startCapacityCalculation }),
-							vertical({
-								spacing: 2,
-								width: "1w",
-								height: 30,
-								content: [
-									progressBar(capacityProgressStore, "100%", 14),
-									label({ text: capacityResultStore, width: "100%", height: 12 })
-								]
-							})
+						button({ text: "Calculate", width: 70, height: 14, onClick: startCapacityCalculation }),
+						label({ text: capacityResultStore, width: "1w", height: 14 })
 					]
 				}),
 				horizontal({
@@ -596,23 +581,24 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 						vertical({
 							spacing: 4,
 							width: GROUP_WIDTH,
-							height: "100%",
+							height: STACK_HEIGHT,
 							content: [
-									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", "1w"),
-												staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", "1w")
-											]
-										}),
-									vertical({
-										spacing: 4,
-										width: GROUP_WIDTH,
-										height: "100%",
-										content: [
-												staffGroup("Mechanics", mechanicsTilesPerStaffStore, 160, 150, 145, "100%", (GROUP_HEIGHT + "w") as Scale),
-												entertainersGroup(160, 150, 145, "100%", (ENTERTAINERS_HEIGHT + "w") as Scale)
+									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", GROUP_HEIGHT),
+											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT)
+										]
+									}),
+								vertical({
+									spacing: 4,
+									width: GROUP_WIDTH,
+									height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
+									content: [
+											staffGroup("Mechanics", mechanicsTilesPerStaffStore, 160, 150, 145, "100%", GROUP_HEIGHT),
+											entertainersGroup(160, 150, 145, "100%", ENTERTAINERS_HEIGHT)
 								]
 						})
 					]
-				})
+				}),
+				button({ text: "apply", width: "100%", height: 20 })
 			]
 		});
 	}
