@@ -1,7 +1,7 @@
 /// <reference path="node_modules/@openrct2/types/openrct2.d.ts" />
 import {
 	window as flexWindow, box, horizontal, vertical, label, button, spinner, toggle,
-	store as flexStore, WindowTemplate, WidgetCreator, FlexiblePosition, Store, ElementVisibility,
+	store as flexStore, compute, isStore, WindowTemplate, WidgetCreator, FlexiblePosition, Store, Bindable, ElementVisibility,
 	BuildOutput, Layoutable, WidgetMap, Rectangle, ElementParams, Scale
 } from "openrct2-flexui";
 /*****************************************************************************
@@ -91,6 +91,45 @@ const TILES_PER_TICK = 500; // amount of tile work performed per game tick
 const capacityProgressStore = flexStore<number>(0);
 const capacityResultStore = flexStore<string>("Press Calculate to scan the park.");
 
+// --- Staff calculation stores -------------------------------------------------
+// The number of reachable path/queue tiles is only known after a capacity
+// scan has completed; it is shared between Handymen and Guards, since both
+// patrol the same footpath/queue network. Needed is derived from this tile
+// count and each staff type's "tiles per staff" spinner value, assuming the
+// tiles will be split into that many contiguous (consecutive) tiles per
+// staff member once assigned, so Needed = ceil(tiles / tilesPerStaff).
+const totalPatrolTilesStore = flexStore<number>(0);
+
+const handymenTilesPerStaffStore = flexStore<number>(8);
+const guardsTilesPerStaffStore = flexStore<number>(16);
+const mechanicsTilesPerStaffStore = flexStore<number>(4); // placeholder: Mechanics calculation not implemented yet
+
+const handymenHiredStore = flexStore<number>(0);
+const handymenAssignedStore = flexStore<number>(0);
+const guardsHiredStore = flexStore<number>(0);
+const guardsAssignedStore = flexStore<number>(0);
+
+function computeNeeded(totalTiles: number, tilesPerStaff: number): number {
+	if (tilesPerStaff <= 0 || totalTiles <= 0) {
+		return 0;
+	}
+	return Math.ceil(totalTiles / tilesPerStaff);
+}
+
+const handymenNeededStore = compute(totalPatrolTilesStore, handymenTilesPerStaffStore, computeNeeded);
+const guardsNeededStore = compute(totalPatrolTilesStore, guardsTilesPerStaffStore, computeNeeded);
+
+// Refreshes the Hired/Assigned stores for both Handymen and Guards from the
+// current, real-time staff roster. Unlike Needed (which depends on the
+// potentially slow tile scan), this is cheap and can be refreshed whenever
+// Calculate is pressed.
+function refreshHiredAndAssignedStaffCounts(): void {
+	handymenHiredStore.set(countHiredStaff("handyman"));
+	handymenAssignedStore.set(countAssignedStaff("handyman"));
+	guardsHiredStore.set(countHiredStaff("security"));
+	guardsAssignedStore.set(countAssignedStaff("security"));
+}
+
 type CalculationPhase = "scanning-entrances" | "flood-fill" | "done";
 
 interface PathTileInfo {
@@ -154,6 +193,32 @@ function hasParkEntranceElement(x: number, y: number): boolean {
 		}
 	}
 	return false;
+}
+
+// Counts the number of currently hired staff of a given type (e.g. handyman,
+// security), and how many of those already have a non-empty patrol area
+// (i.e. are already "assigned" to patrol a section of the park).
+function countHiredStaff(staffType: StaffType): number {
+	const staff = map.getAllEntities("staff");
+	let count = 0;
+	for (let i = 0; i < staff.length; i++) {
+		if (staff[i].staffType === staffType) {
+			count++;
+		}
+	}
+	return count;
+}
+
+function countAssignedStaff(staffType: StaffType): number {
+	const staff = map.getAllEntities("staff");
+	let count = 0;
+	for (let i = 0; i < staff.length; i++) {
+		const member = staff[i];
+		if (member.staffType === staffType && member.patrolArea.tiles.length > 0) {
+			count++;
+		}
+	}
+	return count;
 }
 
 function countRideExits(): number {
@@ -377,6 +442,8 @@ function finishCalculation(state: CalculationState): void {
 	const exits = countRideExits();
 	capacityResultStore.set(state.pathTiles + " path / " + state.queueTiles + " queue / " + exits + " exits");
 	capacityProgressStore.set(100);
+	totalPatrolTilesStore.set(state.pathTiles + state.queueTiles);
+	refreshHiredAndAssignedStaffCounts();
 	calculation = null;
 }
 
@@ -385,23 +452,30 @@ function finishCalculation(state: CalculationState): void {
 // right-aligned value, e.g. "Needed        nnn".
 const STAT_ROW_HEIGHT = 12;
 
-function statRow(name: string, value: number): WidgetCreator<FlexiblePosition> {
+function statRow(name: string, value: Bindable<number>, tooltip: string): WidgetCreator<FlexiblePosition> {
+	const text = isStore(value) ? compute(value, String) : String(value);
 	return horizontal({
 		spacing: 4,
 		height: STAT_ROW_HEIGHT,
 		content: [
-			label({ text: name, width: "1w", height: STAT_ROW_HEIGHT }),
-			label({ text: String(value), width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred" })
+			label({ text: name, width: "1w", height: STAT_ROW_HEIGHT, tooltip: tooltip }),
+			label({ text: text, width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred", tooltip: tooltip })
 		]
 	});
 }
 
-function statTable(needed: number, hired: number, assigned: number): Array<WidgetCreator<FlexiblePosition>> {
+function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>): Array<WidgetCreator<FlexiblePosition>> {
+	const difference = (isStore(needed) || isStore(hired))
+		? compute(
+			isStore(hired) ? hired : flexStore(hired),
+			isStore(needed) ? needed : flexStore(needed),
+			function (h: number, n: number) { return h - n; })
+		: (hired as number) - (needed as number);
 	return [
-		statRow("Needed", needed),
-		statRow("Hired", hired),
-		statRow("Assigned", assigned),
-		statRow("Difference", hired - needed)
+		statRow("Needed", needed, "The number of staff of this type needed to patrol the reachable pathway network, assuming the network is split into consecutive (contiguous) sections of \"tiles per staff\" tiles each."),
+		statRow("Hired", hired, "The number of staff of this type currently hired in the park."),
+		statRow("Assigned", assigned, "The number of hired staff of this type that already have a patrol area assigned."),
+		statRow("Difference", difference, "Needed minus Hired: a negative number means staff of this type need to be hired, a positive number means staff can be fired.")
 	];
 }
 
@@ -409,7 +483,7 @@ function statTable(needed: number, hired: number, assigned: number): Array<Widge
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, count: number, needed: number, hired: number, assigned: number, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
+function staffGroup(title: string, tilesPerStaff: Store<number>, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
@@ -421,7 +495,15 @@ function staffGroup(title: string, count: number, needed: number, hired: number,
 					spacing: 4,
 					height: 14,
 					content: [
-						spinner({ value: count, minimum: 0, maximum: 999, width: "5w", height: 14 })
+						spinner({
+							value: tilesPerStaff,
+							minimum: 1,
+							maximum: 999,
+							width: "5w",
+							height: 14,
+							tooltip: "The number of pathway tiles a single staff member of this type is expected to patrol (tiles per staff). Used to calculate how many staff are Needed.",
+							onChange: function (value) { tilesPerStaff.set(value); }
+						})
 					]
 				}),
 				...statTable(needed, hired, assigned),
@@ -516,17 +598,17 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 							width: GROUP_WIDTH,
 							height: "100%",
 							content: [
-									staffGroup("Handymen", 8, 160, 150, 145, "100%", "1w"),
-									staffGroup("Guards", 16, 160, 150, 145, "100%", "1w")
-								]
-							}),
-						vertical({
-							spacing: 4,
-							width: GROUP_WIDTH,
-							height: "100%",
-							content: [
-									staffGroup("Mechanics", 4, 160, 150, 145, "100%", (GROUP_HEIGHT + "w") as Scale),
-									entertainersGroup(160, 150, 145, "100%", (ENTERTAINERS_HEIGHT + "w") as Scale)
+									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", "1w"),
+												staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", "1w")
+											]
+										}),
+									vertical({
+										spacing: 4,
+										width: GROUP_WIDTH,
+										height: "100%",
+										content: [
+												staffGroup("Mechanics", mechanicsTilesPerStaffStore, 160, 150, 145, "100%", (GROUP_HEIGHT + "w") as Scale),
+												entertainersGroup(160, 150, 145, "100%", (ENTERTAINERS_HEIGHT + "w") as Scale)
 								]
 						})
 					]
