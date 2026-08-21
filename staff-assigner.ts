@@ -93,13 +93,18 @@ const capacityResultStore = flexStore<string>("Press Calculate to scan the park.
 
 type CalculationPhase = "scanning-entrances" | "flood-fill" | "done";
 
+interface PathTileInfo {
+	isQueue: boolean;
+}
+
 interface CalculationState {
 	phase: CalculationPhase;
 	mapWidth: number;
 	mapHeight: number;
 	totalTiles: number;
-	scanIndex: number;    // linear tile index used while scanning for the park entrance
-	seeds: CoordsXY[];
+	scanIndex: number;    // linear tile index used while scanning the whole map
+	pathInfo: Map<number, PathTileInfo>; // every footpath tile found during the scan, keyed by tileKey
+	seeds: CoordsXY[];    // footpath tiles adjacent to a park entrance
 	frontier: CoordsXY[]; // tiles still to be visited during the flood fill
 	visited: Set<number>; // visited tile keys (y * mapWidth + x)
 	pathTiles: number;
@@ -186,6 +191,7 @@ function startCapacityCalculation(): void {
 		mapHeight: size.y,
 		totalTiles: size.x * size.y,
 		scanIndex: 0,
+		pathInfo: new Map<number, PathTileInfo>(),
 		seeds: [],
 		frontier: [],
 		visited: new Set<number>(),
@@ -235,10 +241,11 @@ function onCalculationTick(): void {
 	}
 }
 
-// Scans the whole map, one batch of tiles at a time, looking for a park
-// entrance tile; the footpath tile that guests actually walk on is usually
-// the entrance tile itself or one of its 4 direct neighbours, so both are
-// checked to find the seed tile(s) the flood fill starts from.
+// Scans the whole map, one batch of tiles at a time, recording every footpath
+// tile found (so the flood fill can later expand across them) and looking
+// for park entrance tiles; the footpath tile that guests actually walk on is
+// usually the entrance tile itself or one of its 4 direct neighbours, so both
+// are checked to find the seed tile(s) the flood fill starts from.
 function scanForEntrances(state: CalculationState, budget: number): number {
 	while (budget > 0 && state.scanIndex < state.totalTiles) {
 		const x = state.scanIndex % state.mapWidth;
@@ -246,8 +253,13 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 		state.scanIndex++;
 		budget--;
 
+		const footpath = findFootpathElement(x, y);
+		if (footpath) {
+			state.pathInfo.set(tileKey(x, y, state.mapWidth), { isQueue: !!footpath.isQueue });
+		}
+
 		if (hasParkEntranceElement(x, y)) {
-			if (findFootpathElement(x, y)) {
+			if (footpath) {
 				state.seeds.push({ x: x, y: y });
 			}
 			for (let i = 0; i < NEIGHBOUR_OFFSETS.length; i++) {
@@ -265,11 +277,27 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 	}
 
 	if (state.scanIndex >= state.totalTiles) {
-		for (let i = 0; i < state.seeds.length; i++) {
-			const seed = state.seeds[i];
+		// Normally the park-entrance seeds are what the flood fill starts
+		// from. If none were found (e.g. the entrance tile detection missed
+		// due to API differences), fall back to seeding from every footpath
+		// tile discovered during the scan so the calculation still reports
+		// the size of the path network instead of silently returning zero.
+		let seedTiles = state.seeds;
+		if (seedTiles.length === 0) {
+			seedTiles = [];
+			state.pathInfo.forEach(function (_info, key) {
+				seedTiles.push({ x: key % state.mapWidth, y: Math.floor(key / state.mapWidth) });
+			});
+		}
+
+		for (let i = 0; i < seedTiles.length; i++) {
+			const seed = seedTiles[i];
 			const key = tileKey(seed.x, seed.y, state.mapWidth);
 			if (state.visited.has(key)) {
 				continue; // avoid double-counting a tile seeded from multiple entrance tiles
+			}
+			if (!state.pathInfo.has(key)) {
+				continue;
 			}
 			state.visited.add(key);
 			state.frontier.push(seed);
@@ -287,12 +315,12 @@ function floodFillPaths(state: CalculationState, budget: number): number {
 		const tile = state.frontier.pop() as CoordsXY;
 		budget--;
 
-		const element = findFootpathElement(tile.x, tile.y);
-		if (!element) {
+		const info = state.pathInfo.get(tileKey(tile.x, tile.y, state.mapWidth));
+		if (!info) {
 			continue;
 		}
 
-		if (element.isQueue) {
+		if (info.isQueue) {
 			state.queueTiles++;
 		}
 		else {
@@ -307,7 +335,7 @@ function floodFillPaths(state: CalculationState, budget: number): number {
 				continue;
 			}
 			const key = tileKey(nx, ny, state.mapWidth);
-			if (state.visited.has(key)) {
+			if (state.visited.has(key) || !state.pathInfo.has(key)) {
 				continue;
 			}
 			state.visited.add(key);
