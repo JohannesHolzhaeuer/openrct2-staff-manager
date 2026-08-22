@@ -100,7 +100,7 @@ const capacityResultStore = flexStore<string>("Press Calculate to scan the park.
 // staff member once assigned, so Needed = ceil(tiles / tilesPerStaff).
 const totalPatrolTilesStore = flexStore<number>(0);
 const totalPathOnlyTilesStore = flexStore<number>(0); // path tiles only, excluding queue tiles (used by Guards)
-const totalMowableTilesStore = flexStore<number>(0);
+const totalGardeningTilesStore = flexStore<number>(0);
 const totalRideExitsStore = flexStore<number>(0); // used by Mechanics: one mechanic needed per ride exit
 
 const handymenTilesPerStaffStore = flexStore<number>(8);
@@ -124,15 +124,15 @@ function computeNeeded(totalTiles: number, tilesPerStaff: number): number {
 }
 
 // Handymen are split into two separate jobs: general cleanup (litter, empty
-// bins, etc., patrolling the whole footpath/queue network) and mowing
-// (patrolling only the mowable grass tiles). Each has its own "tiles per
-// staff" spinner, so the total number of handymen needed is the sum of both
-// requirements, each rounded up independently.
-function computeHandymenNeeded(patrolTiles: number, cleanupTilesPerStaff: number, mowableTiles: number, mowerTilesPerStaff: number): number {
-	return computeNeeded(patrolTiles, cleanupTilesPerStaff) + computeNeeded(mowableTiles, mowerTilesPerStaff);
+// bins, etc., patrolling the whole footpath/queue network) and gardening
+// (patrolling only the tiles that need mowing or watering). Each has its own
+// "tiles per staff" spinner, so the total number of handymen needed is the
+// sum of both requirements, each rounded up independently.
+function computeHandymenNeeded(patrolTiles: number, cleanupTilesPerStaff: number, gardeningTiles: number, mowerTilesPerStaff: number): number {
+	return computeNeeded(patrolTiles, cleanupTilesPerStaff) + computeNeeded(gardeningTiles, mowerTilesPerStaff);
 }
 
-const handymenNeededStore = compute(totalPatrolTilesStore, handymenTilesPerStaffStore, totalMowableTilesStore, handymenMowerTilesPerStaffStore, computeHandymenNeeded);
+const handymenNeededStore = compute(totalPatrolTilesStore, handymenTilesPerStaffStore, totalGardeningTilesStore, handymenMowerTilesPerStaffStore, computeHandymenNeeded);
 const guardsNeededStore = compute(totalPathOnlyTilesStore, guardsTilesPerStaffStore, computeNeeded);
 // One mechanic is needed per ride exit in the park.
 const mechanicsNeededStore = compute(totalRideExitsStore, function (exits: number) { return exits; });
@@ -168,7 +168,7 @@ interface CalculationState {
 	visited: Set<number>; // visited tile keys (y * mapWidth + x)
 	pathTiles: number;
 	queueTiles: number;
-	mowableTiles: number;
+	gardeningTiles: number;
 }
 
 let calculation: CalculationState | null = null;
@@ -207,10 +207,11 @@ function findSurfaceElement(x: number, y: number): SurfaceElement | null {
 	return null;
 }
 
-// A tile is mowable if it is owned by the park, has a grass surface (i.e. not
-// water) and isn't covered by a footpath, since guests/staff can't walk on
-// grass hidden underneath a path.
-function isMowableTile(x: number, y: number, footpath: FootpathElement | null): boolean {
+// A tile needs gardening if it is owned by the park and isn't covered by a
+// footpath (since guests/staff can't walk on grass/scenery hidden underneath
+// a path), and either has a grass surface that can grow (mowing) or has a
+// small scenery element on it that can need watering (e.g. flowers/gardens).
+function isGardeningTile(x: number, y: number, footpath: FootpathElement | null): boolean {
 	if (footpath) {
 		return false;
 	}
@@ -218,7 +219,25 @@ function isMowableTile(x: number, y: number, footpath: FootpathElement | null): 
 	if (!surface || !surface.hasOwnership) {
 		return false;
 	}
-	return surface.grassLength >= 0;
+	if (surface.grassLength >= 0) {
+		return true;
+	}
+	return hasWaterableSceneryElement(x, y);
+}
+
+// Small scenery placed directly on the ground (e.g. flowers, gardens) is what
+// handymen water; there's no direct "needs watering" flag exposed by the
+// scripting API, so the presence of small scenery on the tile is used as an
+// approximation of a tile that requires watering.
+function hasWaterableSceneryElement(x: number, y: number): boolean {
+	const tile = map.getTile(x, y);
+	for (let i = 0; i < tile.numElements; i++) {
+		const element = tile.getElement(i);
+		if (element.type === "small_scenery") {
+			return true;
+		}
+	}
+	return false;
 }
 
 // Entrance elements are used for both ride entrances/exits (which have a real
@@ -308,7 +327,7 @@ function startCapacityCalculation(): void {
 		visited: new Set<number>(),
 		pathTiles: 0,
 		queueTiles: 0,
-		mowableTiles: 0
+		gardeningTiles: 0
 	};
 
 	capacityProgressStore.set(0);
@@ -370,8 +389,8 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 			state.pathInfo.set(tileKey(x, y, state.mapWidth), { isQueue: !!footpath.isQueue });
 		}
 
-		if (isMowableTile(x, y, footpath)) {
-			state.mowableTiles++;
+		if (isGardeningTile(x, y, footpath)) {
+			state.gardeningTiles++;
 		}
 
 		if (hasParkEntranceElement(x, y)) {
@@ -491,11 +510,11 @@ function finishCalculation(state: CalculationState): void {
 	}
 
 	const exits = countRideExits();
-	capacityResultStore.set(state.pathTiles + " path / " + state.queueTiles + " queue / " + exits + " exits / " + state.mowableTiles + " mowable");
+	capacityResultStore.set(state.pathTiles + " path / " + state.queueTiles + " queue / " + exits + " exits / " + state.gardeningTiles + " gardening");
 	capacityProgressStore.set(100);
 	totalPatrolTilesStore.set(state.pathTiles + state.queueTiles);
 	totalPathOnlyTilesStore.set(state.pathTiles);
-	totalMowableTilesStore.set(state.mowableTiles);
+	totalGardeningTilesStore.set(state.gardeningTiles);
 	totalRideExitsStore.set(exits);
 	refreshHiredAndAssignedStaffCounts();
 	calculation = null;
@@ -571,7 +590,7 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 							maximum: 999,
 							width: "3w",
 							height: 14,
-							tooltip: "The number of mowable grass tiles a single mowing-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many mowing handymen are Needed.",
+							tooltip: "The number of gardening tiles (tiles that need mowing or watering) a single gardening-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many gardening handymen are Needed.",
 							onChange: function (value) { mowerTilesPerStaff.set(value); }
 						})
 					]
@@ -682,7 +701,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 							width: GROUP_WIDTH,
 							height: STACK_HEIGHT,
 							content: [
-									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Mowing", "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed."),
+									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Gardening", "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed."),
 											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, "Tiles / Staff", undefined, undefined, "The number of plain pathway tiles (excluding queue tiles) a single guard is expected to patrol (tiles per staff). Used to calculate how many guards are Needed.")
 										]
 									}),
