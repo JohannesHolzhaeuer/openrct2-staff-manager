@@ -101,16 +101,18 @@ const capacityResultStore = flexStore<string>("Press Calculate to scan the park.
 const totalPatrolTilesStore = flexStore<number>(0);
 const totalPathOnlyTilesStore = flexStore<number>(0); // path tiles only, excluding queue tiles (used by Guards)
 const totalMowableTilesStore = flexStore<number>(0);
+const totalRideExitsStore = flexStore<number>(0); // used by Mechanics: one mechanic needed per ride exit
 
 const handymenTilesPerStaffStore = flexStore<number>(8);
 const handymenMowerTilesPerStaffStore = flexStore<number>(256);
 const guardsTilesPerStaffStore = flexStore<number>(16);
-const mechanicsTilesPerStaffStore = flexStore<number>(4); // placeholder: Mechanics calculation not implemented yet
 
 const handymenHiredStore = flexStore<number>(0);
 const handymenAssignedStore = flexStore<number>(0);
 const guardsHiredStore = flexStore<number>(0);
 const guardsAssignedStore = flexStore<number>(0);
+const mechanicsHiredStore = flexStore<number>(0);
+const mechanicsAssignedStore = flexStore<number>(0);
 
 function computeNeeded(totalTiles: number, tilesPerStaff: number): number {
 	if (tilesPerStaff <= 0 || totalTiles <= 0) {
@@ -130,9 +132,11 @@ function computeHandymenNeeded(patrolTiles: number, cleanupTilesPerStaff: number
 
 const handymenNeededStore = compute(totalPatrolTilesStore, handymenTilesPerStaffStore, totalMowableTilesStore, handymenMowerTilesPerStaffStore, computeHandymenNeeded);
 const guardsNeededStore = compute(totalPathOnlyTilesStore, guardsTilesPerStaffStore, computeNeeded);
+// One mechanic is needed per ride exit in the park.
+const mechanicsNeededStore = compute(totalRideExitsStore, function (exits: number) { return exits; });
 
-// Refreshes the Hired/Assigned stores for both Handymen and Guards from the
-// current, real-time staff roster. Unlike Needed (which depends on the
+// Refreshes the Hired/Assigned stores for Handymen, Guards and Mechanics from
+// the current, real-time staff roster. Unlike Needed (which depends on the
 // potentially slow tile scan), this is cheap and can be refreshed whenever
 // Calculate is pressed.
 function refreshHiredAndAssignedStaffCounts(): void {
@@ -140,6 +144,8 @@ function refreshHiredAndAssignedStaffCounts(): void {
 	handymenAssignedStore.set(countAssignedStaff("handyman"));
 	guardsHiredStore.set(countHiredStaff("security"));
 	guardsAssignedStore.set(countAssignedStaff("security"));
+	mechanicsHiredStore.set(countHiredStaff("mechanic"));
+	mechanicsAssignedStore.set(countAssignedStaff("mechanic"));
 }
 
 type CalculationPhase = "scanning-entrances" | "flood-fill" | "done";
@@ -488,6 +494,7 @@ function finishCalculation(state: CalculationState): void {
 	totalPatrolTilesStore.set(state.pathTiles + state.queueTiles);
 	totalPathOnlyTilesStore.set(state.pathTiles);
 	totalMowableTilesStore.set(state.mowableTiles);
+	totalRideExitsStore.set(exits);
 	refreshHiredAndAssignedStaffCounts();
 	calculation = null;
 }
@@ -659,7 +666,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 									width: GROUP_WIDTH,
 									height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
 									content: [
-											staffGroup("Mechanics", null, 160, 150, 145, "100%", MECHANICS_HEIGHT),
+											staffGroup("Mechanics", null, mechanicsNeededStore, mechanicsHiredStore, mechanicsAssignedStore, "100%", MECHANICS_HEIGHT),
 											entertainersGroup(160, 150, 145, "100%", ENTERTAINERS_HEIGHT)
 								]
 						})
