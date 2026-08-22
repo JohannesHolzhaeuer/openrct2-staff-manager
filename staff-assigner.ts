@@ -103,6 +103,11 @@ const totalPathOnlyTilesStore = flexStore<number>(0); // path tiles only, exclud
 const totalGardeningTilesStore = flexStore<number>(0);
 const totalRideExitsStore = flexStore<number>(0); // used by Mechanics: one mechanic needed per ride exit
 
+// Ordered tile lists retained from the last completed scan, used to split
+// the park into consecutive patrol areas when Apply is pressed.
+let lastPatrolTileList: CoordsXY[] = [];   // path + queue tiles
+let lastGardeningTileList: CoordsXY[] = []; // gardening tiles
+
 const handymenTilesPerStaffStore = flexStore<number>(8);
 const handymenMowerTilesPerStaffStore = flexStore<number>(256);
 const guardsTilesPerStaffStore = flexStore<number>(16);
@@ -183,6 +188,8 @@ interface CalculationState {
 	pathTiles: number;
 	queueTiles: number;
 	gardeningTiles: number;
+	patrolTileList: CoordsXY[];   // path + queue tiles, in flood-fill visiting order
+	gardeningTileList: CoordsXY[]; // gardening tiles, in scan order
 }
 
 let calculation: CalculationState | null = null;
@@ -341,7 +348,9 @@ function startCapacityCalculation(): void {
 		visited: new Set<number>(),
 		pathTiles: 0,
 		queueTiles: 0,
-		gardeningTiles: 0
+		gardeningTiles: 0,
+		patrolTileList: [],
+		gardeningTileList: []
 	};
 
 	capacityProgressStore.set(0);
@@ -405,6 +414,7 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 
 		if (isGardeningTile(x, y, footpath)) {
 			state.gardeningTiles++;
+			state.gardeningTileList.push({ x: x, y: y });
 		}
 
 		if (hasParkEntranceElement(x, y)) {
@@ -475,6 +485,7 @@ function floodFillPaths(state: CalculationState, budget: number): number {
 		else {
 			state.pathTiles++;
 		}
+		state.patrolTileList.push({ x: tile.x, y: tile.y });
 
 		for (let i = 0; i < NEIGHBOUR_OFFSETS.length; i++) {
 			const offset = NEIGHBOUR_OFFSETS[i];
@@ -530,8 +541,157 @@ function finishCalculation(state: CalculationState): void {
 	totalPathOnlyTilesStore.set(state.pathTiles);
 	totalGardeningTilesStore.set(state.gardeningTiles);
 	totalRideExitsStore.set(exits);
+	lastPatrolTileList = state.patrolTileList;
+	lastGardeningTileList = state.gardeningTileList;
 	refreshHiredAndAssignedStaffCounts();
 	calculation = null;
+}
+
+// --- Apply: Handymen -----------------------------------------------------------
+// Bitmask values for Handyman.orders / StaffSetOrdersArgs.staffOrders /
+// StaffHireArgs.staffOrders (see openrct2.d.ts): 1 = Sweeping, 2 = Watering
+// flowers, 4 = Empty bins, 8 = Mowing.
+const HANDYMAN_ORDER_SWEEPING = 1;
+const HANDYMAN_ORDER_WATERING = 2;
+const HANDYMAN_ORDER_EMPTY_BINS = 4;
+const HANDYMAN_ORDER_MOWING = 8;
+const HANDYMAN_ORDERS_CLEANUP = HANDYMAN_ORDER_SWEEPING | HANDYMAN_ORDER_EMPTY_BINS;
+const HANDYMAN_ORDERS_GARDENING = HANDYMAN_ORDER_WATERING | HANDYMAN_ORDER_MOWING;
+
+const STAFF_TYPE_HANDYMAN = 0; // StaffHireArgs.staffType value for handymen
+
+// Splits an ordered list of tiles into consecutive chunks of at most
+// `chunkSize` tiles each, so each chunk can become one staff member's patrol
+// area. Returns an empty array if chunkSize is not positive.
+function splitIntoChunks(tiles: CoordsXY[], chunkSize: number): CoordsXY[][] {
+	if (chunkSize <= 0) {
+		return [];
+	}
+	const chunks: CoordsXY[][] = [];
+	for (let i = 0; i < tiles.length; i += chunkSize) {
+		chunks.push(tiles.slice(i, i + chunkSize));
+	}
+	return chunks;
+}
+
+// Removes every handyman currently hired, firing the newest ones first if
+// there are more than `neededCount` of them, then hires additional handymen
+// if understaffed. Invokes onDone with the final full list of handymen
+// (oldest first) once hiring/firing and patrol-area resets are complete.
+function resetAndTrimHandymen(neededCount: number, onDone: (handymen: Handyman[]) => void): void {
+	const allStaff = map.getAllEntities("staff") as Staff[];
+	const handymen: Handyman[] = [];
+	for (let i = 0; i < allStaff.length; i++) {
+		const member = allStaff[i];
+		if (member.staffType === "handyman") {
+			handymen.push(member as Handyman);
+		}
+	}
+
+	// Clear existing patrol areas for everyone that survives, and fire the
+	// newest handymen first if there are more than needed. Entity ids
+	// increase monotonically as entities are created, so the highest id is
+	// the most recently hired.
+	handymen.sort(function (a, b) { return (a.id as number) - (b.id as number); });
+
+	const toFire = handymen.length > neededCount ? handymen.splice(neededCount) : [];
+	const surviving = handymen;
+
+	for (let i = 0; i < surviving.length; i++) {
+		surviving[i].patrolArea.clear();
+	}
+
+	let fireIndex = toFire.length - 1; // fire newest (highest id) first
+	function fireNext(): void {
+		if (fireIndex < 0) {
+			hireMissingHandymen(surviving, neededCount, onDone);
+			return;
+		}
+		const member = toFire[fireIndex];
+		fireIndex--;
+		context.executeAction("stafffire", { id: member.id as number }, function () {
+			fireNext();
+		});
+	}
+	fireNext();
+}
+
+// Hires additional handymen until `survivors` reaches `neededCount`, then
+// invokes onDone with the final full list of handymen (oldest first).
+function hireMissingHandymen(survivors: Handyman[], neededCount: number, onDone: (handymen: Handyman[]) => void): void {
+	const missing = neededCount - survivors.length;
+	if (missing <= 0) {
+		onDone(survivors);
+		return;
+	}
+
+	let remaining = missing;
+	function hireNext(): void {
+		if (remaining <= 0) {
+			onDone(survivors);
+			return;
+		}
+		remaining--;
+		context.executeAction("staffhire", {
+			autoPosition: true,
+			staffType: STAFF_TYPE_HANDYMAN,
+			costumeIndex: 0,
+			staffOrders: 0
+		}, function (result) {
+			const peepId = (result as StaffHireNewActionResult).peep;
+			if (typeof peepId === "number") {
+				const entity = map.getEntity(peepId);
+				if (entity) {
+					survivors.push(entity as Handyman);
+				}
+			}
+			hireNext();
+		});
+	}
+	hireNext();
+}
+
+// Assigns consecutive chunks of `tiles` to `handymen` (one chunk per
+// handyman, in order), sets their orders, and teleports each handyman to a
+// tile within their new patrol area. Handymen beyond the available chunks
+// (or if there are no tiles for their job) are left with an empty patrol
+// area and no orders for that job.
+function assignHandymenToTiles(handymen: Handyman[], tiles: CoordsXY[], tilesPerStaff: number, orders: number): void {
+	const chunks = splitIntoChunks(tiles, tilesPerStaff);
+	for (let i = 0; i < handymen.length; i++) {
+		const member = handymen[i];
+		const chunk = i < chunks.length ? chunks[i] : [];
+		if (chunk.length > 0) {
+			member.patrolArea.add(chunk);
+		}
+		context.executeAction("staffsetorders", { id: member.id as number, staffOrders: orders }, function () { });
+		if (chunk.length > 0) {
+			const tile = chunk[0];
+			const surface = findSurfaceElement(tile.x, tile.y);
+			const z = surface ? (surface.baseHeight * 8) : member.z;
+			member.x = tile.x * 32 + 16;
+			member.y = tile.y * 32 + 16;
+			member.z = z;
+		}
+	}
+}
+
+// Applies the full Handymen plan: reset patrol areas, hire/fire to match
+// Needed (firing newest first), split the cleanup and gardening tile lists
+// into consecutive areas, assign orders, and teleport each handyman into
+// their new area.
+function applyHandymenChanges(): void {
+	const needed = handymenNeededStore.get();
+	resetAndTrimHandymen(needed, function (handymen) {
+		const cleanupCount = computeNeeded(lastPatrolTileList.length, handymenTilesPerStaffStore.get());
+		const cleanupHandymen = handymen.slice(0, cleanupCount);
+		const gardeningHandymen = handymen.slice(cleanupCount);
+
+		assignHandymenToTiles(cleanupHandymen, lastPatrolTileList, handymenTilesPerStaffStore.get(), HANDYMAN_ORDERS_CLEANUP);
+		assignHandymenToTiles(gardeningHandymen, lastGardeningTileList, handymenMowerTilesPerStaffStore.get(), HANDYMAN_ORDERS_GARDENING);
+
+		refreshHiredAndAssignedStaffCounts();
+	});
 }
 
 // --- Staff stat table ---------------------------------------------------------
@@ -730,7 +890,17 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 						})
 					]
 				}),
-				button({ text: "apply", width: "100%", height: 20 })
+				button({
+					text: "apply", width: "100%", height: 20, onClick: function () {
+						const delta = handymenNeededStore.get() - handymenHiredStore.get();
+						const message = delta > 0
+							? ("This will hire " + delta + " additional handymen")
+							: (delta < 0
+								? ("This will fire " + (-delta) + " handymen")
+								: "This will not change the number of handymen");
+						showConfirmDialog("Confirm Handymen", message, applyHandymenChanges);
+					}
+				})
 			]
 		});
 	}
@@ -739,6 +909,47 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 
 function openWindow(): void {
 	staffAssignerWindowTemplate().open();
+}
+
+// --- Confirmation dialog -------------------------------------------------------
+// A small, self-contained OK/Cancel dialog. A fresh window is built every time
+// it's shown (rather than reusing a cached WindowTemplate like the main
+// window) since its message and callbacks differ per invocation.
+function showConfirmDialog(title: string, message: string, onConfirm: () => void): void {
+	let dialog: WindowTemplate | null = null;
+
+	function closeDialog(): void {
+		if (dialog) {
+			dialog.close();
+			dialog = null;
+		}
+	}
+
+	dialog = flexWindow({
+		title: title,
+		width: 260,
+		height: 90,
+		x: Math.round((ui.width - 260) / 2),
+		y: Math.round((ui.height - 90) / 2),
+		spacing: 6,
+		content: [
+			label({ text: message, width: "100%", height: "1w" }),
+			horizontal({
+				spacing: 6,
+				height: 14,
+				content: [
+					button({
+						text: "Confirm", width: "1w", height: 14, onClick: function () {
+							closeDialog();
+							onConfirm();
+						}
+					}),
+					button({ text: "Cancel", width: "1w", height: 14, onClick: closeDialog })
+				]
+			})
+		]
+	});
+	dialog.open();
 }
 
 // --- Main --------------------------------------------------------------------
