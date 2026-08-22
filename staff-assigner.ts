@@ -543,7 +543,18 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 
 		const footpath = findFootpathElement(x, y);
 		if (footpath) {
-			state.pathInfo.set(tileKey(x, y, state.mapWidth), { isQueue: isQueueFootpath(footpath), isConnectorOnly: false });
+			// Path tiles outside the owned park boundary (e.g. the approach path
+			// leading from off-park land to the park entrance) must remain
+			// walkable for reachability purposes, but staff can't be assigned to
+			// patrol land that isn't owned by the park, so such tiles are
+			// recorded as connector-only (crossed by the flood fill, but never
+			// added to the patrol tile list). Only full ownership counts here:
+			// tiles with construction rights only (typically the scenario's
+			// entrance approach road) can be built on but aren't actually park
+			// property, so they must not be treated as patrollable either.
+			const surface = findSurfaceElement(x, y);
+			const isOwned = !!surface && surface.hasOwnership;
+			state.pathInfo.set(tileKey(x, y, state.mapWidth), { isQueue: isQueueFootpath(footpath), isConnectorOnly: !isOwned });
 		}
 		else if (hasRideEntranceOrExitElement(x, y, state.mapWidth)) {
 			// Ride entrance/exit tiles link the main path network to that
@@ -736,18 +747,21 @@ function resetAndTrimHandymen(neededCount: number, onDone: (handymen: Handyman[]
 		}
 	}
 
-	// Clear existing patrol areas for everyone that survives, and fire the
-	// newest handymen first if there are more than needed. Entity ids
-	// increase monotonically as entities are created, so the highest id is
-	// the most recently hired.
+	// Clicking Apply always starts from a clean slate: clear every existing
+	// handyman's patrol area first (before any hiring/firing), so stale
+	// assignments from a previous Apply never linger, even for staff that
+	// are about to be fired anyway.
+	for (let i = 0; i < handymen.length; i++) {
+		handymen[i].patrolArea.clear();
+	}
+
+	// Fire the newest handymen first if there are more than needed. Entity
+	// ids increase monotonically as entities are created, so the highest id
+	// is the most recently hired.
 	handymen.sort(function (a, b) { return (a.id as number) - (b.id as number); });
 
 	const toFire = handymen.length > neededCount ? handymen.splice(neededCount) : [];
 	const surviving = handymen;
-
-	for (let i = 0; i < surviving.length; i++) {
-		surviving[i].patrolArea.clear();
-	}
 
 	let fireIndex = toFire.length - 1; // fire newest (highest id) first
 	function fireNext(): void {
@@ -758,7 +772,18 @@ function resetAndTrimHandymen(neededCount: number, onDone: (handymen: Handyman[]
 		const member = toFire[fireIndex];
 		fireIndex--;
 		context.executeAction("stafffire", { id: member.id as number }, function () {
-			fireNext();
+			// This callback runs asynchronously, outside of any try/catch the
+			// caller may have wrapped around the initial resetAndTrimHandymen(...)
+			// call; an uncaught exception here would silently stop the chain
+			// partway through, leaving onDone (and therefore the confirmation
+			// dialog) never invoked.
+			try {
+				fireNext();
+			}
+			catch (error) {
+				console.log("Staff Assigner: firing handymen failed - " + error);
+				onDone(surviving);
+			}
 		});
 	}
 	fireNext();
@@ -786,14 +811,25 @@ function hireMissingHandymen(survivors: Handyman[], neededCount: number, onDone:
 			costumeIndex: 0,
 			staffOrders: 0
 		}, function (result) {
-			const peepId = (result as StaffHireNewActionResult).peep;
-			if (typeof peepId === "number") {
-				const entity = map.getEntity(peepId);
-				if (entity) {
-					survivors.push(entity as Handyman);
+			// This callback runs asynchronously, outside of any try/catch the
+			// caller may have wrapped around the initial resetAndTrimHandymen(...)
+			// call; an uncaught exception here (e.g. hiring failing, such as
+			// insufficient funds) would silently stop the chain partway through,
+			// leaving onDone (and therefore the confirmation dialog) never invoked.
+			try {
+				const peepId = (result as StaffHireNewActionResult).peep;
+				if (typeof peepId === "number") {
+					const entity = map.getEntity(peepId);
+					if (entity) {
+						survivors.push(entity as Handyman);
+					}
 				}
+				hireNext();
 			}
-			hireNext();
+			catch (error) {
+				console.log("Staff Assigner: hiring handymen failed - " + error);
+				onDone(survivors);
+			}
 		});
 	}
 	hireNext();
@@ -815,8 +851,21 @@ function assignHandymenToTiles(handymen: Handyman[], tiles: CoordsXY[], tilesPer
 		context.executeAction("staffsetorders", { id: member.id as number, staffOrders: orders }, function () { });
 		if (chunk.length > 0) {
 			const tile = chunk[0];
-			const surface = findSurfaceElement(tile.x, tile.y);
-			const z = surface ? (surface.baseHeight * 8) : member.z;
+			// Use the footpath's own height, not the ground surface's height:
+			// on elevated/bridge paths the surface underneath can be far below
+			// (e.g. over water), and placing staff there would teleport them
+			// into the water instead of onto the path.
+			const tileFootpath = findFootpathElement(tile.x, tile.y);
+			let z = member.z;
+			if (tileFootpath) {
+				z = tileFootpath.baseHeight * 8;
+			}
+			else {
+				const surface = findSurfaceElement(tile.x, tile.y);
+				if (surface) {
+					z = surface.baseHeight * 8;
+				}
+			}
 			member.x = tile.x * 32 + 16;
 			member.y = tile.y * 32 + 16;
 			member.z = z;
@@ -831,15 +880,25 @@ function assignHandymenToTiles(handymen: Handyman[], tiles: CoordsXY[], tilesPer
 function applyHandymenChanges(onComplete: () => void): void {
 	const needed = handymenNeededStore.get();
 	resetAndTrimHandymen(needed, function (handymen) {
-		const cleanupCount = computeNeeded(lastPatrolTileList.length, handymenTilesPerStaffStore.get());
-		const cleanupHandymen = handymen.slice(0, cleanupCount);
-		const gardeningHandymen = handymen.slice(cleanupCount);
+		// The confirmation dialog only closes once onComplete() is invoked, so
+		// it must always run - even if something below throws - otherwise the
+		// dialog is left open forever with no way to dismiss it.
+		try {
+			const cleanupCount = computeNeeded(lastPatrolTileList.length, handymenTilesPerStaffStore.get());
+			const cleanupHandymen = handymen.slice(0, cleanupCount);
+			const gardeningHandymen = handymen.slice(cleanupCount);
 
-		assignHandymenToTiles(cleanupHandymen, lastPatrolTileList, handymenTilesPerStaffStore.get(), HANDYMAN_ORDERS_CLEANUP);
-		assignHandymenToTiles(gardeningHandymen, lastGardeningTileList, handymenMowerTilesPerStaffStore.get(), HANDYMAN_ORDERS_GARDENING);
+			assignHandymenToTiles(cleanupHandymen, lastPatrolTileList, handymenTilesPerStaffStore.get(), HANDYMAN_ORDERS_CLEANUP);
+			assignHandymenToTiles(gardeningHandymen, lastGardeningTileList, handymenMowerTilesPerStaffStore.get(), HANDYMAN_ORDERS_GARDENING);
 
-		refreshHiredAndAssignedStaffCounts();
-		onComplete();
+			refreshHiredAndAssignedStaffCounts();
+		}
+		catch (error) {
+			console.log("Staff Assigner: applying handymen changes failed - " + error);
+		}
+		finally {
+			onComplete();
+		}
 	});
 }
 
@@ -1040,14 +1099,21 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 					]
 				}),
 				button({
-					text: "apply", width: "100%", height: 20, onClick: function () {
+					text: "Apply and close", width: "100%", height: 20, onClick: function () {
 						const delta = handymenNeededStore.get() - handymenHiredStore.get();
 						const message = delta > 0
 							? ("This will hire " + delta + " additional handymen")
 							: (delta < 0
 								? ("This will fire " + (-delta) + " handymen")
 								: "This will not change the number of handymen");
-						showConfirmDialog("Confirm Handymen", message, applyHandymenChanges);
+						showConfirmDialog("Confirm Handymen", message, function (onComplete) {
+							applyHandymenChanges(function () {
+								onComplete();
+								if (windowTemplate) {
+									windowTemplate.close();
+								}
+							});
+						});
 					}
 				})
 			]
@@ -1091,7 +1157,18 @@ function showConfirmDialog(title: string, message: string, onConfirm: (onComplet
 				content: [
 					button({
 						text: "Confirm", width: "1w", height: 14, onClick: function () {
-							onConfirm(closeDialog);
+							// onConfirm may throw synchronously (before any async
+							// callback runs) if something goes wrong; without this
+							// try/catch such an error would propagate out of the
+							// button's onClick handler and leave the dialog open
+							// forever with no way to dismiss it.
+							try {
+								onConfirm(closeDialog);
+							}
+							catch (error) {
+								console.log("Staff Assigner: confirm action failed - " + error);
+								closeDialog();
+							}
 						}
 					}),
 					button({ text: "Cancel", width: "1w", height: 14, onClick: closeDialog })
