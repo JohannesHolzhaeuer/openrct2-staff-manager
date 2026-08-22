@@ -173,6 +173,7 @@ type CalculationPhase = "scanning-entrances" | "flood-fill" | "done";
 
 interface PathTileInfo {
 	isQueue: boolean;
+	isConnectorOnly: boolean; // ride entrance/exit tile: walkable for reachability, but not a patrol tile
 }
 
 interface CalculationState {
@@ -228,16 +229,41 @@ function findSurfaceElement(x: number, y: number): SurfaceElement | null {
 	return null;
 }
 
-// A tile needs gardening if it is owned by the park and isn't covered by a
+// A surface tile is water (has a water level above its own height) or sand
+// (a "beach" terrain_surface object) if either of these apply; handymen
+// can't mow or water either of these, so such tiles must never be treated
+// as gardening tiles even if they happen to carry decorative scenery.
+function isWaterOrSandSurface(surface: SurfaceElement): boolean {
+	if (surface.waterHeight > 0) {
+		return true;
+	}
+	try {
+		const surfaceObject = objectManager.getObject("terrain_surface", surface.surfaceStyle);
+		if (surfaceObject && surfaceObject.identifier && surfaceObject.identifier.toLowerCase().indexOf("sand") !== -1) {
+			return true;
+		}
+	}
+	catch (error) {
+		// If the surface object can't be resolved for any reason, fall back to
+		// treating the tile as regular ground rather than failing the scan.
+	}
+	return false;
+}
+
+// A tile needs gardening if it is owned by the park, isn't covered by a
 // footpath (since guests/staff can't walk on grass/scenery hidden underneath
-// a path), and either has a grass surface that can grow (mowing) or has a
-// small scenery element on it that can need watering (e.g. flowers/gardens).
+// a path), isn't water or sand (which can't be mowed or watered), and either
+// has a grass surface that can grow (mowing) or has a small scenery element
+// on it that can need watering (e.g. flowers/gardens).
 function isGardeningTile(x: number, y: number, footpath: FootpathElement | null): boolean {
 	if (footpath) {
 		return false;
 	}
 	const surface = findSurfaceElement(x, y);
 	if (!surface || !surface.hasOwnership) {
+		return false;
+	}
+	if (isWaterOrSandSurface(surface)) {
 		return false;
 	}
 	if (surface.grassLength >= 0) {
@@ -261,24 +287,79 @@ function hasWaterableSceneryElement(x: number, y: number): boolean {
 	return false;
 }
 
-// Entrance elements are used for both ride entrances/exits (which have a real
-// ride index) and the park entrance itself (which does not belong to a ride).
-// On the current OpenRCT2 scripting API, park entrances report a "no ride"
-// value of either RIDE_ID_NULL (0xFFFF) or null/undefined, depending on the
-// element accessor used.
-function isNoRideSentinel(rideId: number | null | undefined): boolean {
-	return rideId === null || rideId === undefined || rideId === RIDE_ID_NULL;
+// A footpath tile is a queue tile if the game marked it as such. (Reading
+// .ride/.station on a non-queue footpath element throws in this API version,
+// so those fields can't be used as a secondary signal.)
+function isQueueFootpath(footpath: FootpathElement): boolean {
+	return !!footpath.isQueue;
 }
 
-function hasParkEntranceElement(x: number, y: number): boolean {
-	const tile = map.getTile(x, y);
-	for (let i = 0; i < tile.numElements; i++) {
-		const element = tile.getElement(i);
-		if (element.type === "entrance" && isNoRideSentinel((element as EntranceElement).ride)) {
-			return true;
+// Entrance elements are used for both ride entrances/exits (which belong to a
+// ride) and the park entrance itself. The "ride" field on an EntranceElement
+// is NOT a reliable sentinel for telling these apart: a park entrance can
+// report the same ride id as an unrelated ride happening to have that same
+// index (e.g. ride 0), rather than a dedicated "no ride" value. Instead, the
+// set of genuine ride entrance/exit tiles is built directly from
+// map.rides[*].stations[*].entrance/exit (authoritative tile coordinates),
+// and any other "entrance" tile element is treated as the park entrance.
+let rideEntranceExitTileKeys: Set<number> | null = null;
+
+function getRideEntranceExitTileKeys(mapWidth: number): Set<number> {
+	if (rideEntranceExitTileKeys !== null) {
+		return rideEntranceExitTileKeys;
+	}
+	const keys = new Set<number>();
+	const rides = map.rides;
+	for (let r = 0; r < rides.length; r++) {
+		const stations = rides[r].stations;
+		for (let s = 0; s < stations.length; s++) {
+			const entrance = stations[s].entrance;
+			const exit = stations[s].exit;
+			if (entrance && entrance.x !== LOCATION_NULL) {
+				keys.add(tileKey(entrance.x / 32, entrance.y / 32, mapWidth));
+			}
+			if (exit && exit.x !== LOCATION_NULL) {
+				keys.add(tileKey(exit.x / 32, exit.y / 32, mapWidth));
+			}
 		}
 	}
-	return false;
+	rideEntranceExitTileKeys = keys;
+	return keys;
+}
+
+function hasParkEntranceElement(x: number, y: number, mapWidth: number): boolean {
+	const tile = map.getTile(x, y);
+	let hasEntranceElement = false;
+	for (let i = 0; i < tile.numElements; i++) {
+		if (tile.getElement(i).type === "entrance") {
+			hasEntranceElement = true;
+			break;
+		}
+	}
+	if (!hasEntranceElement) {
+		return false;
+	}
+	return !getRideEntranceExitTileKeys(mapWidth).has(tileKey(x, y, mapWidth));
+}
+
+// A ride entrance/exit tile connects the main footpath network to a ride's
+// queue line; it is not itself a path or queue tile that staff patrol, but
+// it must be treated as a walkable connector node during the flood fill,
+// otherwise the queue network (which only attaches to the main path network
+// through this entrance/exit element) would never be reachable.
+function hasRideEntranceOrExitElement(x: number, y: number, mapWidth: number): boolean {
+	const tile = map.getTile(x, y);
+	let hasEntranceElement = false;
+	for (let i = 0; i < tile.numElements; i++) {
+		if (tile.getElement(i).type === "entrance") {
+			hasEntranceElement = true;
+			break;
+		}
+	}
+	if (!hasEntranceElement) {
+		return false;
+	}
+	return getRideEntranceExitTileKeys(mapWidth).has(tileKey(x, y, mapWidth));
 }
 
 // Counts the number of currently hired staff of a given type (e.g. handyman,
@@ -334,6 +415,11 @@ function startCapacityCalculation(): void {
 		context.clearInterval(tickIntervalHandle);
 		tickIntervalHandle = null;
 	}
+
+	// Ride entrance/exit tiles won't change mid-calculation, but rides can be
+	// built/removed between calculations, so the cache must be rebuilt each
+	// time a fresh calculation starts.
+	rideEntranceExitTileKeys = null;
 
 	const size = map.size;
 	calculation = {
@@ -395,6 +481,54 @@ function onCalculationTick(): void {
 	}
 }
 
+// Used only as a fallback when no park-entrance seed tiles were found. Runs
+// a quick connected-components scan (in memory, over the already-discovered
+// footpath tiles) and returns one tile belonging to the largest connected
+// network, so the flood fill starts from the park's real path system rather
+// than being seeded from every disconnected/decorative path fragment.
+function findLargestConnectedPathTile(state: CalculationState): CoordsXY | null {
+	const seen = new Set<number>();
+	let bestTile: CoordsXY | null = null;
+	let bestSize = 0;
+
+	state.pathInfo.forEach(function (_info, startKey) {
+		if (seen.has(startKey)) {
+			return;
+		}
+		const startTile = { x: startKey % state.mapWidth, y: Math.floor(startKey / state.mapWidth) };
+		const stack: CoordsXY[] = [startTile];
+		seen.add(startKey);
+		let size = 0;
+
+		while (stack.length > 0) {
+			const tile = stack.pop() as CoordsXY;
+			size++;
+
+			for (let i = 0; i < NEIGHBOUR_OFFSETS.length; i++) {
+				const offset = NEIGHBOUR_OFFSETS[i];
+				const nx = tile.x + offset.x;
+				const ny = tile.y + offset.y;
+				if (nx < 0 || ny < 0 || nx >= state.mapWidth || ny >= state.mapHeight) {
+					continue;
+				}
+				const key = tileKey(nx, ny, state.mapWidth);
+				if (seen.has(key) || !state.pathInfo.has(key)) {
+					continue;
+				}
+				seen.add(key);
+				stack.push({ x: nx, y: ny });
+			}
+		}
+
+		if (size > bestSize) {
+			bestSize = size;
+			bestTile = startTile;
+		}
+	});
+
+	return bestTile;
+}
+
 // Scans the whole map, one batch of tiles at a time, recording every footpath
 // tile found (so the flood fill can later expand across them) and looking
 // for park entrance tiles; the footpath tile that guests actually walk on is
@@ -409,7 +543,14 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 
 		const footpath = findFootpathElement(x, y);
 		if (footpath) {
-			state.pathInfo.set(tileKey(x, y, state.mapWidth), { isQueue: !!footpath.isQueue });
+			state.pathInfo.set(tileKey(x, y, state.mapWidth), { isQueue: isQueueFootpath(footpath), isConnectorOnly: false });
+		}
+		else if (hasRideEntranceOrExitElement(x, y, state.mapWidth)) {
+			// Ride entrance/exit tiles link the main path network to that
+			// ride's queue line; record them as walkable connector nodes so
+			// the flood fill can cross them, without counting them as a
+			// patrol tile themselves.
+			state.pathInfo.set(tileKey(x, y, state.mapWidth), { isQueue: false, isConnectorOnly: true });
 		}
 
 		if (isGardeningTile(x, y, footpath)) {
@@ -417,7 +558,7 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 			state.gardeningTileList.push({ x: x, y: y });
 		}
 
-		if (hasParkEntranceElement(x, y)) {
+		if (hasParkEntranceElement(x, y, state.mapWidth)) {
 			if (footpath) {
 				state.seeds.push({ x: x, y: y });
 			}
@@ -438,15 +579,17 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 	if (state.scanIndex >= state.totalTiles) {
 		// Normally the park-entrance seeds are what the flood fill starts
 		// from. If none were found (e.g. the entrance tile detection missed
-		// due to API differences), fall back to seeding from every footpath
-		// tile discovered during the scan so the calculation still reports
-		// the size of the path network instead of silently returning zero.
+		// due to API differences), fall back to finding the largest connected
+		// path network on the map and seeding from a single tile within it.
+		// Seeding from every discovered footpath tile (regardless of
+		// connectivity) would incorrectly merge disconnected, unreachable
+		// decorative path networks (e.g. purely decorative streets) into the
+		// counted result, so only a single representative tile from the
+		// largest connected component is used here.
 		let seedTiles = state.seeds;
 		if (seedTiles.length === 0) {
-			seedTiles = [];
-			state.pathInfo.forEach(function (_info, key) {
-				seedTiles.push({ x: key % state.mapWidth, y: Math.floor(key / state.mapWidth) });
-			});
+			const largestComponentSeed = findLargestConnectedPathTile(state);
+			seedTiles = largestComponentSeed ? [largestComponentSeed] : [];
 		}
 
 		for (let i = 0; i < seedTiles.length; i++) {
@@ -467,8 +610,11 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 	return budget;
 }
 
-// Flood fills outwards from the seed tiles across connected footpath tiles,
-// counting plain path tiles and queue tiles separately.
+// Flood fills outwards from the seed tiles across connected footpath and
+// ride entrance/exit (connector) tiles, counting plain path tiles and queue
+// tiles separately; connector-only tiles are traversed but not counted or
+// added to the patrol tile list, since staff can't patrol a ride's entrance
+// building itself.
 function floodFillPaths(state: CalculationState, budget: number): number {
 	while (budget > 0 && state.frontier.length > 0) {
 		const tile = state.frontier.pop() as CoordsXY;
@@ -479,13 +625,15 @@ function floodFillPaths(state: CalculationState, budget: number): number {
 			continue;
 		}
 
-		if (info.isQueue) {
-			state.queueTiles++;
+		if (!info.isConnectorOnly) {
+			if (info.isQueue) {
+				state.queueTiles++;
+			}
+			else {
+				state.pathTiles++;
+			}
+			state.patrolTileList.push({ x: tile.x, y: tile.y });
 		}
-		else {
-			state.pathTiles++;
-		}
-		state.patrolTileList.push({ x: tile.x, y: tile.y });
 
 		for (let i = 0; i < NEIGHBOUR_OFFSETS.length; i++) {
 			const offset = NEIGHBOUR_OFFSETS[i];
@@ -680,7 +828,7 @@ function assignHandymenToTiles(handymen: Handyman[], tiles: CoordsXY[], tilesPer
 // Needed (firing newest first), split the cleanup and gardening tile lists
 // into consecutive areas, assign orders, and teleport each handyman into
 // their new area.
-function applyHandymenChanges(): void {
+function applyHandymenChanges(onComplete: () => void): void {
 	const needed = handymenNeededStore.get();
 	resetAndTrimHandymen(needed, function (handymen) {
 		const cleanupCount = computeNeeded(lastPatrolTileList.length, handymenTilesPerStaffStore.get());
@@ -691,6 +839,7 @@ function applyHandymenChanges(): void {
 		assignHandymenToTiles(gardeningHandymen, lastGardeningTileList, handymenMowerTilesPerStaffStore.get(), HANDYMAN_ORDERS_GARDENING);
 
 		refreshHiredAndAssignedStaffCounts();
+		onComplete();
 	});
 }
 
@@ -912,10 +1061,12 @@ function openWindow(): void {
 }
 
 // --- Confirmation dialog -------------------------------------------------------
-// A small, self-contained OK/Cancel dialog. A fresh window is built every time
-// it's shown (rather than reusing a cached WindowTemplate like the main
-// window) since its message and callbacks differ per invocation.
-function showConfirmDialog(title: string, message: string, onConfirm: () => void): void {
+// A small, self-contained Confirm/Cancel dialog. A fresh window is built
+// every time it's shown (rather than reusing a cached WindowTemplate like
+// the main window) since its message and callback differ per invocation.
+// Cancel closes the dialog immediately; Confirm keeps it open until onConfirm
+// invokes the completion callback it's given (i.e. once the action is done).
+function showConfirmDialog(title: string, message: string, onConfirm: (onComplete: () => void) => void): void {
 	let dialog: WindowTemplate | null = null;
 
 	function closeDialog(): void {
@@ -940,8 +1091,7 @@ function showConfirmDialog(title: string, message: string, onConfirm: () => void
 				content: [
 					button({
 						text: "Confirm", width: "1w", height: 14, onClick: function () {
-							closeDialog();
-							onConfirm();
+							onConfirm(closeDialog);
 						}
 					}),
 					button({ text: "Cancel", width: "1w", height: 14, onClick: closeDialog })
