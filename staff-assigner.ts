@@ -99,8 +99,10 @@ const capacityResultStore = flexStore<string>("Press Calculate to scan the park.
 // tiles will be split into that many contiguous (consecutive) tiles per
 // staff member once assigned, so Needed = ceil(tiles / tilesPerStaff).
 const totalPatrolTilesStore = flexStore<number>(0);
+const totalMowableTilesStore = flexStore<number>(0);
 
 const handymenTilesPerStaffStore = flexStore<number>(8);
+const handymenMowerTilesPerStaffStore = flexStore<number>(64);
 const guardsTilesPerStaffStore = flexStore<number>(16);
 const mechanicsTilesPerStaffStore = flexStore<number>(4); // placeholder: Mechanics calculation not implemented yet
 
@@ -148,6 +150,7 @@ interface CalculationState {
 	visited: Set<number>; // visited tile keys (y * mapWidth + x)
 	pathTiles: number;
 	queueTiles: number;
+	mowableTiles: number;
 }
 
 let calculation: CalculationState | null = null;
@@ -173,6 +176,31 @@ function findFootpathElement(x: number, y: number): FootpathElement | null {
 		}
 	}
 	return null;
+}
+
+function findSurfaceElement(x: number, y: number): SurfaceElement | null {
+	const tile = map.getTile(x, y);
+	for (let i = 0; i < tile.numElements; i++) {
+		const element = tile.getElement(i);
+		if (element.type === "surface") {
+			return element as SurfaceElement;
+		}
+	}
+	return null;
+}
+
+// A tile is mowable if it is owned by the park, has a grass surface (i.e. not
+// water) and isn't covered by a footpath, since guests/staff can't walk on
+// grass hidden underneath a path.
+function isMowableTile(x: number, y: number, footpath: FootpathElement | null): boolean {
+	if (footpath) {
+		return false;
+	}
+	const surface = findSurfaceElement(x, y);
+	if (!surface || !surface.hasOwnership) {
+		return false;
+	}
+	return surface.grassLength >= 0;
 }
 
 // Entrance elements are used for both ride entrances/exits (which have a real
@@ -261,7 +289,8 @@ function startCapacityCalculation(): void {
 		frontier: [],
 		visited: new Set<number>(),
 		pathTiles: 0,
-		queueTiles: 0
+		queueTiles: 0,
+		mowableTiles: 0
 	};
 
 	capacityProgressStore.set(0);
@@ -321,6 +350,10 @@ function scanForEntrances(state: CalculationState, budget: number): number {
 		const footpath = findFootpathElement(x, y);
 		if (footpath) {
 			state.pathInfo.set(tileKey(x, y, state.mapWidth), { isQueue: !!footpath.isQueue });
+		}
+
+		if (isMowableTile(x, y, footpath)) {
+			state.mowableTiles++;
 		}
 
 		if (hasParkEntranceElement(x, y)) {
@@ -440,9 +473,10 @@ function finishCalculation(state: CalculationState): void {
 	}
 
 	const exits = countRideExits();
-	capacityResultStore.set(state.pathTiles + " path / " + state.queueTiles + " queue / " + exits + " exits");
+	capacityResultStore.set(state.pathTiles + " path / " + state.queueTiles + " queue / " + exits + " exits / " + state.mowableTiles + " mowable");
 	capacityProgressStore.set(100);
 	totalPatrolTilesStore.set(state.pathTiles + state.queueTiles);
+	totalMowableTilesStore.set(state.mowableTiles);
 	refreshHiredAndAssignedStaffCounts();
 	calculation = null;
 }
@@ -482,7 +516,7 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: 
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, tilesPerStaff: Store<number>, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
+function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, spinnerLabel?: string, mowerTilesPerStaff?: Store<number>, mowerSpinnerLabel?: string): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
@@ -490,21 +524,38 @@ function staffGroup(title: string, tilesPerStaff: Store<number>, needed: Bindabl
 		content: vertical({
 			spacing: 3,
 			content: [
-				horizontal({
+				...(tilesPerStaff ? [horizontal({
 					spacing: 4,
 					height: 14,
 					content: [
+						label({ text: spinnerLabel || "", width: "2w", height: 14, padding: { top: 2 } }),
 						spinner({
 							value: tilesPerStaff,
 							minimum: 1,
 							maximum: 999,
-							width: "5w",
+							width: "3w",
 							height: 14,
 							tooltip: "The number of pathway tiles a single staff member of this type is expected to patrol (tiles per staff). Used to calculate how many staff are Needed.",
 							onChange: function (value) { tilesPerStaff.set(value); }
 						})
 					]
-				}),
+				})] : []),
+				...(mowerTilesPerStaff ? [horizontal({
+					spacing: 4,
+					height: 14,
+					content: [
+						label({ text: mowerSpinnerLabel || "", width: "2w", height: 14, padding: { top: 2 } }),
+						spinner({
+							value: mowerTilesPerStaff,
+							minimum: 1,
+							maximum: 999,
+							width: "3w",
+							height: 14,
+							tooltip: "The number of pathway tiles a single mower-assigned handyman is expected to patrol (tiles per staff).",
+							onChange: function (value) { mowerTilesPerStaff.set(value); }
+						})
+					]
+				})] : []),
 				...statTable(needed, hired, assigned)
 			]
 		})
@@ -522,13 +573,14 @@ function entertainersGroup(needed: number, hired: number, assigned: number, widt
 			spacing: 3,
 			content: [
 				horizontal({
-					spacing: 4,
-					height: 14,
-					content: [
-						spinner({ value: 16, minimum: 0, maximum: 999, width: "5w", height: 14 })
-					]
-				}),
-				toggle({ text: "Queue", width: "100%", height: 14, isPressed: true }),
+						spacing: 4,
+						height: 14,
+						content: [
+							label({ text: "Tiles", width: "2w", height: 14, padding: { top: 2 } }),
+							spinner({ value: 16, minimum: 0, maximum: 999, width: "3w", height: 14 })
+						]
+					}),
+					toggle({ text: "Queue", width: "100%", height: 14, isPressed: true }),
 				...statTable(needed, hired, assigned)
 			]
 		})
@@ -543,10 +595,14 @@ const BOX_TITLE_HEIGHT = 11; // height reserved for the box's own title label
 const BOX_PADDING = 12; // 6px top + 6px bottom default box content padding
 const GROUP_CONTENT_HEIGHT = 14 + 3 + (STAT_ROW_HEIGHT * 3) + (3 * 2); // spinner row + spacing + 3 stat rows + spacing between them
 const GROUP_HEIGHT = BOX_TITLE_HEIGHT + BOX_PADDING + GROUP_CONTENT_HEIGHT;
+const MECHANICS_CONTENT_HEIGHT = (STAT_ROW_HEIGHT * 3) + (3 * 2); // no spinner row: just 3 stat rows + spacing between them
+const MECHANICS_HEIGHT = BOX_TITLE_HEIGHT + BOX_PADDING + MECHANICS_CONTENT_HEIGHT;
+const HANDYMEN_EXTRA_HEIGHT = 14 + 3; // extra "Mower" spinner row + spacing
+const HANDYMEN_HEIGHT = GROUP_HEIGHT + HANDYMEN_EXTRA_HEIGHT;
 const ENTERTAINERS_EXTRA_HEIGHT = 14 + 3; // extra "Queue" toggle row + spacing
 const ENTERTAINERS_HEIGHT = GROUP_HEIGHT + ENTERTAINERS_EXTRA_HEIGHT;
-const STACK_HEIGHT = GROUP_HEIGHT * 2 + 4; // two stacked groups + spacing
-const MECHANICS_ENTERTAINERS_STACK_HEIGHT = GROUP_HEIGHT + ENTERTAINERS_HEIGHT + 4;
+const STACK_HEIGHT = HANDYMEN_HEIGHT + GROUP_HEIGHT + 4; // Handymen + Guards groups + spacing
+const MECHANICS_ENTERTAINERS_STACK_HEIGHT = MECHANICS_HEIGHT + ENTERTAINERS_HEIGHT + 4;
 const COLUMN_ROW_HEIGHT = Math.max(STACK_HEIGHT, MECHANICS_ENTERTAINERS_STACK_HEIGHT);
 
 const TOP_ROW_HEIGHT = 14;
@@ -557,7 +613,7 @@ const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CON
 
 function staffAssignerWindowTemplate(): WindowTemplate {
 	if (!windowTemplate) {
-		const windowWidth = 320;
+		const windowWidth = 360;
 		windowTemplate = flexWindow({
 			title: "Staff Assigner",
 			width: windowWidth,
@@ -583,8 +639,8 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 							width: GROUP_WIDTH,
 							height: STACK_HEIGHT,
 							content: [
-									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", GROUP_HEIGHT),
-											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT)
+									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Mowing"),
+											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, "Tiles")
 										]
 									}),
 								vertical({
@@ -592,7 +648,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 									width: GROUP_WIDTH,
 									height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
 									content: [
-											staffGroup("Mechanics", mechanicsTilesPerStaffStore, 160, 150, 145, "100%", GROUP_HEIGHT),
+											staffGroup("Mechanics", null, 160, 150, 145, "100%", MECHANICS_HEIGHT),
 											entertainersGroup(160, 150, 145, "100%", ENTERTAINERS_HEIGHT)
 								]
 						})
