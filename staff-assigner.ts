@@ -154,6 +154,28 @@ const entertainersNeededStore = compute(totalPathOnlyTilesStore, totalPatrolTile
 // One mechanic is needed per ride exit in the park.
 const mechanicsNeededStore = compute(totalRideExitsStore, function (exits: number) { return exits; });
 
+// Tracks whether the capacity scan has completed at least once, and whether
+// the Handymen settings currently applied to the park match what the
+// spinners are set to right now. The Apply button is only enabled once a
+// calculation has finished and the current settings haven't been applied yet.
+const calculationDoneStore = flexStore<boolean>(false);
+const handymenUpToDateStore = flexStore<boolean>(false);
+const handymenApplyDisabledStore = compute(calculationDoneStore, handymenUpToDateStore, function (done: boolean, upToDate: boolean): boolean {
+	return !done || upToDate;
+});
+// Mirrors the old confirmation dialog's message, shown above the Apply
+// button instead, updated live as the spinners or calculation results change.
+const handymenApplyMessageStore = compute(handymenNeededStore, handymenHiredStore, function (needed: number, hired: number): string {
+	const delta = needed - hired;
+	if (delta > 0) {
+		return "This will hire " + delta + " additional handymen";
+	}
+	if (delta < 0) {
+		return "This will fire " + (-delta) + " handymen";
+	}
+	return "This will not change the number of handymen";
+});
+
 // Refreshes the Hired/Assigned stores for Handymen, Guards and Mechanics from
 // the current, real-time staff roster. Unlike Needed (which depends on the
 // potentially slow tile scan), this is cheap and can be refreshed whenever
@@ -420,6 +442,7 @@ function startCapacityCalculation(): void {
 	// built/removed between calculations, so the cache must be rebuilt each
 	// time a fresh calculation starts.
 	rideEntranceExitTileKeys = null;
+	calculationDoneStore.set(false);
 
 	const size = map.size;
 	calculation = {
@@ -704,6 +727,8 @@ function finishCalculation(state: CalculationState): void {
 	lastGardeningTileList = state.gardeningTileList;
 	refreshHiredAndAssignedStaffCounts();
 	calculation = null;
+	calculationDoneStore.set(true);
+	handymenUpToDateStore.set(false);
 }
 
 // --- Apply: Handymen -----------------------------------------------------------
@@ -878,8 +903,10 @@ function assignHandymenToTiles(handymen: Handyman[], tiles: CoordsXY[], tilesPer
 // into consecutive areas, assign orders, and teleport each handyman into
 // their new area.
 function applyHandymenChanges(onComplete: () => void): void {
+	console.log("Staff Assigner: applyHandymenChanges start");
 	const needed = handymenNeededStore.get();
 	resetAndTrimHandymen(needed, function (handymen) {
+		console.log("Staff Assigner: resetAndTrimHandymen done, handymen count = " + handymen.length);
 		// The confirmation dialog only closes once onComplete() is invoked, so
 		// it must always run - even if something below throws - otherwise the
 		// dialog is left open forever with no way to dismiss it.
@@ -892,12 +919,15 @@ function applyHandymenChanges(onComplete: () => void): void {
 			assignHandymenToTiles(gardeningHandymen, lastGardeningTileList, handymenMowerTilesPerStaffStore.get(), HANDYMAN_ORDERS_GARDENING);
 
 			refreshHiredAndAssignedStaffCounts();
+			console.log("Staff Assigner: applyHandymenChanges body completed successfully");
 		}
 		catch (error) {
 			console.log("Staff Assigner: applying handymen changes failed - " + error);
 		}
 		finally {
+			console.log("Staff Assigner: calling onComplete()");
 			onComplete();
+			console.log("Staff Assigner: onComplete() returned");
 		}
 	});
 }
@@ -937,7 +967,7 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: 
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, spinnerLabel?: string, mowerTilesPerStaff?: Store<number>, mowerSpinnerLabel?: string, spinnerTooltip?: string): WidgetCreator<FlexiblePosition> {
+function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, spinnerLabel?: string, mowerTilesPerStaff?: Store<number>, mowerSpinnerLabel?: string, spinnerTooltip?: string, onSettingsChanged?: () => void): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
@@ -957,7 +987,7 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 							width: "3w",
 							height: 14,
 							tooltip: spinnerTooltip || "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed.",
-							onChange: function (value) { tilesPerStaff.set(value); }
+							onChange: function (value) { tilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
 						})
 					]
 				})] : []),
@@ -973,7 +1003,7 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 							width: "3w",
 							height: 14,
 							tooltip: "The number of gardening tiles (tiles that need mowing or watering) a single gardening-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many gardening handymen are Needed.",
-							onChange: function (value) { mowerTilesPerStaff.set(value); }
+							onChange: function (value) { mowerTilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
 						})
 					]
 				})] : []),
@@ -1050,10 +1080,11 @@ const MECHANICS_ENTERTAINERS_STACK_HEIGHT = MECHANICS_HEIGHT + ENTERTAINERS_HEIG
 const COLUMN_ROW_HEIGHT = Math.max(STACK_HEIGHT, MECHANICS_ENTERTAINERS_STACK_HEIGHT);
 
 const TOP_ROW_HEIGHT = 14;
+const APPLY_MESSAGE_ROW_HEIGHT = 14;
 const APPLY_ROW_HEIGHT = 20;
 const CONTENT_SPACING = 4; // spacing between the window's top-level content rows
 const WINDOW_CHROME_HEIGHT = 29; // title bar + top/bottom window padding
-const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
+const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
 
 function staffAssignerWindowTemplate(): WindowTemplate {
 	if (!windowTemplate) {
@@ -1066,14 +1097,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 			y: Math.round((ui.height - WINDOW_HEIGHT) / 2),
 			spacing: 4,
 			content: [
-				horizontal({
-					spacing: 6,
-					height: 14,
-					content: [
-						button({ text: "Calculate", width: 70, height: 14, onClick: startCapacityCalculation }),
-						label({ text: capacityResultStore, width: "1w", height: 14 })
-					]
-				}),
+				label({ text: capacityResultStore, width: "100%", height: 14 }),
 				horizontal({
 					spacing: 6,
 					height: COLUMN_ROW_HEIGHT,
@@ -1083,7 +1107,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 							width: GROUP_WIDTH,
 							height: STACK_HEIGHT,
 							content: [
-									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Gardening", "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed."),
+									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Gardening", "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed.", function () { handymenUpToDateStore.set(false); }),
 											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, "Tiles / Staff", undefined, undefined, "The number of plain pathway tiles (excluding queue tiles) a single guard is expected to patrol (tiles per staff). Used to calculate how many guards are Needed.")
 										]
 									}),
@@ -1098,21 +1122,11 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 						})
 					]
 				}),
+				label({ text: handymenApplyMessageStore, width: "100%", height: APPLY_MESSAGE_ROW_HEIGHT, alignment: "centred" }),
 				button({
-					text: "Apply and close", width: "100%", height: 20, onClick: function () {
-						const delta = handymenNeededStore.get() - handymenHiredStore.get();
-						const message = delta > 0
-							? ("This will hire " + delta + " additional handymen")
-							: (delta < 0
-								? ("This will fire " + (-delta) + " handymen")
-								: "This will not change the number of handymen");
-						showConfirmDialog("Confirm Handymen", message, function (onComplete) {
-							applyHandymenChanges(function () {
-								onComplete();
-								if (windowTemplate) {
-									windowTemplate.close();
-								}
-							});
+					text: "Apply", width: "100%", height: 20, disabled: handymenApplyDisabledStore, onClick: function () {
+						applyHandymenChanges(function () {
+							handymenUpToDateStore.set(true);
 						});
 					}
 				})
@@ -1124,59 +1138,8 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 
 function openWindow(): void {
 	staffAssignerWindowTemplate().open();
-}
-
-// --- Confirmation dialog -------------------------------------------------------
-// A small, self-contained Confirm/Cancel dialog. A fresh window is built
-// every time it's shown (rather than reusing a cached WindowTemplate like
-// the main window) since its message and callback differ per invocation.
-// Cancel closes the dialog immediately; Confirm keeps it open until onConfirm
-// invokes the completion callback it's given (i.e. once the action is done).
-function showConfirmDialog(title: string, message: string, onConfirm: (onComplete: () => void) => void): void {
-	let dialog: WindowTemplate | null = null;
-
-	function closeDialog(): void {
-		if (dialog) {
-			dialog.close();
-			dialog = null;
-		}
-	}
-
-	dialog = flexWindow({
-		title: title,
-		width: 260,
-		height: 90,
-		x: Math.round((ui.width - 260) / 2),
-		y: Math.round((ui.height - 90) / 2),
-		spacing: 6,
-		content: [
-			label({ text: message, width: "100%", height: "1w" }),
-			horizontal({
-				spacing: 6,
-				height: 14,
-				content: [
-					button({
-						text: "Confirm", width: "1w", height: 14, onClick: function () {
-							// onConfirm may throw synchronously (before any async
-							// callback runs) if something goes wrong; without this
-							// try/catch such an error would propagate out of the
-							// button's onClick handler and leave the dialog open
-							// forever with no way to dismiss it.
-							try {
-								onConfirm(closeDialog);
-							}
-							catch (error) {
-								console.log("Staff Assigner: confirm action failed - " + error);
-								closeDialog();
-							}
-						}
-					}),
-					button({ text: "Cancel", width: "1w", height: 14, onClick: closeDialog })
-				]
-			})
-		]
-	});
-	dialog.open();
+	refreshHiredAndAssignedStaffCounts();
+	startCapacityCalculation();
 }
 
 // --- Main --------------------------------------------------------------------
