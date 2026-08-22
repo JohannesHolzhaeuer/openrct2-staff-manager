@@ -108,11 +108,14 @@ const handymenMowerTilesPerStaffStore = flexStore<number>(256);
 const guardsTilesPerStaffStore = flexStore<number>(16);
 const entertainersTilesPerStaffStore = flexStore<number>(16);
 const entertainersPerAreaStore = flexStore<number>(1);
+const entertainersIncludeQueueStore = flexStore<boolean>(true);
 
 const handymenHiredStore = flexStore<number>(0);
 const handymenAssignedStore = flexStore<number>(0);
 const guardsHiredStore = flexStore<number>(0);
 const guardsAssignedStore = flexStore<number>(0);
+const entertainersHiredStore = flexStore<number>(0);
+const entertainersAssignedStore = flexStore<number>(0);
 const mechanicsHiredStore = flexStore<number>(0);
 const mechanicsAssignedStore = flexStore<number>(0);
 
@@ -134,6 +137,15 @@ function computeHandymenNeeded(patrolTiles: number, cleanupTilesPerStaff: number
 
 const handymenNeededStore = compute(totalPatrolTilesStore, handymenTilesPerStaffStore, totalGardeningTilesStore, handymenMowerTilesPerStaffStore, computeHandymenNeeded);
 const guardsNeededStore = compute(totalPathOnlyTilesStore, guardsTilesPerStaffStore, computeNeeded);
+// Entertainers patrol areas like Guards (plain path tiles by default), but
+// optionally also cover queue tiles if the "Queue" toggle is checked, and
+// each patrol area is staffed with a configurable number of entertainers.
+function computeEntertainersNeeded(pathTiles: number, patrolTiles: number, tilesPerStaff: number, entertainersPerArea: number, includeQueue: boolean): number {
+	const tiles = includeQueue ? patrolTiles : pathTiles;
+	const areas = computeNeeded(tiles, tilesPerStaff);
+	return areas * Math.max(0, entertainersPerArea);
+}
+const entertainersNeededStore = compute(totalPathOnlyTilesStore, totalPatrolTilesStore, entertainersTilesPerStaffStore, entertainersPerAreaStore, entertainersIncludeQueueStore, computeEntertainersNeeded);
 // One mechanic is needed per ride exit in the park.
 const mechanicsNeededStore = compute(totalRideExitsStore, function (exits: number) { return exits; });
 
@@ -146,6 +158,8 @@ function refreshHiredAndAssignedStaffCounts(): void {
 	handymenAssignedStore.set(countAssignedStaff("handyman"));
 	guardsHiredStore.set(countHiredStaff("security"));
 	guardsAssignedStore.set(countAssignedStaff("security"));
+	entertainersHiredStore.set(countHiredStaff("entertainer"));
+	entertainersAssignedStore.set(countAssignedStaff("entertainer"));
 	mechanicsHiredStore.set(countHiredStaff("mechanic"));
 	mechanicsAssignedStore.set(countAssignedStaff("mechanic"));
 }
@@ -603,7 +617,7 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 
 // One bordered box for entertainers: same as staffGroup plus a "Queue"
 // toggle underneath, laid out vertically like in the mockup.
-function entertainersGroup(needed: number, hired: number, assigned: number, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
+function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: "Entertainers",
 		width: width,
@@ -642,7 +656,7 @@ function entertainersGroup(needed: number, hired: number, assigned: number, widt
 							})
 						]
 					}),
-				toggle({ text: "Queue", width: "100%", height: 14, isPressed: true }),
+				toggle({ text: "Queue", width: "100%", height: 14, isPressed: entertainersIncludeQueueStore, onChange: function (isPressed) { entertainersIncludeQueueStore.set(isPressed); } }),
 				...statTable(needed, hired, assigned)
 			]
 		})
@@ -711,7 +725,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 									height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
 									content: [
 											staffGroup("Mechanics", null, mechanicsNeededStore, mechanicsHiredStore, mechanicsAssignedStore, "100%", MECHANICS_HEIGHT),
-											entertainersGroup(160, 150, 145, "100%", ENTERTAINERS_HEIGHT)
+											entertainersGroup(entertainersNeededStore, entertainersHiredStore, entertainersAssignedStore, "100%", ENTERTAINERS_HEIGHT)
 								]
 						})
 					]
