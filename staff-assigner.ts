@@ -106,6 +106,8 @@ const totalRideExitsStore = flexStore<number>(0); // used by Mechanics: one mech
 const handymenTilesPerStaffStore = flexStore<number>(8);
 const handymenMowerTilesPerStaffStore = flexStore<number>(256);
 const guardsTilesPerStaffStore = flexStore<number>(16);
+const entertainersTilesPerStaffStore = flexStore<number>(16);
+const entertainersPerAreaStore = flexStore<number>(1);
 
 const handymenHiredStore = flexStore<number>(0);
 const handymenAssignedStore = flexStore<number>(0);
@@ -594,11 +596,34 @@ function entertainersGroup(needed: number, hired: number, assigned: number, widt
 						spacing: 4,
 						height: 14,
 						content: [
-							label({ text: "Tiles", width: "2w", height: 14, padding: { top: 2 } }),
-							spinner({ value: 16, minimum: 0, maximum: 999, width: "3w", height: 14 })
+							label({ text: "Tiles / Staff", width: "2w", height: 14, padding: { top: 2 } }),
+							spinner({
+								value: entertainersTilesPerStaffStore,
+								minimum: 0,
+								maximum: 999,
+								width: "3w",
+								height: 14,
+								onChange: function (value) { entertainersTilesPerStaffStore.set(value); }
+							})
 						]
 					}),
-					toggle({ text: "Queue", width: "100%", height: 14, isPressed: true }),
+				horizontal({
+						spacing: 4,
+						height: 14,
+						content: [
+							label({ text: "Staff / Area", width: "2w", height: 14, padding: { top: 2 } }),
+							spinner({
+								value: entertainersPerAreaStore,
+								minimum: 0,
+								maximum: 999,
+								width: "3w",
+								height: 14,
+								tooltip: "The number of entertainers to assign per patrol area.",
+								onChange: function (value) { entertainersPerAreaStore.set(value); }
+							})
+						]
+					}),
+				toggle({ text: "Queue", width: "100%", height: 14, isPressed: true }),
 				...statTable(needed, hired, assigned)
 			]
 		})
@@ -617,7 +642,7 @@ const MECHANICS_CONTENT_HEIGHT = (STAT_ROW_HEIGHT * 3) + (3 * 2); // no spinner 
 const MECHANICS_HEIGHT = BOX_TITLE_HEIGHT + BOX_PADDING + MECHANICS_CONTENT_HEIGHT;
 const HANDYMEN_EXTRA_HEIGHT = 14 + 3; // extra "Mower" spinner row + spacing
 const HANDYMEN_HEIGHT = GROUP_HEIGHT + HANDYMEN_EXTRA_HEIGHT;
-const ENTERTAINERS_EXTRA_HEIGHT = 14 + 3; // extra "Queue" toggle row + spacing
+const ENTERTAINERS_EXTRA_HEIGHT = 14 + 3 + 14 + 3; // extra "Entertainers per area" spinner row + "Queue" toggle row + spacing
 const ENTERTAINERS_HEIGHT = GROUP_HEIGHT + ENTERTAINERS_EXTRA_HEIGHT;
 const STACK_HEIGHT = HANDYMEN_HEIGHT + GROUP_HEIGHT + 4; // Handymen + Guards groups + spacing
 const MECHANICS_ENTERTAINERS_STACK_HEIGHT = MECHANICS_HEIGHT + ENTERTAINERS_HEIGHT + 4;
@@ -631,7 +656,7 @@ const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CON
 
 function staffAssignerWindowTemplate(): WindowTemplate {
 	if (!windowTemplate) {
-		const windowWidth = 360;
+		const windowWidth = 400;
 		windowTemplate = flexWindow({
 			title: "Staff Assigner",
 			width: windowWidth,
@@ -658,7 +683,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 							height: STACK_HEIGHT,
 							content: [
 									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Mowing", "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed."),
-											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, "Tiles", undefined, undefined, "The number of plain pathway tiles (excluding queue tiles) a single guard is expected to patrol (tiles per staff). Used to calculate how many guards are Needed.")
+											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, "Tiles / Staff", undefined, undefined, "The number of plain pathway tiles (excluding queue tiles) a single guard is expected to patrol (tiles per staff). Used to calculate how many guards are Needed.")
 										]
 									}),
 								vertical({
