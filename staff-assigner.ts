@@ -99,10 +99,11 @@ const capacityResultStore = flexStore<string>("Press Calculate to scan the park.
 // tiles will be split into that many contiguous (consecutive) tiles per
 // staff member once assigned, so Needed = ceil(tiles / tilesPerStaff).
 const totalPatrolTilesStore = flexStore<number>(0);
+const totalPathOnlyTilesStore = flexStore<number>(0); // path tiles only, excluding queue tiles (used by Guards)
 const totalMowableTilesStore = flexStore<number>(0);
 
 const handymenTilesPerStaffStore = flexStore<number>(8);
-const handymenMowerTilesPerStaffStore = flexStore<number>(64);
+const handymenMowerTilesPerStaffStore = flexStore<number>(256);
 const guardsTilesPerStaffStore = flexStore<number>(16);
 const mechanicsTilesPerStaffStore = flexStore<number>(4); // placeholder: Mechanics calculation not implemented yet
 
@@ -118,8 +119,17 @@ function computeNeeded(totalTiles: number, tilesPerStaff: number): number {
 	return Math.ceil(totalTiles / tilesPerStaff);
 }
 
-const handymenNeededStore = compute(totalPatrolTilesStore, handymenTilesPerStaffStore, computeNeeded);
-const guardsNeededStore = compute(totalPatrolTilesStore, guardsTilesPerStaffStore, computeNeeded);
+// Handymen are split into two separate jobs: general cleanup (litter, empty
+// bins, etc., patrolling the whole footpath/queue network) and mowing
+// (patrolling only the mowable grass tiles). Each has its own "tiles per
+// staff" spinner, so the total number of handymen needed is the sum of both
+// requirements, each rounded up independently.
+function computeHandymenNeeded(patrolTiles: number, cleanupTilesPerStaff: number, mowableTiles: number, mowerTilesPerStaff: number): number {
+	return computeNeeded(patrolTiles, cleanupTilesPerStaff) + computeNeeded(mowableTiles, mowerTilesPerStaff);
+}
+
+const handymenNeededStore = compute(totalPatrolTilesStore, handymenTilesPerStaffStore, totalMowableTilesStore, handymenMowerTilesPerStaffStore, computeHandymenNeeded);
+const guardsNeededStore = compute(totalPathOnlyTilesStore, guardsTilesPerStaffStore, computeNeeded);
 
 // Refreshes the Hired/Assigned stores for both Handymen and Guards from the
 // current, real-time staff roster. Unlike Needed (which depends on the
@@ -476,6 +486,7 @@ function finishCalculation(state: CalculationState): void {
 	capacityResultStore.set(state.pathTiles + " path / " + state.queueTiles + " queue / " + exits + " exits / " + state.mowableTiles + " mowable");
 	capacityProgressStore.set(100);
 	totalPatrolTilesStore.set(state.pathTiles + state.queueTiles);
+	totalPathOnlyTilesStore.set(state.pathTiles);
 	totalMowableTilesStore.set(state.mowableTiles);
 	refreshHiredAndAssignedStaffCounts();
 	calculation = null;
@@ -501,14 +512,14 @@ function statRow(name: string, value: Bindable<number>, tooltip: string): Widget
 function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>): Array<WidgetCreator<FlexiblePosition>> {
 	const difference = (isStore(needed) || isStore(hired))
 		? compute(
-			isStore(hired) ? hired : flexStore(hired),
 			isStore(needed) ? needed : flexStore(needed),
-			function (h: number, n: number) { return h - n; })
-		: (hired as number) - (needed as number);
+			isStore(hired) ? hired : flexStore(hired),
+			function (n: number, h: number) { return n - h; })
+		: (needed as number) - (hired as number);
 	return [
 		statRow("Needed", needed, "The number of staff of this type needed to patrol the reachable pathway network, assuming the network is split into consecutive (contiguous) sections of \"tiles per staff\" tiles each."),
 		statRow("Hired", hired, "The number of staff of this type currently hired in the park."),
-		statRow("Difference", difference, "Needed minus Hired: a negative number means staff of this type need to be hired, a positive number means staff can be fired.")
+		statRow("Difference", difference, "Needed minus Hired: a positive number means staff of this type need to be hired, a negative number means staff can be fired.")
 	];
 }
 
@@ -516,7 +527,7 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: 
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, spinnerLabel?: string, mowerTilesPerStaff?: Store<number>, mowerSpinnerLabel?: string): WidgetCreator<FlexiblePosition> {
+function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, spinnerLabel?: string, mowerTilesPerStaff?: Store<number>, mowerSpinnerLabel?: string, spinnerTooltip?: string): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
@@ -531,11 +542,11 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 						label({ text: spinnerLabel || "", width: "2w", height: 14, padding: { top: 2 } }),
 						spinner({
 							value: tilesPerStaff,
-							minimum: 1,
+							minimum: 0,
 							maximum: 999,
 							width: "3w",
 							height: 14,
-							tooltip: "The number of pathway tiles a single staff member of this type is expected to patrol (tiles per staff). Used to calculate how many staff are Needed.",
+							tooltip: spinnerTooltip || "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed.",
 							onChange: function (value) { tilesPerStaff.set(value); }
 						})
 					]
@@ -547,11 +558,11 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 						label({ text: mowerSpinnerLabel || "", width: "2w", height: 14, padding: { top: 2 } }),
 						spinner({
 							value: mowerTilesPerStaff,
-							minimum: 1,
+							minimum: 0,
 							maximum: 999,
 							width: "3w",
 							height: 14,
-							tooltip: "The number of pathway tiles a single mower-assigned handyman is expected to patrol (tiles per staff).",
+							tooltip: "The number of mowable grass tiles a single mowing-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many mowing handymen are Needed.",
 							onChange: function (value) { mowerTilesPerStaff.set(value); }
 						})
 					]
@@ -639,8 +650,8 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 							width: GROUP_WIDTH,
 							height: STACK_HEIGHT,
 							content: [
-									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Mowing"),
-											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, "Tiles")
+									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Mowing", "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed."),
+											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, "Tiles", undefined, undefined, "The number of plain pathway tiles (excluding queue tiles) a single guard is expected to patrol (tiles per staff). Used to calculate how many guards are Needed.")
 										]
 									}),
 								vertical({
