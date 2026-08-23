@@ -45,6 +45,288 @@ const mechanicsAssignedStore = flexStore<number>(0);
 const tilesCalculatedStore = flexStore<boolean>(false);
 const staffControlsDisabledStore = compute(tilesCalculatedStore, function (calculated) { return !calculated; });
 
+// --- Park entrance detection ---------------------------------------------------
+// Text shown at the top of the window describing where the park entrance was found.
+const parkEntranceInfoStore = flexStore<string>("Path tiles: 0, Queue tiles: 0, Garden tiles: 0");
+
+// Builds the set of tile keys (in "x,y" tile-coordinate form) that are occupied
+// by a real ride entrance or exit, so they can be excluded when looking for the
+// park entrance. A park entrance can share a "ride" id with an unrelated ride,
+// so ride ids on entrance tile elements cannot be used to tell them apart.
+function getRideEntranceExitTileKeys(): Set<string> {
+	const tileKeys = new Set<string>();
+	const rides = map.rides;
+	for (let i = 0; i < rides.length; i++) {
+		const stations = rides[i].stations;
+		for (let s = 0; s < stations.length; s++) {
+			const station = stations[s];
+			if (station.entrance) {
+				tileKeys.add((station.entrance.x / 32) + "," + (station.entrance.y / 32));
+			}
+			if (station.exit) {
+				tileKeys.add((station.exit.x / 32) + "," + (station.exit.y / 32));
+			}
+		}
+	}
+	return tileKeys;
+}
+
+// Scans the whole map for "entrance" tile elements that are not a ride entrance
+// or exit; the remaining entrance element(s) are the park entrance(s).
+function findParkEntranceTiles(): CoordsXY[] {
+	const rideEntranceExitTileKeys = getRideEntranceExitTileKeys();
+	const mapSize = map.size;
+	const parkEntranceTiles: CoordsXY[] = [];
+	for (let x = 0; x < mapSize.x; x++) {
+		for (let y = 0; y < mapSize.y; y++) {
+			const tileKey = x + "," + y;
+			if (rideEntranceExitTileKeys.has(tileKey)) {
+				continue;
+			}
+			const tile = map.getTile(x, y);
+			for (let e = 0; e < tile.numElements; e++) {
+				const element = tile.getElement(e);
+				// Any "entrance" tile element left after excluding ride entrance/exit
+				// tiles (built from map.rides[*].stations[*].entrance/exit) must be a
+				// park entrance. The element's "ride" id is not a reliable sentinel,
+				// since a park entrance can share a ride id with an unrelated ride.
+				// A park entrance spans 3 tiles (two side "legs" plus a middle tile);
+				// only the middle tile (sequence 0) has the footpath that leads into
+				// the park, so only that tile is reported/used as the entrance.
+				if (element.type === "entrance" && (element as EntranceElement).sequence === 0) {
+					parkEntranceTiles.push({ x: x, y: y });
+				}
+			}
+		}
+	}
+	return parkEntranceTiles;
+}
+
+// Finds the park entrance tile(s) and logs the result. Returns the tiles so
+// callers (like the footpath scan) can reuse them without scanning twice.
+function findAndReportParkEntrance(): CoordsXY[] {
+	const parkEntranceTiles = findParkEntranceTiles();
+	if (parkEntranceTiles.length === 0) {
+		console.log("Staff Assigner: no park entrance found.");
+		parkEntranceInfoStore.set("Park entrance: not found.");
+		return parkEntranceTiles;
+	}
+	const coordsText = parkEntranceTiles.map(function (tile) { return "(" + tile.x + ", " + tile.y + ")"; }).join(", ");
+	console.log("Staff Assigner: park entrance tile(s) found at " + coordsText);
+	return parkEntranceTiles;
+}
+
+// --- Footpath network scan ------------------------------------------------------
+// A single visited path/queue tile: its tile coordinates plus the base height of
+// the footpath element that was found on it.
+interface PathTileInfo {
+	x: number;
+	y: number;
+	baseHeight: number;
+}
+
+// Cardinal neighbour offsets used to walk the footpath network tile by tile.
+const CARDINAL_NEIGHBOUR_OFFSETS: CoordsXY[] = [
+	{ x: 0, y: -1 },
+	{ x: 1, y: 0 },
+	{ x: 0, y: 1 },
+	{ x: -1, y: 0 }
+];
+
+function tileKey(x: number, y: number): string {
+	return x + "," + y;
+}
+
+// Finds the surface element on a tile, if any.
+function findSurfaceElement(tile: Tile): SurfaceElement | null {
+	for (let e = 0; e < tile.numElements; e++) {
+		const element = tile.getElement(e);
+		if (element.type === "surface") {
+			return element as SurfaceElement;
+		}
+	}
+	return null;
+}
+
+// Whether a tile is owned by the park (or has construction rights). Tiles
+// outside the park (e.g. the public road leading up to the entrance) do not
+// have ownership, so this is used to stop the footpath walk from wandering
+// off the park's own path network.
+function isParkOwnedTile(x: number, y: number): boolean {
+	const surface = findSurfaceElement(map.getTile(x, y));
+	if (!surface) {
+		return false;
+	}
+	return surface.hasOwnership || surface.hasConstructionRights;
+}
+
+// Starting from the park entrance, walks the connected footpath network in all
+// directions (breadth-first) and separately collects plain path tiles and queue
+// tiles, together with their coordinates and base height.
+function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: PathTileInfo[]; queueTiles: PathTileInfo[] } {
+	const pathTiles: PathTileInfo[] = [];
+	const queueTiles: PathTileInfo[] = [];
+	const visited = new Set<string>();
+	const queue: CoordsXY[] = [];
+
+	// Seed the search with the tiles directly next to the entrance.
+	for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
+		const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
+		queue.push({ x: entranceTile.x + offset.x, y: entranceTile.y + offset.y });
+	}
+
+	while (queue.length > 0) {
+		const current = queue.shift() as CoordsXY;
+		const key = tileKey(current.x, current.y);
+		if (visited.has(key)) {
+			continue;
+		}
+		visited.add(key);
+
+		if (current.x < 0 || current.y < 0 || current.x >= map.size.x || current.y >= map.size.y) {
+			continue;
+		}
+
+		// Skip tiles that are not owned by the park (or under construction
+		// rights), e.g. the public road/path leading up to the entrance from
+		// outside the park, so the scan only covers the park's own network.
+		if (!isParkOwnedTile(current.x, current.y)) {
+			continue;
+		}
+
+		const tile = map.getTile(current.x, current.y);
+		let isPath = false;
+		let isQueue = false;
+		let baseHeight = 0;
+		for (let e = 0; e < tile.numElements; e++) {
+			const element = tile.getElement(e);
+			if (element.type === "footpath") {
+				const footpathElement = element as FootpathElement;
+				isPath = true;
+				isQueue = footpathElement.isQueue;
+				baseHeight = footpathElement.baseHeight;
+				break;
+			}
+		}
+
+		if (!isPath) {
+			continue;
+		}
+
+		if (isQueue) {
+			queueTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight });
+		} else {
+			pathTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight });
+		}
+
+		for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
+			const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
+			const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
+			if (!visited.has(tileKey(neighbour.x, neighbour.y))) {
+				queue.push(neighbour);
+			}
+		}
+	}
+
+	return { pathTiles: pathTiles, queueTiles: queueTiles };
+}
+
+// Finds the park entrance, then walks the footpath network from it, and scans
+// the park's owned tiles for gardening tiles. Logs and stores the resulting
+// path/queue/mowable/waterable tile counts.
+function scanFootpathNetwork(): void {
+	const parkEntranceTiles = findParkEntranceTiles();
+	if (parkEntranceTiles.length === 0) {
+		console.log("Staff Assigner: cannot scan footpath network, no park entrance found.");
+		return;
+	}
+
+	const result = scanFootpathNetworkFromEntrance(parkEntranceTiles[0]);
+	console.log(
+		"Staff Assigner: footpath scan found " + result.pathTiles.length + " path tile(s) and "
+		+ result.queueTiles.length + " queue tile(s)."
+	);
+
+	const gardeningResult = scanGardeningTiles();
+	console.log("Staff Assigner: gardening scan found " + gardeningResult.gardenTiles + " garden tile(s).");
+
+	tilesCalculatedStore.set(true);
+
+	parkEntranceInfoStore.set(
+		"Path tiles: " + result.pathTiles.length + ", Queue tiles: " + result.queueTiles.length
+		+ ", Garden tiles: " + gardeningResult.gardenTiles
+	);
+}
+
+// --- Gardening tile scan --------------------------------------------------------
+// Whether a tile has a footpath element on it. Tiles covered by a footpath are
+// not gardening tiles: guests/staff can't walk on grass/scenery hidden
+// underneath a path.
+function hasFootpathElement(tile: Tile): boolean {
+	for (let e = 0; e < tile.numElements; e++) {
+		if (tile.getElement(e).type === "footpath") {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The small scenery object flag bit that marks an item as "can be watered"
+// (SMALL_SCENERY_FLAG_CAN_BE_WATERED in the OpenRCT2 source, SmallSceneryEntry.h).
+// Only scenery objects with this flag set (e.g. flowers/gardens) need
+// watering by handymen; trees, benches, lamps, etc. do not.
+const SMALL_SCENERY_FLAG_CAN_BE_WATERED = 1 << 5;
+
+// Small scenery placed directly on the ground (e.g. flowers, gardens) is what
+// handymen water. Not every small scenery item needs watering (e.g. trees,
+// lamps, benches don't), so the scenery object's flags are checked for the
+// "can be watered" bit.
+function hasWaterableSceneryElement(tile: Tile): boolean {
+	for (let e = 0; e < tile.numElements; e++) {
+		const element = tile.getElement(e);
+		if (element.type === "small_scenery") {
+			const sceneryElement = element as SmallSceneryElement;
+			const sceneryObject = objectManager.getObject("small_scenery", sceneryElement.object);
+			if (sceneryObject && (sceneryObject.flags & SMALL_SCENERY_FLAG_CAN_BE_WATERED) !== 0) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Scans every tile owned by the park (or under construction rights) and counts
+// how many are "garden tiles": tiles that either have mowable grass or
+// waterable scenery on them (a tile with both still only counts once). Tiles
+// under a footpath are skipped entirely, since staff can't mow/water grass or
+// scenery hidden under a path.
+function scanGardeningTiles(): { gardenTiles: number } {
+	const mapSize = map.size;
+	let gardenTiles = 0;
+
+	for (let x = 0; x < mapSize.x; x++) {
+		for (let y = 0; y < mapSize.y; y++) {
+			if (!isParkOwnedTile(x, y)) {
+				continue;
+			}
+
+			const tile = map.getTile(x, y);
+			if (hasFootpathElement(tile)) {
+				continue;
+			}
+
+			const surface = findSurfaceElement(tile);
+			const isMowable = !!surface && surface.grassLength >= 0;
+			const isWaterable = hasWaterableSceneryElement(tile);
+			if (isMowable || isWaterable) {
+				gardenTiles++;
+			}
+		}
+	}
+
+	return { gardenTiles: gardenTiles };
+}
+
 function computeNeeded(totalTiles: number, tilesPerStaff: number): number {
 	if (tilesPerStaff <= 0 || totalTiles <= 0) {
 		return 0;
@@ -262,7 +544,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 			y: Math.round((ui.height - WINDOW_HEIGHT) / 2),
 			spacing: 4,
 			content: [
-				label({ text: "Press Calculate to scan the park.", width: "100%", height: 14 }),
+				label({ text: parkEntranceInfoStore, width: "100%", height: 14 }),
 				horizontal({
 					spacing: 6,
 					height: COLUMN_ROW_HEIGHT,
@@ -300,6 +582,8 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 function openWindow(): void {
 	staffAssignerWindowTemplate().open();
 	refreshHiredAndAssignedStaffCounts();
+	findAndReportParkEntrance();
+	scanFootpathNetwork();
 }
 
 // --- Main --------------------------------------------------------------------
