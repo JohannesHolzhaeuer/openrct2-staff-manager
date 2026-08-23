@@ -744,18 +744,152 @@ const HANDYMAN_ORDERS_GARDENING = HANDYMAN_ORDER_WATERING | HANDYMAN_ORDER_MOWIN
 
 const STAFF_TYPE_HANDYMAN = 0; // StaffHireArgs.staffType value for handymen
 
-// Splits an ordered list of tiles into consecutive chunks of at most
-// `chunkSize` tiles each, so each chunk can become one staff member's patrol
-// area. Returns an empty array if chunkSize is not positive.
-function splitIntoChunks(tiles: CoordsXY[], chunkSize: number): CoordsXY[][] {
-	if (chunkSize <= 0) {
+// Splits a set of tiles into `numChunks` spatially-contiguous regions using
+// farthest-point seeding followed by a 4-neighbour BFS grow-out from those
+// seeds. This mirrors the region partitioning previously used in
+// staff-manager.ts. A naive "slice the tile list into consecutive runs"
+// approach (as used previously here) does NOT produce spatially compact
+// chunks: the tiles are discovered via a flood fill that visits them in a
+// scattered (LIFO stack) order, so consecutive entries in that list can be
+// scattered across the map. That caused chunk boundaries to interleave,
+// making different handymen patrol/walk through the same physical area even
+// though their tile lists didn't literally share any tile.
+function partitionTilesIntoChunks(tiles: CoordsXY[], numChunks: number): CoordsXY[][] {
+	if (tiles.length === 0 || numChunks <= 0) {
 		return [];
 	}
-	const chunks: CoordsXY[][] = [];
-	for (let i = 0; i < tiles.length; i += chunkSize) {
-		chunks.push(tiles.slice(i, i + chunkSize));
+
+	const keyOf = function (t: CoordsXY): number { return t.x * 100000 + t.y; };
+
+	// Deduplicate by tile coordinate first: if the same tile appears twice
+	// in the input (e.g. a caller accidentally including a tile more than
+	// once), farthest-point sampling could otherwise pick that duplicated
+	// coordinate as two different "seeds", producing two chunks that both
+	// consist of that single shared tile - which manifests as two staff
+	// members ending up on the exact same tile with a near-invisible
+	// (1-tile) patrol area.
+	const byKey = new Map<number, CoordsXY>();
+	for (const t of tiles) {
+		byKey.set(keyOf(t), t);
 	}
-	return chunks;
+	const uniqueTiles = Array.from(byKey.values());
+
+	const n = Math.min(numChunks, uniqueTiles.length);
+
+	// Farthest-point sampling: each new seed is the tile currently farthest
+	// from all existing seeds, maintained incrementally so this is O(tiles)
+	// per seed rather than O(tiles * seeds). Seed keys are tracked
+	// explicitly so a tile can never be selected as a seed twice, even if
+	// distances tie at 0.
+	const seeds: CoordsXY[] = [uniqueTiles[0]];
+	const seedKeys = new Set<number>([keyOf(uniqueTiles[0])]);
+	const minDist: number[] = new Array(uniqueTiles.length);
+	for (let i = 0; i < uniqueTiles.length; i++) {
+		const dx = uniqueTiles[i].x - seeds[0].x;
+		const dy = uniqueTiles[i].y - seeds[0].y;
+		minDist[i] = dx * dx + dy * dy;
+	}
+	while (seeds.length < n) {
+		let bestIndex = -1;
+		let bestDistance = -1;
+		for (let i = 0; i < uniqueTiles.length; i++) {
+			if (seedKeys.has(keyOf(uniqueTiles[i]))) {
+				continue;
+			}
+			if (minDist[i] > bestDistance) {
+				bestDistance = minDist[i];
+				bestIndex = i;
+			}
+		}
+		if (bestIndex < 0) {
+			break;
+		}
+		const seed = uniqueTiles[bestIndex];
+		seeds.push(seed);
+		seedKeys.add(keyOf(seed));
+		for (let i = 0; i < uniqueTiles.length; i++) {
+			const dx = uniqueTiles[i].x - seed.x;
+			const dy = uniqueTiles[i].y - seed.y;
+			const d = dx * dx + dy * dy;
+			if (d < minDist[i]) {
+				minDist[i] = d;
+			}
+		}
+	}
+
+	// Grow every seed outward simultaneously (multi-source BFS) so every
+	// tile ends up in the region of its nearest seed by path distance,
+	// producing compact, non-overlapping, contiguous regions. Each seed key
+	// is guaranteed unique (see above), so the first-wins `regionOf` check
+	// below can never let two regions claim the same tile.
+	const result: CoordsXY[][] = [];
+	const regionOf = new Map<number, number>();
+	const queue: number[] = [];
+	const queueRegion: number[] = [];
+	seeds.forEach(function (s, i) {
+		const k = keyOf(s);
+		if (regionOf.has(k)) {
+			return;
+		}
+		regionOf.set(k, i);
+		queue.push(k);
+		queueRegion.push(i);
+		result[i] = [];
+	});
+	let head = 0;
+	while (head < queue.length) {
+		const k = queue[head];
+		const region = queueRegion[head];
+		head++;
+		const tile = byKey.get(k);
+		if (!tile) {
+			continue;
+		}
+		result[region].push(tile);
+		for (let d = 0; d < NEIGHBOUR_OFFSETS.length; d++) {
+			const offset = NEIGHBOUR_OFFSETS[d];
+			const nx = tile.x + offset.x;
+			const ny = tile.y + offset.y;
+			const nk = nx * 100000 + ny;
+			if (byKey.has(nk) && !regionOf.has(nk)) {
+				regionOf.set(nk, region);
+				queue.push(nk);
+				queueRegion.push(region);
+			}
+		}
+	}
+
+	return result.filter(function (r) { return r.length > 0; });
+}
+
+// Finds the tile in `chunk` nearest to the chunk's centroid, so a staff
+// member is teleported into the middle of their own zone rather than to the
+// BFS seed tile - farthest-point sampling picks seeds at the extremities/
+// edges of a region, so using the seed directly as the teleport target can
+// place two adjacent handymen's markers right next to each other at the
+// shared boundary between their zones, even though their tile sets never
+// actually overlap.
+function zoneCentre(chunk: CoordsXY[]): CoordsXY {
+	let sumX = 0;
+	let sumY = 0;
+	for (const t of chunk) {
+		sumX += t.x;
+		sumY += t.y;
+	}
+	const cx = sumX / chunk.length;
+	const cy = sumY / chunk.length;
+	let best = chunk[0];
+	let bestDistance = Infinity;
+	for (const t of chunk) {
+		const dx = t.x - cx;
+		const dy = t.y - cy;
+		const d = dx * dx + dy * dy;
+		if (d < bestDistance) {
+			bestDistance = d;
+			best = t;
+		}
+	}
+	return best;
 }
 
 // Removes every handyman currently hired, firing the newest ones first if
@@ -865,37 +999,168 @@ function hireMissingHandymen(survivors: Handyman[], neededCount: number, onDone:
 // tile within their new patrol area. Handymen beyond the available chunks
 // (or if there are no tiles for their job) are left with an empty patrol
 // area and no orders for that job.
-function assignHandymenToTiles(handymen: Handyman[], tiles: CoordsXY[], tilesPerStaff: number, orders: number): void {
-	const chunks = splitIntoChunks(tiles, tilesPerStaff);
-	for (let i = 0; i < handymen.length; i++) {
-		const member = handymen[i];
-		const chunk = i < chunks.length ? chunks[i] : [];
-		if (chunk.length > 0) {
-			member.patrolArea.add(chunk);
-		}
-		context.executeAction("staffsetorders", { id: member.id as number, staffOrders: orders }, function () { });
-		if (chunk.length > 0) {
-			const tile = chunk[0];
-			// Use the footpath's own height, not the ground surface's height:
-			// on elevated/bridge paths the surface underneath can be far below
-			// (e.g. over water), and placing staff there would teleport them
-			// into the water instead of onto the path.
-			const tileFootpath = findFootpathElement(tile.x, tile.y);
-			let z = member.z;
-			if (tileFootpath) {
-				z = tileFootpath.baseHeight * 8;
-			}
-			else {
-				const surface = findSurfaceElement(tile.x, tile.y);
-				if (surface) {
-					z = surface.baseHeight * 8;
-				}
-			}
-			member.x = tile.x * 32 + 16;
-			member.y = tile.y * 32 + 16;
-			member.z = z;
+// The staffsetpatrolarea game action silently drops/truncates very large
+// coordinate arrays (observed: a single add() call with 256 tiles left the
+// patrol area completely empty, while an 8-tile call worked fine), so large
+// chunks must be split into smaller batches and added one batch at a time.
+const PATROL_AREA_ADD_BATCH_SIZE = 32;
+
+function addTilesToPatrolArea(area: PatrolArea, tiles: CoordsXY[]): void {
+	for (let i = 0; i < tiles.length; i += PATROL_AREA_ADD_BATCH_SIZE) {
+		area.add(tiles.slice(i, i + PATROL_AREA_ADD_BATCH_SIZE));
+	}
+}
+
+// Handyman ids to print detailed patrol-area verification for, so we can
+// confirm the assignment actually took effect even when the in-game overlay
+// is hard to see (e.g. elevated/bridge paths over water). Set to null to
+// disable this extra logging.
+const DEBUG_LOG_HANDYMAN_IDS: number[] | null = null; // e.g. [47, 2569] to debug specific handyman ids
+
+function logPatrolAreaDebugInfo(member: Handyman, chunk: CoordsXY[]): void {
+	if (DEBUG_LOG_HANDYMAN_IDS === null || DEBUG_LOG_HANDYMAN_IDS.indexOf(member.id as number) === -1) {
+		return;
+	}
+	console.log("Staff Assigner: [debug id=" + member.id + "] requested chunk (" + chunk.length + " tiles): " + JSON.stringify(chunk));
+	console.log("Staff Assigner: [debug id=" + member.id + "] position after assignment: x=" + member.x + " y=" + member.y + " z=" + member.z + " (tile x=" + Math.floor(member.x / 32) + " y=" + Math.floor(member.y / 32) + ")");
+	console.log("Staff Assigner: [debug id=" + member.id + "] orders bitmask=" + member.orders);
+	console.log("Staff Assigner: [debug id=" + member.id + "] patrolArea.tiles (coarse, 32x32 blocks): " + JSON.stringify(member.patrolArea.tiles));
+	const missing: CoordsXY[] = [];
+	for (const t of chunk) {
+		if (!member.patrolArea.contains(t)) {
+			missing.push(t);
 		}
 	}
+	console.log("Staff Assigner: [debug id=" + member.id + "] contains() check - " + (chunk.length - missing.length) + "/" + chunk.length + " requested tiles are actually in the patrol area. Missing: " + JSON.stringify(missing));
+}
+
+// Detects tiles that ended up assigned to more than one chunk after
+// partitioning - this should never happen with a correct partition, so any
+// hit here points at a bug in partitionTilesIntoChunks (or its caller)
+// rather than at a rendering/visibility issue.
+function logChunkOverlaps(chunks: CoordsXY[][]): void {
+	const owner = new Map<number, number>();
+	let overlapCount = 0;
+	for (let ci = 0; ci < chunks.length; ci++) {
+		for (const t of chunks[ci]) {
+			const key = t.x * 100000 + t.y;
+			const existing = owner.get(key);
+			if (existing !== undefined && existing !== ci) {
+				overlapCount++;
+				console.log("Staff Assigner: WARNING - tile {" + t.x + "," + t.y + "} appears in both chunk " + existing + " and chunk " + ci);
+			}
+			else {
+				owner.set(key, ci);
+			}
+		}
+	}
+	if (overlapCount > 0) {
+		console.log("Staff Assigner: WARNING - " + overlapCount + " overlapping tile(s) found across " + chunks.length + " chunks");
+	}
+}
+
+// Assigns one chunk to one handyman, then invokes onDone once the
+// staffsetorders action has actually completed. Assignments are processed
+// strictly one handyman at a time (each one waiting for the previous
+// staffsetorders action's callback) because firing many patrol-area/game
+// actions synchronously within a single tick was observed to overflow
+// OpenRCT2's action queue and silently drop large patrol areas.
+function assignSingleHandymanToChunk(member: Handyman, chunk: CoordsXY[], orders: number, onDone: () => void): void {
+	try {
+		if (chunk.length > 0) {
+			addTilesToPatrolArea(member.patrolArea, chunk);
+		}
+	}
+	catch (error) {
+		console.log("Staff Assigner: setting patrol area for handyman id=" + member.id + " failed - " + error);
+	}
+	try {
+		context.executeAction("staffsetorders", { id: member.id as number, staffOrders: orders }, function () {
+			// The whole chain of remaining handymen depends on onDone() being
+			// called from every single step; an uncaught exception anywhere in
+			// this callback (e.g. teleporting to an unusable tile) would abort
+			// the chain silently partway through, leaving every handyman after
+			// the failing one un-teleported and without a patrol area - which
+			// looks exactly like "several handymen stuck on the same old tile
+			// with no visible patrol area".
+			try {
+				if (chunk.length > 0) {
+					const tile = zoneCentre(chunk);
+					// Use the footpath's own height, not the ground surface's height:
+					// on elevated/bridge paths the surface underneath can be far below
+					// (e.g. over water), and placing staff there would teleport them
+					// into the water instead of onto the path.
+					const tileFootpath = findFootpathElement(tile.x, tile.y);
+					let z = member.z;
+					if (tileFootpath) {
+						z = tileFootpath.baseHeight * 8;
+					}
+					else {
+						const surface = findSurfaceElement(tile.x, tile.y);
+						if (surface) {
+							z = surface.baseHeight * 8;
+						}
+					}
+					member.x = tile.x * 32 + 16;
+					member.y = tile.y * 32 + 16;
+					member.z = z;
+					console.log("Staff Assigner: handyman id=" + member.id + " teleported to tile x=" + tile.x + " y=" + tile.y + " (world x=" + member.x + " y=" + member.y + " z=" + member.z + ") chunkSize=" + chunk.length);
+				}
+				logPatrolAreaDebugInfo(member, chunk);
+			}
+			catch (error) {
+				console.log("Staff Assigner: assigning/teleporting handyman id=" + member.id + " failed after staffsetorders - " + error);
+			}
+			// Spread the next assignment onto a later tick rather than calling
+			// onDone() synchronously from within this callback, to give the game
+			// action queue time to fully drain between handymen.
+			context.setTimeout(onDone, 1);
+		});
+	}
+	catch (error) {
+		console.log("Staff Assigner: staffsetorders action threw synchronously for handyman id=" + member.id + " - " + error);
+		context.setTimeout(onDone, 1);
+	}
+}
+
+function assignHandymenToTiles(handymen: Handyman[], tiles: CoordsXY[], tilesPerStaff: number, orders: number, onDone: () => void): void {
+	// Partition into spatially-contiguous regions (one per handyman, capped
+	// by how many are needed for the tile count) rather than slicing the
+	// flood-fill visit order into consecutive runs - the latter scatters
+	// tiles across the map and causes different handymen's areas to
+	// interleave, making them appear to walk through each other's zones.
+	const desiredChunkCount = Math.min(handymen.length, Math.max(1, Math.ceil(tiles.length / Math.max(1, tilesPerStaff))));
+	const chunks = partitionTilesIntoChunks(tiles, desiredChunkCount);
+	console.log("Staff Assigner: assignHandymenToTiles - handymen=" + handymen.length + " tiles=" + tiles.length + " tilesPerStaff=" + tilesPerStaff + " orders=" + orders + " -> chunks=" + chunks.length + " chunkSizes=" + JSON.stringify(chunks.map(function (c) { return c.length; })));
+	logChunkOverlaps(chunks);
+	if (handymen.length > chunks.length) {
+		console.log("Staff Assigner: WARNING - " + (handymen.length - chunks.length) + " handyman/handymen have no chunk available and will be left at their current position (ids: " + JSON.stringify(handymen.slice(chunks.length).map(function (h) { return h.id; })) + ")");
+	}
+
+	let index = 0;
+	function next(): void {
+		if (index >= handymen.length) {
+			onDone();
+			return;
+		}
+		const member = handymen[index];
+		const chunk = index < chunks.length ? chunks[index] : [];
+		if (chunk.length === 0) {
+			console.log("Staff Assigner: handyman id=" + member.id + " (index " + index + ") got an EMPTY chunk - patrol area will be empty and it will NOT be teleported, staying at x=" + member.x + " y=" + member.y);
+		}
+		else {
+			console.log("Staff Assigner: handyman id=" + member.id + " (index " + index + ") assigned chunk first tile=" + JSON.stringify(chunk[0]) + " chunk length=" + chunk.length);
+		}
+		index++;
+		try {
+			assignSingleHandymanToChunk(member, chunk, orders, next);
+		}
+		catch (error) {
+			console.log("Staff Assigner: assigning handyman id=" + member.id + " failed - " + error);
+			next();
+		}
+	}
+	next();
 }
 
 // Applies the full Handymen plan: reset patrol areas, hire/fire to match
@@ -910,24 +1175,38 @@ function applyHandymenChanges(onComplete: () => void): void {
 		// The confirmation dialog only closes once onComplete() is invoked, so
 		// it must always run - even if something below throws - otherwise the
 		// dialog is left open forever with no way to dismiss it.
+		function finish(): void {
+			console.log("Staff Assigner: calling onComplete()");
+			onComplete();
+			console.log("Staff Assigner: onComplete() returned");
+		}
 		try {
 			const cleanupCount = computeNeeded(lastPatrolTileList.length, handymenTilesPerStaffStore.get());
 			const cleanupHandymen = handymen.slice(0, cleanupCount);
 			const gardeningHandymen = handymen.slice(cleanupCount);
+			console.log("Staff Assigner: handymen total=" + handymen.length + " cleanupCount=" + cleanupCount + " cleanupHandymen=" + cleanupHandymen.length + " gardeningHandymen=" + gardeningHandymen.length + " lastPatrolTileList.length=" + lastPatrolTileList.length + " lastGardeningTileList.length=" + lastGardeningTileList.length);
 
-			assignHandymenToTiles(cleanupHandymen, lastPatrolTileList, handymenTilesPerStaffStore.get(), HANDYMAN_ORDERS_CLEANUP);
-			assignHandymenToTiles(gardeningHandymen, lastGardeningTileList, handymenMowerTilesPerStaffStore.get(), HANDYMAN_ORDERS_GARDENING);
-
-			refreshHiredAndAssignedStaffCounts();
-			console.log("Staff Assigner: applyHandymenChanges body completed successfully");
+			// Assign cleanup handymen first, then gardening handymen only once
+			// the cleanup assignments have fully completed - assigning both
+			// groups at once was flooding the game action queue in a single
+			// tick, silently dropping large patrol areas.
+			assignHandymenToTiles(cleanupHandymen, lastPatrolTileList, handymenTilesPerStaffStore.get(), HANDYMAN_ORDERS_CLEANUP, function () {
+				try {
+					assignHandymenToTiles(gardeningHandymen, lastGardeningTileList, handymenMowerTilesPerStaffStore.get(), HANDYMAN_ORDERS_GARDENING, function () {
+						refreshHiredAndAssignedStaffCounts();
+						console.log("Staff Assigner: applyHandymenChanges body completed successfully");
+						finish();
+					});
+				}
+				catch (error) {
+					console.log("Staff Assigner: applying gardening handymen changes failed - " + error);
+					finish();
+				}
+			});
 		}
 		catch (error) {
 			console.log("Staff Assigner: applying handymen changes failed - " + error);
-		}
-		finally {
-			console.log("Staff Assigner: calling onComplete()");
-			onComplete();
-			console.log("Staff Assigner: onComplete() returned");
+			finish();
 		}
 	});
 }
