@@ -32,12 +32,19 @@ const entertainersPerAreaStore = flexStore<number>(1);
 const entertainersIncludeQueueStore = flexStore<boolean>(true);
 
 // Handymen are needed both to clean up the path/queue network (Cleanup) and
-// to mow/water the park's garden tiles (Gardening); both needs are summed.
-const handymenNeededStore = compute(
-	pathTilesCountStore, queueTilesCountStore, gardenTilesCountStore, handymenTilesPerStaffStore, handymenMowerTilesPerStaffStore,
-	function (path: number, queue: number, garden: number, tilesPerStaff: number, mowerTilesPerStaff: number) {
-		return computeNeeded(path + queue, tilesPerStaff) + computeNeeded(garden, mowerTilesPerStaff);
+// to mow/water the park's garden tiles (Gardening). These are tracked as
+// separate needed counts (used when hiring/firing specialised handymen) and
+// summed for the single "Needed" row shown in the UI.
+const handymenCleanupNeededStore = compute(pathTilesCountStore, queueTilesCountStore, handymenTilesPerStaffStore,
+	function (path: number, queue: number, tilesPerStaff: number) {
+		return computeNeeded(path + queue, tilesPerStaff);
 	});
+const handymenGardeningNeededStore = compute(gardenTilesCountStore, handymenMowerTilesPerStaffStore,
+	function (garden: number, mowerTilesPerStaff: number) {
+		return computeNeeded(garden, mowerTilesPerStaff);
+	});
+const handymenNeededStore = compute(handymenCleanupNeededStore, handymenGardeningNeededStore,
+	function (cleanup: number, gardening: number) { return cleanup + gardening; });
 
 // Guards only patrol plain pathway tiles, not queue tiles.
 const guardsNeededStore = compute(pathTilesCountStore, guardsTilesPerStaffStore,
@@ -70,6 +77,26 @@ const mechanicsAssignedStore = flexStore<number>(0);
 // spinners and stat text within the staff group boxes are disabled.
 const tilesCalculatedStore = flexStore<boolean>(false);
 const staffControlsDisabledStore = compute(tilesCalculatedStore, function (calculated) { return !calculated; });
+
+// Whether every staff type's Needed count matches its Hired count, i.e.
+// there is nothing left to adjust. `compute` only supports up to 5 stores at
+// once, so the staff types are combined in two steps.
+const noHandymenOrGuardsDifferenceStore = compute(
+	handymenNeededStore, handymenHiredStore, guardsNeededStore, guardsHiredStore,
+	function (handymenNeeded: number, handymenHired: number, guardsNeeded: number, guardsHired: number) {
+		return handymenNeeded === handymenHired && guardsNeeded === guardsHired;
+	});
+const noStaffDifferenceStore = compute(
+	noHandymenOrGuardsDifferenceStore, entertainersNeededStore, entertainersHiredStore, mechanicsNeededStore, mechanicsHiredStore,
+	function (noHandymenOrGuardsDifference: boolean, entertainersNeeded: number, entertainersHired: number,
+		mechanicsNeeded: number, mechanicsHired: number) {
+		return noHandymenOrGuardsDifference && entertainersNeeded === entertainersHired && mechanicsNeeded === mechanicsHired;
+	});
+const adjustButtonDisabledStore = compute(
+	staffControlsDisabledStore, noStaffDifferenceStore,
+	function (controlsDisabled: boolean, noStaffDifference: boolean) {
+		return controlsDisabled || noStaffDifference;
+	});
 
 // --- Park entrance detection ---------------------------------------------------
 // Text shown at the top of the window describing where the park entrance was found.
@@ -425,19 +452,226 @@ function countAssignedStaff(staffType: StaffType): number {
 	return count;
 }
 
+// --- Hire / fire ----------------------------------------------------------------
+// Handyman "orders" bitmask values (see StaffHireArgs/StaffSetOrdersArgs):
+// Sweeping = 1, Watering flowers = 2, Empty bins = 4, Mowing = 8.
+const HANDYMAN_ORDER_SWEEPING = 1;
+const HANDYMAN_ORDER_WATERING = 2;
+const HANDYMAN_ORDER_EMPTY_BINS = 4;
+const HANDYMAN_ORDER_MOWING = 8;
+// Cleanup handymen empty bins and sweep litter.
+const HANDYMAN_ORDERS_CLEANUP = HANDYMAN_ORDER_SWEEPING | HANDYMAN_ORDER_EMPTY_BINS;
+// Gardening handymen water flowers and mow lawns.
+const HANDYMAN_ORDERS_GARDENING = HANDYMAN_ORDER_WATERING | HANDYMAN_ORDER_MOWING;
+
+// Mechanic "orders" bitmask values: Inspect rides = 1, Fix rides = 2.
+const MECHANIC_ORDERS_DEFAULT = 1 | 2;
+
+// Staff type ids used by the "staffhire" game action.
+const STAFF_TYPE_ID_HANDYMAN = 0;
+const STAFF_TYPE_ID_MECHANIC = 1;
+const STAFF_TYPE_ID_SECURITY = 2;
+const STAFF_TYPE_ID_ENTERTAINER = 3;
+
+type HandymanPurpose = "cleanup" | "gardening";
+
+// A handyman is considered a "gardening" handyman if any of their orders are
+// watering/mowing, and a "cleanup" handyman otherwise (this also covers
+// freshly hired handymen with no orders set yet).
+function classifyHandyman(member: Handyman): HandymanPurpose {
+	return (member.orders & HANDYMAN_ORDERS_GARDENING) !== 0 ? "gardening" : "cleanup";
+}
+
+function getHandymenByPurpose(purpose: HandymanPurpose): Handyman[] {
+	const staff = map.getAllEntities("staff");
+	const result: Handyman[] = [];
+	for (let i = 0; i < staff.length; i++) {
+		const member = staff[i];
+		if (member.staffType === "handyman" && classifyHandyman(member as Handyman) === purpose) {
+			result.push(member as Handyman);
+		}
+	}
+	return result;
+}
+
+function getStaffByType(staffType: StaffType): Staff[] {
+	const staff = map.getAllEntities("staff");
+	const result: Staff[] = [];
+	for (let i = 0; i < staff.length; i++) {
+		if (staff[i].staffType === staffType) {
+			result.push(staff[i] as Staff);
+		}
+	}
+	return result;
+}
+
+// Fires the given number of staff members, oldest first (lowest entity id
+// first, since entity ids are assigned in creation order and are not reused
+// while the entity is alive). Invokes onActionComplete once per action after
+// its callback has fired (regardless of success/failure).
+function fireOldestStaff(members: Staff[], countToFire: number, onActionComplete: () => void): void {
+	const sorted = members.slice().sort(function (a, b) { return (a.id || 0) - (b.id || 0); });
+	for (let i = 0; i < countToFire && i < sorted.length; i++) {
+		const id = sorted[i].id;
+		if (id !== null) {
+			context.executeAction("stafffire", { id: id }, function () { onActionComplete(); });
+		} else {
+			onActionComplete();
+		}
+	}
+}
+
+// Identifiers (or parts thereof) of peep_animations objects that represent
+// entertainer costumes, as opposed to handyman/mechanic/security costumes.
+// Mirrors the non-staff entries of the StaffCostume type.
+const ENTERTAINER_COSTUME_IDENTIFIER_PARTS = [
+	"panda", "tiger", "elephant", "roman", "gorilla", "snowman", "knight", "astronaut", "bandit", "sheriff", "pirate"
+];
+
+// Finds all loaded peep_animations object indices that are valid entertainer
+// costumes (mirrors the non-staff entries of the StaffCostume type).
+function findEntertainerCostumeIndices(): number[] {
+	const peepAnimationObjects = objectManager.getAllObjects("peep_animations");
+	const result: number[] = [];
+	for (let i = 0; i < peepAnimationObjects.length; i++) {
+		const identifier = peepAnimationObjects[i].identifier.toLowerCase();
+		for (let p = 0; p < ENTERTAINER_COSTUME_IDENTIFIER_PARTS.length; p++) {
+			if (identifier.indexOf(ENTERTAINER_COSTUME_IDENTIFIER_PARTS[p]) !== -1) {
+				result.push(peepAnimationObjects[i].index);
+				break;
+			}
+		}
+	}
+	return result;
+}
+
+// Finds a loaded peep_animations object index that is a valid costume for the
+// given staff type. Handymen/mechanics/security use costume index 0 (their
+// default costume); entertainers must use one of the loaded entertainer
+// costume objects (picked at random), since costume 0 is the handyman
+// costume and is rejected by the game for entertainers.
+function findCostumeIndexForStaffType(staffTypeId: number): number {
+	if (staffTypeId !== STAFF_TYPE_ID_ENTERTAINER) {
+		return 0;
+	}
+
+	const entertainerCostumeIndices = findEntertainerCostumeIndices();
+	if (entertainerCostumeIndices.length === 0) {
+		return 0;
+	}
+
+	return entertainerCostumeIndices[Math.floor(Math.random() * entertainerCostumeIndices.length)];
+}
+
+// Hires the given number of new staff of the given type, applying the given
+// orders bitmask (only relevant for handymen/mechanics). Each hired staff
+// member gets its own randomly picked costume (relevant for entertainers).
+// Invokes onActionComplete once per action after its callback has fired.
+function hireStaff(staffTypeId: number, orders: number, countToHire: number, onActionComplete: () => void): void {
+	for (let i = 0; i < countToHire; i++) {
+		context.executeAction("staffhire", {
+			autoPosition: true,
+			staffType: staffTypeId,
+			costumeIndex: findCostumeIndexForStaffType(staffTypeId),
+			staffOrders: orders
+		}, function () { onActionComplete(); });
+	}
+}
+
+// Hires or fires handymen of a specific purpose (cleanup/gardening) to match
+// the needed count, firing the oldest first when there is a surplus. Invokes
+// onActionComplete once per hire/fire action after it completes.
+function adjustHandymen(purpose: HandymanPurpose, needed: number, onActionComplete: () => void): void {
+	const current = getHandymenByPurpose(purpose);
+	const difference = needed - current.length;
+	if (difference > 0) {
+		const orders = purpose === "cleanup" ? HANDYMAN_ORDERS_CLEANUP : HANDYMAN_ORDERS_GARDENING;
+		hireStaff(STAFF_TYPE_ID_HANDYMAN, orders, difference, onActionComplete);
+	} else if (difference < 0) {
+		fireOldestStaff(current, -difference, onActionComplete);
+	}
+}
+
+// Hires or fires staff of a given type to match the needed count, firing the
+// oldest first when there is a surplus. Invokes onActionComplete once per
+// hire/fire action after it completes.
+function adjustStaffOfType(staffType: StaffType, staffTypeId: number, orders: number, needed: number, onActionComplete: () => void): void {
+	const current = getStaffByType(staffType);
+	const difference = needed - current.length;
+	if (difference > 0) {
+		hireStaff(staffTypeId, orders, difference, onActionComplete);
+	} else if (difference < 0) {
+		fireOldestStaff(current, -difference, onActionComplete);
+	}
+}
+
+// Adjusts the number of hired staff of every type to match the currently
+// calculated Needed counts: hires more if understaffed, fires the oldest
+// staff first if overstaffed. The Hired/Assigned/Difference stats are
+// refreshed once all the queued hire/fire game actions have completed, so
+// the UI updates instantly and accurately (executeAction is asynchronous).
+function adjustStaffCounts(): void {
+	let pendingCount = 0;
+	const onActionComplete: () => void = function () {
+		pendingCount--;
+		if (pendingCount <= 0) {
+			refreshHiredAndAssignedStaffCounts();
+		}
+	};
+
+	// Snapshot the needed counts and current staff before issuing any actions,
+	// then count how many actions will be queued so we know when they're all done.
+	const handymenCleanupNeeded = handymenCleanupNeededStore.get();
+	const handymenGardeningNeeded = handymenGardeningNeededStore.get();
+	const guardsNeeded = guardsNeededStore.get();
+	const entertainersNeeded = entertainersNeededStore.get();
+	const mechanicsNeeded = mechanicsNeededStore.get();
+
+	const handymenCleanupCurrent = getHandymenByPurpose("cleanup").length;
+	const handymenGardeningCurrent = getHandymenByPurpose("gardening").length;
+	const guardsCurrent = getStaffByType("security").length;
+	const entertainersCurrent = getStaffByType("entertainer").length;
+	const mechanicsCurrent = getStaffByType("mechanic").length;
+
+	pendingCount += Math.abs(handymenCleanupNeeded - handymenCleanupCurrent);
+	pendingCount += Math.abs(handymenGardeningNeeded - handymenGardeningCurrent);
+	pendingCount += Math.abs(guardsNeeded - guardsCurrent);
+	pendingCount += Math.abs(entertainersNeeded - entertainersCurrent);
+	pendingCount += Math.abs(mechanicsNeeded - mechanicsCurrent);
+
+	if (pendingCount === 0) {
+		refreshHiredAndAssignedStaffCounts();
+		return;
+	}
+
+	adjustHandymen("cleanup", handymenCleanupNeeded, onActionComplete);
+	adjustHandymen("gardening", handymenGardeningNeeded, onActionComplete);
+	adjustStaffOfType("security", STAFF_TYPE_ID_SECURITY, 0, guardsNeeded, onActionComplete);
+	adjustStaffOfType("entertainer", STAFF_TYPE_ID_ENTERTAINER, 0, entertainersNeeded, onActionComplete);
+	adjustStaffOfType("mechanic", STAFF_TYPE_ID_MECHANIC, MECHANIC_ORDERS_DEFAULT, mechanicsNeeded, onActionComplete);
+}
+
 // --- Staff stat table ---------------------------------------------------------
 // A single row of the per-staff-type table: a left-aligned name and a
 // right-aligned value, e.g. "Needed        nnn".
 const STAT_ROW_HEIGHT = 12;
 
-function statRow(name: string, value: Bindable<number>, tooltip: string): WidgetCreator<FlexiblePosition> {
+function statRow(name: string, value: Bindable<number>, tooltip: string, colorToken?: Bindable<string>): WidgetCreator<FlexiblePosition> {
 	const text = isStore(value) ? compute(value, String) : String(value);
+	const nameText = colorToken
+		? (isStore(colorToken) ? compute(colorToken, function (token: string) { return token + name; }) : colorToken + name)
+		: name;
+	const valueText = colorToken
+		? (isStore(colorToken) && isStore(text)
+			? compute(colorToken, text, function (token: string, t: string) { return token + t; })
+			: (isStore(text) ? compute(text, function (t: string) { return (colorToken as string) + t; }) : (colorToken as string) + text))
+		: text;
 	return horizontal({
 		spacing: 4,
 		height: STAT_ROW_HEIGHT,
 		content: [
-			label({ text: name, width: "1w", height: STAT_ROW_HEIGHT, tooltip: tooltip, disabled: staffControlsDisabledStore }),
-			label({ text: text, width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred", tooltip: tooltip, disabled: staffControlsDisabledStore })
+			label({ text: nameText, width: "1w", height: STAT_ROW_HEIGHT, tooltip: tooltip, disabled: staffControlsDisabledStore }),
+			label({ text: valueText, width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred", tooltip: tooltip, disabled: staffControlsDisabledStore })
 		]
 	});
 }
@@ -449,10 +683,13 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: 
 			isStore(hired) ? hired : flexStore(hired),
 			function (n: number, h: number) { return n - h; })
 		: (needed as number) - (hired as number);
+	const differenceColorToken: Bindable<string> = isStore(difference)
+		? compute(difference, function (d: number) { return d > 0 ? "{GREEN}" : d < 0 ? "{RED}" : "{BLACK}"; })
+		: (difference > 0 ? "{GREEN}" : difference < 0 ? "{RED}" : "{BLACK}");
 	return [
 		statRow("Hired", hired, "The number of staff of this type currently hired in the park."),
 		statRow("Needed", needed, "The number of staff of this type needed to patrol the reachable pathway network, assuming the network is split into consecutive (contiguous) sections of \"tiles per staff\" tiles each."),
-		statRow("Difference", difference, "Needed minus Hired: a positive number means staff of this type need to be hired, a negative number means staff can be fired.")
+		statRow("Difference", difference, "Needed minus Hired: a positive number means staff of this type need to be hired, a negative number means staff can be fired.", differenceColorToken)
 	];
 }
 
@@ -626,7 +863,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 					height: APPLY_ROW_HEIGHT,
 					content: [
 						button({
-							text: "Adjust staff count", width: "50%", height: APPLY_ROW_HEIGHT, disabled: staffControlsDisabledStore, onClick: function () { }
+							text: "Adjust staff count", width: "50%", height: APPLY_ROW_HEIGHT, disabled: adjustButtonDisabledStore, onClick: function () { adjustStaffCounts(); }
 						}),
 						button({
 							text: "Assign", width: "50%", height: APPLY_ROW_HEIGHT, disabled: staffControlsDisabledStore, onClick: function () { }
