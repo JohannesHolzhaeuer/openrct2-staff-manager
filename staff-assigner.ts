@@ -16,13 +16,13 @@ import {
  *****************************************************************************/
 
 // --- Staff calculation stores -------------------------------------------------
-// The tile-counting/scanning logic and the patrol-area assignment logic have
-// been removed and will be rebuilt from scratch. Needed is fixed at 0 for
-// every staff type until that calculation is reintroduced.
-const handymenNeededStore = flexStore<number>(0);
-const guardsNeededStore = flexStore<number>(0);
-const entertainersNeededStore = flexStore<number>(0);
-const mechanicsNeededStore = flexStore<number>(0);
+// Raw tile/entity counts produced by the scan functions. Needed staff counts
+// are derived from these via `compute`, so they automatically recompute
+// whenever a scan re-runs or a "tiles per staff"-style spinner changes.
+const pathTilesCountStore = flexStore<number>(0);
+const queueTilesCountStore = flexStore<number>(0);
+const gardenTilesCountStore = flexStore<number>(0);
+const rideExitCountStore = flexStore<number>(0);
 
 const handymenTilesPerStaffStore = flexStore<number>(8);
 const handymenMowerTilesPerStaffStore = flexStore<number>(256);
@@ -30,6 +30,32 @@ const guardsTilesPerStaffStore = flexStore<number>(16);
 const entertainersTilesPerStaffStore = flexStore<number>(16);
 const entertainersPerAreaStore = flexStore<number>(1);
 const entertainersIncludeQueueStore = flexStore<boolean>(true);
+
+// Handymen are needed both to clean up the path/queue network (Cleanup) and
+// to mow/water the park's garden tiles (Gardening); both needs are summed.
+const handymenNeededStore = compute(
+	pathTilesCountStore, queueTilesCountStore, gardenTilesCountStore, handymenTilesPerStaffStore, handymenMowerTilesPerStaffStore,
+	function (path: number, queue: number, garden: number, tilesPerStaff: number, mowerTilesPerStaff: number) {
+		return computeNeeded(path + queue, tilesPerStaff) + computeNeeded(garden, mowerTilesPerStaff);
+	});
+
+// Guards only patrol plain pathway tiles, not queue tiles.
+const guardsNeededStore = compute(pathTilesCountStore, guardsTilesPerStaffStore,
+	function (path: number, tilesPerStaff: number) {
+		return computeNeeded(path, tilesPerStaff);
+	});
+
+// Entertainers patrol path tiles (and queue tiles, if the "Queue" toggle is
+// on), but multiple entertainers can be assigned to each patrol area.
+const entertainersNeededStore = compute(
+	pathTilesCountStore, queueTilesCountStore, entertainersIncludeQueueStore, entertainersTilesPerStaffStore, entertainersPerAreaStore,
+	function (path: number, queue: number, includeQueue: boolean, tilesPerStaff: number, perArea: number) {
+		const tiles = path + (includeQueue ? queue : 0);
+		return computeNeeded(tiles, tilesPerStaff) * Math.max(perArea, 0);
+	});
+
+// One mechanic is needed per ride exit in the park.
+const mechanicsNeededStore = compute(rideExitCountStore, function (rideExits: number) { return rideExits; });
 
 const handymenHiredStore = flexStore<number>(0);
 const handymenAssignedStore = flexStore<number>(0);
@@ -250,12 +276,36 @@ function scanFootpathNetwork(): void {
 	const gardeningResult = scanGardeningTiles();
 	console.log("Staff Assigner: gardening scan found " + gardeningResult.gardenTiles + " garden tile(s).");
 
+	const rideExitCount = countRideExits();
+	console.log("Staff Assigner: found " + rideExitCount + " ride exit(s).");
+
+	pathTilesCountStore.set(result.pathTiles.length);
+	queueTilesCountStore.set(result.queueTiles.length);
+	gardenTilesCountStore.set(gardeningResult.gardenTiles);
+	rideExitCountStore.set(rideExitCount);
+
 	tilesCalculatedStore.set(true);
 
 	parkEntranceInfoStore.set(
 		"Path tiles: " + result.pathTiles.length + ", Queue tiles: " + result.queueTiles.length
 		+ ", Garden tiles: " + gardeningResult.gardenTiles
 	);
+}
+
+// Counts the number of ride exits in the park; one mechanic is needed per
+// ride exit.
+function countRideExits(): number {
+	const rides = map.rides;
+	let count = 0;
+	for (let i = 0; i < rides.length; i++) {
+		const stations = rides[i].stations;
+		for (let s = 0; s < stations.length; s++) {
+			if (stations[s].exit) {
+				count++;
+			}
+		}
+	}
+	return count;
 }
 
 // --- Gardening tile scan --------------------------------------------------------
@@ -400,8 +450,8 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: 
 			function (n: number, h: number) { return n - h; })
 		: (needed as number) - (hired as number);
 	return [
-		statRow("Needed", needed, "The number of staff of this type needed to patrol the reachable pathway network, assuming the network is split into consecutive (contiguous) sections of \"tiles per staff\" tiles each."),
 		statRow("Hired", hired, "The number of staff of this type currently hired in the park."),
+		statRow("Needed", needed, "The number of staff of this type needed to patrol the reachable pathway network, assuming the network is split into consecutive (contiguous) sections of \"tiles per staff\" tiles each."),
 		statRow("Difference", difference, "Needed minus Hired: a positive number means staff of this type need to be hired, a negative number means staff can be fired.")
 	];
 }
@@ -570,8 +620,18 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 					]
 				}),
 				label({ text: "", width: "100%", height: APPLY_MESSAGE_ROW_HEIGHT, alignment: "centred" }),
-				button({
-					text: "Apply", width: "100%", height: 20, disabled: true, onClick: function () { }
+				horizontal({
+					spacing: 4,
+					width: "100%",
+					height: APPLY_ROW_HEIGHT,
+					content: [
+						button({
+							text: "Adjust staff count", width: "50%", height: APPLY_ROW_HEIGHT, disabled: staffControlsDisabledStore, onClick: function () { }
+						}),
+						button({
+							text: "Assign", width: "50%", height: APPLY_ROW_HEIGHT, disabled: staffControlsDisabledStore, onClick: function () { }
+						})
+					]
 				})
 			]
 		});
