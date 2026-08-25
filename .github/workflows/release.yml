@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,10 +28,19 @@ jobs:
       - name: Build
         run: npx tsc
 
+      - name: Read tag message
+        id: tag_message
+        run: |
+          {
+            echo "body<<EOF"
+            git tag -l --format='%(contents)' "${{ github.ref_name }}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create release and upload asset
         uses: softprops/action-gh-release@v2
         with:
           files: dist/staff-manager.js
-          generate_release_notes: true
+          body: ${{ steps.tag_message.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
