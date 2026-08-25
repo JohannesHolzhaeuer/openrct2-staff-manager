@@ -1,7 +1,7 @@
 /// <reference path="node_modules/@openrct2/types/openrct2.d.ts" />
 import {
-	window as flexWindow, box, horizontal, vertical, label, button, spinner, toggle,
-	store as flexStore, compute, isStore, WindowTemplate, WidgetCreator, FlexiblePosition, Store, Bindable,
+	window as flexWindow, box, horizontal, vertical, label, button, spinner, toggle, checkbox,
+	store as flexStore, compute, isStore, WindowTemplate, WidgetCreator, FlexiblePosition, Store, WritableStore, Bindable,
 	Scale
 } from "openrct2-flexui";
 /*****************************************************************************
@@ -31,38 +31,50 @@ const entertainersTilesPerStaffStore = flexStore<number>(16);
 const entertainersPerAreaStore = flexStore<number>(1);
 const entertainersIncludeQueueStore = flexStore<boolean>(true);
 
+// Whether each staff type is enabled. When a staff type is disabled, it is
+// treated as needing 0 staff (so "Adjust staff count" fires everyone of that
+// type) and "Assign" skips it entirely. Its spinners/toggles/labels are also
+// disabled in the UI.
+const handymenEnabledStore = flexStore<boolean>(true);
+const guardsEnabledStore = flexStore<boolean>(true);
+const entertainersEnabledStore = flexStore<boolean>(true);
+const mechanicsEnabledStore = flexStore<boolean>(true);
+
 // Handymen are needed both to clean up the path/queue network (Cleanup) and
 // to mow/water the park's garden tiles (Gardening). These are tracked as
 // separate needed counts (used when hiring/firing specialised handymen) and
 // summed for the single "Needed" row shown in the UI.
-const handymenCleanupNeededStore = compute(pathTilesCountStore, queueTilesCountStore, handymenTilesPerStaffStore,
-	function (path: number, queue: number, tilesPerStaff: number) {
-		return computeNeeded(path + queue, tilesPerStaff);
+const handymenCleanupNeededStore = compute(pathTilesCountStore, queueTilesCountStore, handymenTilesPerStaffStore, handymenEnabledStore,
+	function (path: number, queue: number, tilesPerStaff: number, enabled: boolean) {
+		return enabled ? computeNeeded(path + queue, tilesPerStaff) : 0;
 	});
-const handymenGardeningNeededStore = compute(gardenTilesCountStore, handymenMowerTilesPerStaffStore,
-	function (garden: number, mowerTilesPerStaff: number) {
-		return computeNeeded(garden, mowerTilesPerStaff);
+const handymenGardeningNeededStore = compute(gardenTilesCountStore, handymenMowerTilesPerStaffStore, handymenEnabledStore,
+	function (garden: number, mowerTilesPerStaff: number, enabled: boolean) {
+		return enabled ? computeNeeded(garden, mowerTilesPerStaff) : 0;
 	});
 const handymenNeededStore = compute(handymenCleanupNeededStore, handymenGardeningNeededStore,
 	function (cleanup: number, gardening: number) { return cleanup + gardening; });
 
 // Guards only patrol plain pathway tiles, not queue tiles.
-const guardsNeededStore = compute(pathTilesCountStore, guardsTilesPerStaffStore,
-	function (path: number, tilesPerStaff: number) {
-		return computeNeeded(path, tilesPerStaff);
+const guardsNeededStore = compute(pathTilesCountStore, guardsTilesPerStaffStore, guardsEnabledStore,
+	function (path: number, tilesPerStaff: number, enabled: boolean) {
+		return enabled ? computeNeeded(path, tilesPerStaff) : 0;
 	});
 
 // Entertainers patrol path tiles (and queue tiles, if the "Queue" toggle is
 // on), but multiple entertainers can be assigned to each patrol area.
-const entertainersNeededStore = compute(
+const entertainersNeededBaseStore = compute(
 	pathTilesCountStore, queueTilesCountStore, entertainersIncludeQueueStore, entertainersTilesPerStaffStore, entertainersPerAreaStore,
 	function (path: number, queue: number, includeQueue: boolean, tilesPerStaff: number, perArea: number) {
 		const tiles = path + (includeQueue ? queue : 0);
 		return computeNeeded(tiles, tilesPerStaff) * Math.max(perArea, 0);
 	});
+const entertainersNeededStore = compute(entertainersNeededBaseStore, entertainersEnabledStore,
+	function (needed: number, enabled: boolean) { return enabled ? needed : 0; });
 
 // One mechanic is needed per ride exit in the park.
-const mechanicsNeededStore = compute(rideExitCountStore, function (rideExits: number) { return rideExits; });
+const mechanicsNeededStore = compute(rideExitCountStore, mechanicsEnabledStore,
+	function (rideExits: number, enabled: boolean) { return enabled ? rideExits : 0; });
 
 const handymenHiredStore = flexStore<number>(0);
 const handymenAssignedStore = flexStore<number>(0);
@@ -77,6 +89,19 @@ const mechanicsAssignedStore = flexStore<number>(0);
 // spinners and stat text within the staff group boxes are disabled.
 const tilesCalculatedStore = flexStore<boolean>(false);
 const staffControlsDisabledStore = compute(tilesCalculatedStore, function (calculated) { return !calculated; });
+
+// Per-staff-type "disabled" stores for the spinners/toggles/labels within
+// each staff group box: disabled whenever the general controls are disabled
+// (tiles not yet calculated) OR the staff type's own "Enabled" toggle is off.
+function controlsDisabledFor(enabled: Store<boolean>): Store<boolean> {
+	return compute(staffControlsDisabledStore, enabled, function (controlsDisabled: boolean, isEnabled: boolean) {
+		return controlsDisabled || !isEnabled;
+	});
+}
+const handymenControlsDisabledStore = controlsDisabledFor(handymenEnabledStore);
+const guardsControlsDisabledStore = controlsDisabledFor(guardsEnabledStore);
+const entertainersControlsDisabledStore = controlsDisabledFor(entertainersEnabledStore);
+const mechanicsControlsDisabledStore = controlsDisabledFor(mechanicsEnabledStore);
 
 // Whether every staff type's Needed count matches its Hired count, i.e.
 // there is nothing left to adjust. `compute` only supports up to 5 stores at
@@ -977,12 +1002,20 @@ function reassignHandymenOrders(): void {
 // the start of each new area. Only deals with already-hired staff; use
 // "Adjust staff count" first to hire/fire staff to match the Needed counts.
 function assignStaff(): void {
-	reassignHandymenOrders();
-	assignConsecutiveAreas(getHandymenByPurpose("cleanup"), lastAllPathTiles);
-	assignGardeningAreas(getHandymenByPurpose("gardening"));
-	assignConsecutiveAreas(getStaffByType("security"), lastAllPathTiles.filter(function (t) { return !t.isQueue; }));
-	assignEntertainerAreas(getStaffByType("entertainer"), getEntertainerTiles(entertainersIncludeQueueStore.get()), entertainersPerAreaStore.get());
-	assignMechanics();
+	if (handymenEnabledStore.get()) {
+		reassignHandymenOrders();
+		assignConsecutiveAreas(getHandymenByPurpose("cleanup"), lastAllPathTiles);
+		assignGardeningAreas(getHandymenByPurpose("gardening"));
+	}
+	if (guardsEnabledStore.get()) {
+		assignConsecutiveAreas(getStaffByType("security"), lastAllPathTiles.filter(function (t) { return !t.isQueue; }));
+	}
+	if (entertainersEnabledStore.get()) {
+		assignEntertainerAreas(getStaffByType("entertainer"), getEntertainerTiles(entertainersIncludeQueueStore.get()), entertainersPerAreaStore.get());
+	}
+	if (mechanicsEnabledStore.get()) {
+		assignMechanics();
+	}
 }
 
 // --- Staff stat table ---------------------------------------------------------
@@ -990,7 +1023,7 @@ function assignStaff(): void {
 // right-aligned value, e.g. "Needed        nnn".
 const STAT_ROW_HEIGHT = 12;
 
-function statRow(name: string, value: Bindable<number>, tooltip: string, colorToken?: Bindable<string>): WidgetCreator<FlexiblePosition> {
+function statRow(name: string, value: Bindable<number>, tooltip: string, disabled: Bindable<boolean>, colorToken?: Bindable<string>): WidgetCreator<FlexiblePosition> {
 	const text = isStore(value) ? compute(value, String) : String(value);
 	const nameText = colorToken
 		? (isStore(colorToken) ? compute(colorToken, function (token: string) { return token + name; }) : colorToken + name)
@@ -1004,26 +1037,34 @@ function statRow(name: string, value: Bindable<number>, tooltip: string, colorTo
 		spacing: 4,
 		height: STAT_ROW_HEIGHT,
 		content: [
-			label({ text: nameText, width: "1w", height: STAT_ROW_HEIGHT, tooltip: tooltip, disabled: staffControlsDisabledStore }),
-			label({ text: valueText, width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred", tooltip: tooltip, disabled: staffControlsDisabledStore })
+			label({ text: nameText, width: "1w", height: STAT_ROW_HEIGHT, tooltip: tooltip, disabled: disabled }),
+			label({ text: valueText, width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred", tooltip: tooltip, disabled: disabled })
 		]
 	});
 }
 
-function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>): Array<WidgetCreator<FlexiblePosition>> {
+function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, disabled: Bindable<boolean>): Array<WidgetCreator<FlexiblePosition>> {
 	const difference = (isStore(needed) || isStore(hired))
 		? compute(
 			isStore(needed) ? needed : flexStore(needed),
 			isStore(hired) ? hired : flexStore(hired),
 			function (n: number, h: number) { return n - h; })
 		: (needed as number) - (hired as number);
-	const differenceColorToken: Bindable<string> = isStore(difference)
-		? compute(difference, function (d: number) { return d > 0 ? "{GREEN}" : d < 0 ? "{RED}" : "{BLACK}"; })
+	// The colour token forces a text colour that would otherwise override the
+	// greyed-out appearance a label gets from being disabled, so use no colour
+	// override at all (empty prefix) whenever the row is disabled.
+	const differenceColorToken: Bindable<string> = (isStore(difference) || isStore(disabled))
+		? compute(
+			isStore(difference) ? difference : flexStore(difference),
+			isStore(disabled) ? disabled : flexStore(disabled),
+			function (d: number, isDisabled: boolean) {
+				return isDisabled ? "" : (d > 0 ? "{GREEN}" : d < 0 ? "{RED}" : "{BLACK}");
+			})
 		: (difference > 0 ? "{GREEN}" : difference < 0 ? "{RED}" : "{BLACK}");
 	return [
-		statRow("Hired", hired, "The number of staff of this type currently hired in the park."),
-		statRow("Needed", needed, "The number of staff of this type needed to patrol the reachable pathway network, assuming the network is split into consecutive (contiguous) sections of \"tiles per staff\" tiles each."),
-		statRow("Difference", difference, "Needed minus Hired: a positive number means staff of this type need to be hired, a negative number means staff can be fired.", differenceColorToken)
+		statRow("Hired", hired, "The number of staff of this type currently hired in the park.", disabled),
+		statRow("Needed", needed, "The number of staff of this type needed to patrol the reachable pathway network, assuming the network is split into consecutive (contiguous) sections of \"tiles per staff\" tiles each.", disabled),
+		statRow("Difference", difference, "Needed minus Hired: a positive number means staff of this type need to be hired, a negative number means staff can be fired.", disabled, differenceColorToken)
 	];
 }
 
@@ -1031,7 +1072,7 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: 
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, spinnerLabel?: string, mowerTilesPerStaff?: Store<number>, mowerSpinnerLabel?: string, spinnerTooltip?: string, onSettingsChanged?: () => void): WidgetCreator<FlexiblePosition> {
+function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, enabled: WritableStore<boolean>, controlsDisabled: Store<boolean>, spinnerLabel?: string, mowerTilesPerStaff?: WritableStore<number>, mowerSpinnerLabel?: string, spinnerTooltip?: string, onSettingsChanged?: () => void): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
@@ -1039,11 +1080,12 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 		content: vertical({
 			spacing: 3,
 			content: [
+				checkbox({ text: "Enabled", width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, onChange: function (isChecked) { enabled.set(isChecked); } }),
 				...(tilesPerStaff ? [horizontal({
 					spacing: 4,
 					height: 14,
 					content: [
-						label({ text: spinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, disabled: staffControlsDisabledStore }),
+						label({ text: spinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, disabled: controlsDisabled }),
 						spinner({
 							value: tilesPerStaff,
 							minimum: 0,
@@ -1051,7 +1093,7 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 							width: "3w",
 							height: 14,
 							tooltip: spinnerTooltip || "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed.",
-							disabled: staffControlsDisabledStore,
+							disabled: controlsDisabled,
 							onChange: function (value) { tilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
 						})
 					]
@@ -1060,7 +1102,7 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 					spacing: 4,
 					height: 14,
 					content: [
-						label({ text: mowerSpinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, disabled: staffControlsDisabledStore }),
+						label({ text: mowerSpinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, disabled: controlsDisabled }),
 						spinner({
 							value: mowerTilesPerStaff,
 							minimum: 0,
@@ -1068,20 +1110,20 @@ function staffGroup(title: string, tilesPerStaff: Store<number> | null, needed: 
 							width: "3w",
 							height: 14,
 							tooltip: "The number of gardening tiles (tiles that need mowing or watering) a single gardening-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many gardening handymen are Needed.",
-							disabled: staffControlsDisabledStore,
+							disabled: controlsDisabled,
 							onChange: function (value) { mowerTilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
 						})
 					]
-				})] : []),
-				...statTable(needed, hired, assigned)
-			]
-		})
+						})] : []),
+						...statTable(needed, hired, assigned, controlsDisabled)
+					]
+				})
 	});
 }
 
 // One bordered box for entertainers: same as staffGroup plus a "Queue"
 // toggle underneath, laid out vertically like in the mockup.
-function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale): WidgetCreator<FlexiblePosition> {
+function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, enabled: WritableStore<boolean>, controlsDisabled: Store<boolean>): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: "Entertainers",
 		width: width,
@@ -1089,18 +1131,19 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, as
 		content: vertical({
 			spacing: 3,
 			content: [
+				checkbox({ text: "Enabled", width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, onChange: function (isChecked) { enabled.set(isChecked); } }),
 				horizontal({
 						spacing: 4,
 						height: 14,
 						content: [
-							label({ text: "Tiles / Staff", width: "2w", height: 14, padding: { top: 2 }, disabled: staffControlsDisabledStore }),
+							label({ text: "Tiles / Staff", width: "2w", height: 14, padding: { top: 2 }, disabled: controlsDisabled }),
 							spinner({
 								value: entertainersTilesPerStaffStore,
 								minimum: 0,
 								maximum: 999,
 								width: "3w",
 								height: 14,
-								disabled: staffControlsDisabledStore,
+								disabled: controlsDisabled,
 								onChange: function (value) { entertainersTilesPerStaffStore.set(value); }
 							})
 						]
@@ -1109,7 +1152,7 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, as
 						spacing: 4,
 						height: 14,
 						content: [
-							label({ text: "Staff / Area", width: "2w", height: 14, padding: { top: 2 }, disabled: staffControlsDisabledStore }),
+							label({ text: "Staff / Area", width: "2w", height: 14, padding: { top: 2 }, disabled: controlsDisabled }),
 							spinner({
 								value: entertainersPerAreaStore,
 								minimum: 0,
@@ -1117,15 +1160,15 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, as
 								width: "3w",
 								height: 14,
 								tooltip: "The number of entertainers to assign per patrol area.",
-								disabled: staffControlsDisabledStore,
+								disabled: controlsDisabled,
 								onChange: function (value) { entertainersPerAreaStore.set(value); }
 							})
 						]
 					}),
-				toggle({ text: "Queue", width: "100%", height: 14, isPressed: entertainersIncludeQueueStore, disabled: staffControlsDisabledStore, onChange: function (isPressed) { entertainersIncludeQueueStore.set(isPressed); } }),
-				...statTable(needed, hired, assigned)
-			]
-		})
+					toggle({ text: "Queue", width: "100%", height: 14, isPressed: entertainersIncludeQueueStore, disabled: controlsDisabled, onChange: function (isPressed) { entertainersIncludeQueueStore.set(isPressed); } }),
+						...statTable(needed, hired, assigned, controlsDisabled)
+					]
+				})
 	});
 }
 
@@ -1135,9 +1178,9 @@ let windowTemplate: WindowTemplate | null = null;
 const GROUP_WIDTH: Scale = "1w"; // each column takes an equal share of the available width
 const BOX_TITLE_HEIGHT = 11; // height reserved for the box's own title label
 const BOX_PADDING = 12; // 6px top + 6px bottom default box content padding
-const GROUP_CONTENT_HEIGHT = 14 + 3 + (STAT_ROW_HEIGHT * 3) + (3 * 2); // spinner row + spacing + 3 stat rows + spacing between them
+const GROUP_CONTENT_HEIGHT = 14 + 3 + 14 + 3 + (STAT_ROW_HEIGHT * 3) + (3 * 2); // enabled toggle row + spacing + spinner row + spacing + 3 stat rows + spacing between them
 const GROUP_HEIGHT = BOX_TITLE_HEIGHT + BOX_PADDING + GROUP_CONTENT_HEIGHT;
-const MECHANICS_CONTENT_HEIGHT = (STAT_ROW_HEIGHT * 3) + (3 * 2); // no spinner row: just 3 stat rows + spacing between them
+const MECHANICS_CONTENT_HEIGHT = 14 + 3 + (STAT_ROW_HEIGHT * 3) + (3 * 2); // enabled toggle row + spacing + 3 stat rows + spacing between them
 const MECHANICS_HEIGHT = BOX_TITLE_HEIGHT + BOX_PADDING + MECHANICS_CONTENT_HEIGHT;
 const HANDYMEN_EXTRA_HEIGHT = 14 + 3; // extra "Mower" spinner row + spacing
 const HANDYMEN_HEIGHT = GROUP_HEIGHT + HANDYMEN_EXTRA_HEIGHT;
@@ -1161,8 +1204,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 			title: "Staff Assigner",
 			width: windowWidth,
 			height: WINDOW_HEIGHT,
-			x: Math.round((ui.width - windowWidth) / 2),
-			y: Math.round((ui.height - WINDOW_HEIGHT) / 2),
+			position: { x: Math.round((ui.width - windowWidth) / 2), y: Math.round((ui.height - WINDOW_HEIGHT) / 2) },
 			spacing: 4,
 			content: [
 				label({ text: parkEntranceInfoStore, width: "100%", height: 14 }),
@@ -1175,8 +1217,8 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 							width: GROUP_WIDTH,
 							height: STACK_HEIGHT,
 							content: [
-									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, "Cleanup", handymenMowerTilesPerStaffStore, "Gardening", "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed."),
-											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, "Tiles / Staff", undefined, undefined, "The number of plain pathway tiles (excluding queue tiles) a single guard is expected to patrol (tiles per staff). Used to calculate how many guards are Needed.")
+									staffGroup("Handymen", handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, handymenEnabledStore, handymenControlsDisabledStore, "Cleanup", handymenMowerTilesPerStaffStore, "Gardening", "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed."),
+											staffGroup("Guards", guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, guardsEnabledStore, guardsControlsDisabledStore, "Tiles / Staff", undefined, undefined, "The number of plain pathway tiles (excluding queue tiles) a single guard is expected to patrol (tiles per staff). Used to calculate how many guards are Needed.")
 										]
 									}),
 								vertical({
@@ -1184,8 +1226,8 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 									width: GROUP_WIDTH,
 									height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
 									content: [
-											staffGroup("Mechanics", null, mechanicsNeededStore, mechanicsHiredStore, mechanicsAssignedStore, "100%", MECHANICS_HEIGHT),
-											entertainersGroup(entertainersNeededStore, entertainersHiredStore, entertainersAssignedStore, "100%", ENTERTAINERS_HEIGHT)
+											staffGroup("Mechanics", null, mechanicsNeededStore, mechanicsHiredStore, mechanicsAssignedStore, "100%", MECHANICS_HEIGHT, mechanicsEnabledStore, mechanicsControlsDisabledStore),
+											entertainersGroup(entertainersNeededStore, entertainersHiredStore, entertainersAssignedStore, "100%", ENTERTAINERS_HEIGHT, entertainersEnabledStore, entertainersControlsDisabledStore)
 								]
 						})
 					]

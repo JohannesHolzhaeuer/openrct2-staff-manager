@@ -16,7 +16,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "openrct2-flexui": "^0.1.0-prerelease.0"
+    "openrct2-flexui": "0.1.0-prerelease.22"
   },
   "allowScripts": {
     "esbuild@0.28.2": true
