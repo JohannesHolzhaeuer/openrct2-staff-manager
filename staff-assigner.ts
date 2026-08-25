@@ -22,6 +22,12 @@ import {
 const pathTilesCountStore = flexStore<number>(0);
 const queueTilesCountStore = flexStore<number>(0);
 const gardenTilesCountStore = flexStore<number>(0);
+// Tile counts of each disconnected gardening area (connected component), so
+// the needed-gardener count can guarantee at least one gardener per
+// component instead of just dividing the grand total by tiles-per-staff
+// (which could round down to fewer gardeners than there are components,
+// leaving some areas with none).
+const gardenAreaSizesStore = flexStore<number[]>([]);
 const rideExitCountStore = flexStore<number>(0);
 
 const handymenTilesPerStaffStore = flexStore<number>(8);
@@ -48,9 +54,15 @@ const handymenCleanupNeededStore = compute(pathTilesCountStore, queueTilesCountS
 	function (path: number, queue: number, tilesPerStaff: number, enabled: boolean) {
 		return enabled ? computeNeeded(path + queue, tilesPerStaff) : 0;
 	});
-const handymenGardeningNeededStore = compute(gardenTilesCountStore, handymenMowerTilesPerStaffStore, handymenEnabledStore,
-	function (garden: number, mowerTilesPerStaff: number, enabled: boolean) {
-		return enabled ? computeNeeded(garden, mowerTilesPerStaff) : 0;
+const handymenGardeningNeededStore = compute(gardenAreaSizesStore, handymenMowerTilesPerStaffStore, handymenEnabledStore,
+	function (areaSizes: number[], mowerTilesPerStaff: number, enabled: boolean) {
+		if (!enabled) {
+			return 0;
+		}
+		// Sum of each area's own needed count, so every disconnected area
+		// gets at least one gardener (as long as it has any tiles), rather
+		// than allocating gardeners against the grand total tile count.
+		return areaSizes.reduce(function (sum, size) { return sum + computeNeeded(size, mowerTilesPerStaff); }, 0);
 	});
 const handymenNeededStore = compute(handymenCleanupNeededStore, handymenGardeningNeededStore,
 	function (cleanup: number, gardening: number) { return cleanup + gardening; });
@@ -269,12 +281,20 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 			continue;
 		}
 
-		// Skip tiles that are not owned by the park (or under construction
-		// rights), e.g. the public road/path leading up to the entrance from
-		// outside the park, so the scan only covers the park's own network.
-		if (!isParkOwnedTile(current.x, current.y)) {
-			continue;
-		}
+		// Tiles that are not owned by the park (or under construction rights
+		// only), e.g. the public road/path leading up to the entrance from
+		// outside the park, are not included in the resulting path/queue
+		// tile lists (so patrol areas/mowing never extend onto land the
+		// park doesn't own) - but if such a tile still has a footpath on it,
+		// the walk passes *through* it to reach further tiles beyond, since
+		// otherwise a single unowned path tile (e.g. the entrance's own
+		// approach path, which sits right between the map edge and the
+		// park's owned network) would incorrectly split the footpath
+		// network into separate "disconnected" halves, causing patrol areas
+		// built from them to leave a gap in the middle. Unowned non-path
+		// tiles (e.g. surrounding land/water) are still dead ends, so the
+		// walk doesn't spread across the whole map.
+		const isOwned = isParkOwnedTile(current.x, current.y);
 
 		const tile = map.getTile(current.x, current.y);
 		let isPath = false;
@@ -293,16 +313,22 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 			}
 		}
 
+		if (isOwned && isPath) {
+			if (isQueue) {
+				queueTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: true });
+			} else {
+				pathTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: false });
+			}
+			allTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: isQueue });
+		}
+
+		// Only continue walking through this tile if it's a path tile,
+		// whether owned (park's own network) or not (e.g. the entrance
+		// approach, a gap between two owned sections). Non-path tiles don't
+		// connect the footpath network and are dead ends.
 		if (!isPath) {
 			continue;
 		}
-
-		if (isQueue) {
-			queueTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: true });
-		} else {
-			pathTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: false });
-		}
-		allTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: isQueue });
 
 		for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
 			const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
@@ -349,6 +375,7 @@ function scanFootpathNetwork(): void {
 	pathTilesCountStore.set(result.pathTiles.length);
 	queueTilesCountStore.set(result.queueTiles.length);
 	gardenTilesCountStore.set(gardeningResult.gardenTiles);
+	gardenAreaSizesStore.set(gardeningResult.areas.map(function (area) { return area.length; }));
 	rideExitCountStore.set(rideExitCount);
 
 	lastAllPathTiles = result.allTiles;
@@ -363,19 +390,41 @@ function scanFootpathNetwork(): void {
 }
 
 // Counts the number of ride exits in the park; one mechanic is needed per
-// ride exit.
+// ride exit. Only actual rides count - shops/stalls and facilities (e.g. a
+// T-shirt shop) are excluded via their classification, since mechanics
+// service ride vehicles/track, not shops. Unused station slots (a ride's
+// "stations" array can be longer than its actual station count) report an
+// exit at a sentinel/out-of-bounds coordinate rather than null, so those are
+// filtered out by checking the resulting tile is within the map.
 function countRideExits(): number {
 	const rides = map.rides;
 	let count = 0;
 	for (let i = 0; i < rides.length; i++) {
+		if (rides[i].classification !== "ride") {
+			continue;
+		}
 		const stations = rides[i].stations;
 		for (let s = 0; s < stations.length; s++) {
-			if (stations[s].exit) {
+			if (isValidStationExit(stations[s].exit)) {
 				count++;
 			}
 		}
 	}
 	return count;
+}
+
+// Whether a station's exit coordinate is a real, in-use exit rather than an
+// unused station slot's sentinel value. OpenRCT2 always populates
+// RideStation.exit/entrance (they're never actually null despite existing
+// checks against falsy values), so unused slots must instead be detected by
+// their coordinates falling outside the map bounds.
+function isValidStationExit(exit: CoordsXYZD | null | undefined): exit is CoordsXYZD {
+	if (!exit) {
+		return false;
+	}
+	const tileX = Math.floor(exit.x / 32);
+	const tileY = Math.floor(exit.y / 32);
+	return tileX >= 0 && tileY >= 0 && tileX < map.size.x && tileY < map.size.y;
 }
 
 // --- Gardening tile scan --------------------------------------------------------
@@ -783,8 +832,24 @@ function processTeleportQueue(): void {
 		return;
 	}
 	teleportInProgress = true;
-	context.executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function () {
-		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function () {
+	context.executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function (pickupResult) {
+		if (pickupResult.error) {
+			console.log(
+				"Staff Assigner: pickup failed for staff id " + next.id + ": "
+				+ (pickupResult.errorTitle || "") + " - " + (pickupResult.errorMessage || "")
+			);
+			teleportInProgress = false;
+			processTeleportQueue();
+			return;
+		}
+		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function (placeResult) {
+			if (placeResult.error) {
+				console.log(
+					"Staff Assigner: place failed for staff id " + next.id + " at ("
+					+ next.x + ", " + next.y + ", " + next.z + "): "
+					+ (placeResult.errorTitle || "") + " - " + (placeResult.errorMessage || "")
+				);
+			}
 			teleportInProgress = false;
 			processTeleportQueue();
 		});
@@ -800,23 +865,120 @@ function teleportStaffToTile(member: Staff, x: number, y: number, z: number): vo
 	processTeleportQueue();
 }
 
-// Splits the given ordered tile list into as many consecutive (contiguous)
-// chunks as there are staff members, each chunk roughly totalTiles/staffCount
-// tiles large. If there are fewer staff hired than the "needed" count would
-// require, each chunk simply comes out larger, covering more tiles per staff
-// member; if there are more staff than tiles, the extra staff are left with
-// an empty patrol area (nothing to assign them to).
+// Splits the given tile list into contiguous (spatially connected) chunks,
+// each roughly totalTiles/staffCount tiles large. Unlike a naive index-based
+// slice of the (DFS/BFS) visitation order - which can silently jump between
+// unrelated branches or unrelated connected components and produce a "chunk"
+// made of disjoint patches - this grows each chunk outward tile-by-tile via
+// cardinal adjacency, so every chunk it returns is guaranteed to be one
+// connected group of tiles. If the tile network is itself split into several
+// disconnected pockets (e.g. separate garden areas), a chunk's growth simply
+// stops once its local pocket is exhausted, which can result in more chunks
+// than staffCount; callers should merge/ignore any surplus as appropriate.
 function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): PathTileInfo[][] {
 	if (staffCount <= 0 || tiles.length === 0) {
 		return [];
 	}
-	const chunkSize = Math.ceil(tiles.length / staffCount);
-	const chunks: PathTileInfo[][] = [];
-	for (let i = 0; i < tiles.length; i += chunkSize) {
-		chunks.push(tiles.slice(i, i + chunkSize));
+	const targetSize = Math.ceil(tiles.length / staffCount);
+
+	const tileByKey = new Map<string, PathTileInfo>();
+	const order: string[] = [];
+	for (let i = 0; i < tiles.length; i++) {
+		const key = tileKey(tiles[i].x, tiles[i].y);
+		if (!tileByKey.has(key)) {
+			tileByKey.set(key, tiles[i]);
+			order.push(key);
+		}
 	}
-	return chunks;
-}
+
+	const remaining = new Set<string>(order);
+	const chunks: PathTileInfo[][] = [];
+
+	while (remaining.size > 0) {
+		let startKey: string | null = null;
+		for (let i = 0; i < order.length; i++) {
+			if (remaining.has(order[i])) {
+				startKey = order[i];
+				break;
+			}
+		}
+		if (startKey === null) {
+			break;
+		}
+
+		const region: PathTileInfo[] = [];
+		const queue: string[] = [startKey];
+		remaining.delete(startKey);
+		let queueIndex = 0;
+
+		while (queueIndex < queue.length && region.length < targetSize) {
+			const key = queue[queueIndex];
+			queueIndex++;
+			const current = tileByKey.get(key) as PathTileInfo;
+			region.push(current);
+			if (region.length >= targetSize) {
+				break;
+			}
+			for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
+				const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
+				const neighbourKey = tileKey(current.x + offset.x, current.y + offset.y);
+				if (remaining.has(neighbourKey)) {
+					remaining.delete(neighbourKey);
+					queue.push(neighbourKey);
+				}
+			}
+		}
+
+			// Any tiles enqueued but not yet processed (because the region hit
+				// targetSize first) haven't actually been consumed - put them back
+				// so later chunks can still use them.
+				for (; queueIndex < queue.length; queueIndex++) {
+					remaining.add(queue[queueIndex]);
+				}
+
+				chunks.push(region);
+			}
+
+			// The tile set may consist of several disconnected pockets (e.g.
+			// separate lawn patches split apart by paths or rides), each of which
+			// produces its own chunk above. If that leaves more chunks than there
+			// are staff to assign them to, the surplus chunks would otherwise be
+			// silently dropped by callers that only iterate up to staffCount,
+			// leaving some areas with no assigned staff at all. To avoid that,
+			// repeatedly merge the two closest chunks (by centroid distance) into
+			// one until the chunk count is at most staffCount, so every tile always
+			// ends up part of some staff member's patrol area.
+			while (chunks.length > staffCount) {
+				const centroids = chunks.map(function (chunk) {
+					let sumX = 0;
+					let sumY = 0;
+					for (let i = 0; i < chunk.length; i++) {
+						sumX += chunk[i].x;
+						sumY += chunk[i].y;
+					}
+					return { x: sumX / chunk.length, y: sumY / chunk.length };
+				});
+
+				let bestA = 0;
+				let bestB = 1;
+				let bestDistance = Number.POSITIVE_INFINITY;
+				for (let a = 0; a < chunks.length; a++) {
+					for (let b = a + 1; b < chunks.length; b++) {
+						const distance = Math.abs(centroids[a].x - centroids[b].x) + Math.abs(centroids[a].y - centroids[b].y);
+						if (distance < bestDistance) {
+							bestDistance = distance;
+							bestA = a;
+							bestB = b;
+						}
+					}
+				}
+
+				chunks[bestA] = chunks[bestA].concat(chunks[bestB]);
+				chunks.splice(bestB, 1);
+			}
+
+			return chunks;
+		}
 
 // Clears every given staff member's patrol area. Used at the start of each
 // staff type's (re-)assignment so stale patrol areas don't linger.
@@ -826,9 +988,73 @@ function clearPatrolAreas(members: Staff[]): void {
 	}
 }
 
+// Finds the walkable footpath tile (from lastAllPathTiles) closest to the
+// given tile, by Manhattan distance, that is actually clear enough for a
+// staff member to be placed on (see isPeepPlaceableTile). Used to find a
+// safe spot to teleport a staff member to when the tile they'd otherwise be
+// placed on (e.g. a gardening tile covered in scenery, or a path tile with
+// an obstruction) isn't safe/placeable, since "peeppickup" place fails (e.g.
+// "Can't place person here... Swamp Plant in the way") when targeting
+// obstructed tiles.
+function findNearestPathTile(x: number, y: number): PathTileInfo | null {
+	let best: PathTileInfo | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (let i = 0; i < lastAllPathTiles.length; i++) {
+		const tile = lastAllPathTiles[i];
+		if (!isPeepPlaceableTile(tile.x, tile.y)) {
+			continue;
+		}
+		const distance = Math.abs(tile.x - x) + Math.abs(tile.y - y);
+		if (distance < bestDistance) {
+			bestDistance = distance;
+			best = tile;
+		}
+	}
+	return best;
+}
+
+// Whether a staff member can actually be placed on the given tile via
+// "peeppickup". A tile can have a walkable footpath element on it and still
+// reject placement because of something else stacked on the same (x, y)
+// column: a ride entrance/exit element (even from an unrelated ride placed
+// on a bridge/tunnel above or below), an embedded ride track element (e.g.
+// mini golf holes, which are technically "footpath" but belong to the
+// ride), a large scenery item, or a footpath "addition" (bench, lamp, bin,
+// queue TV, or decorative items like a swamp plant). All of these produce a
+// "Can't place person here..." error from the game, so they're all treated
+// as unsafe teleport targets, even though they may be perfectly fine as
+// patrol area tiles.
+function isPeepPlaceableTile(x: number, y: number): boolean {
+	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
+		return false;
+	}
+	const tile = map.getTile(x, y);
+	let footpath: FootpathElement | null = null;
+	for (let e = 0; e < tile.numElements; e++) {
+		const element = tile.getElement(e);
+		if (element.type === "footpath") {
+			footpath = element as FootpathElement;
+		} else if (element.type === "entrance" || element.type === "track" || element.type === "large_scenery") {
+			return false;
+		}
+	}
+	if (!footpath) {
+		return false;
+	}
+	if (footpath.addition !== null) {
+		return false;
+	}
+	return true;
+}
+
 // Assigns one consecutive chunk of the given ordered tile list to each hired
 // staff member (only dealing with already-hired staff, per Assign's remit),
-// and teleports each staff member to the first tile of their new area.
+// and teleports each staff member to the first placeable tile of their new
+// area. The chunk's own first tile isn't necessarily placeable (e.g.
+// gardening tiles covered by scenery, or path tiles with an obstruction such
+// as a ride entrance/exit or a bench), so the nearest actually-placeable
+// tile is used as the teleport target instead; the patrol area itself still
+// covers the full chunk regardless.
 function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[]): void {
 	clearPatrolAreas(members);
 	if (members.length === 0) {
@@ -839,23 +1065,120 @@ function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[]):
 		const chunk = chunks[i];
 		const member = members[i];
 		member.patrolArea.add(chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
-		teleportStaffToTile(member, chunk[0].x, chunk[0].y, chunk[0].baseZ);
+		let teleportTarget: PathTileInfo = chunk[0];
+		if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
+			const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
+			if (nearestPathTile) {
+				teleportTarget = nearestPathTile;
+			}
+		}
+		teleportStaffToTile(member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
 	}
 }
 
-// Assigns consecutive gardening areas built from the garden tiles' connected
-// components (in BFS order), flattened into one list so that when a
-// component runs out of tiles before a chunk is filled, the chunk continues
-// into the next component - effectively "connecting" the two areas.
+// Assigns gardening areas built from the garden tiles' connected components.
+// Unlike a flat/naive approach (concatenating every component into one tile
+// list before chunking), each connected component is allocated its own
+// dedicated gardener(s) and chunked entirely on its own. This guarantees a
+// component that isn't reachable from the rest of the park's lawn (e.g. a
+// patch of grass cut off by a path/building) always gets its own patrol
+// area and gardener, rather than being merged with a spatially "nearby" but
+// actually disconnected component - which would otherwise produce a patrol
+// area whose tiles aren't all reachable from one another. Staff are
+// allocated across components proportionally to each component's tile
+// count (largest-remainder rounding), with at least one gardener per
+// component when there are enough gardeners to go around; if there are
+// fewer gardeners than components, the smallest components are left
+// unassigned (logged) rather than silently merged into an unrelated area.
 function assignGardeningAreas(members: Staff[]): void {
-	const flattened: PathTileInfo[] = [];
-	for (let i = 0; i < lastGardenAreas.length; i++) {
-		const area = lastGardenAreas[i];
-		for (let t = 0; t < area.length; t++) {
-			flattened.push(area[t]);
+	clearPatrolAreas(members);
+	if (members.length === 0) {
+		return;
+	}
+
+	const components = lastGardenAreas.filter(function (area) { return area.length > 0; });
+	if (components.length === 0) {
+		return;
+	}
+
+	const totalTiles = components.reduce(function (sum, area) { return sum + area.length; }, 0);
+
+	// Each component's own needed count (same "max tiles per staff" rule
+	// used for the needed-gardener total), guaranteeing every disconnected
+	// area gets at least one gardener regardless of its size relative to
+	// the others.
+	const tilesPerStaff = handymenMowerTilesPerStaffStore.get();
+	const desiredCounts = components.map(function (area) { return computeNeeded(area.length, tilesPerStaff); });
+	const desiredTotal = desiredCounts.reduce(function (sum, c) { return sum + c; }, 0);
+
+	let counts: number[];
+	if (desiredTotal === members.length) {
+		// Exactly enough gardeners hired to cover every area's own need;
+		// use the per-area counts directly.
+		counts = desiredCounts;
+	} else {
+		// Hired count doesn't match total need (e.g. hiring/firing hasn't
+		// caught up yet); fall back to a largest-remainder allocation of
+		// the actually-available gardeners, proportional to tile count.
+		let allocations = components.map(function (area) {
+			return (area.length / totalTiles) * members.length;
+		});
+		counts = allocations.map(Math.floor);
+		let assignedTotal = counts.reduce(function (sum, c) { return sum + c; }, 0);
+		let remainder = members.length - assignedTotal;
+
+		// Distribute leftover gardeners (from flooring) to the components with
+		// the largest fractional remainder first.
+		const order = components.map(function (_, i) { return i; })
+			.sort(function (a, b) { return (allocations[b] - counts[b]) - (allocations[a] - counts[a]); });
+		for (let i = 0; i < order.length && remainder > 0; i++) {
+			counts[order[i]]++;
+			remainder--;
+		}
+
+		// If there are more components than gardeners, some components will
+		// have received zero gardeners above; ensure the largest components are
+		// prioritized to receive at least one by taking from any
+		// multiply-allocated component, largest first.
+		if (members.length < components.length) {
+			const bySizeDesc = components.map(function (area, i) { return i; })
+				.sort(function (a, b) { return components[b].length - components[a].length; });
+			const newCounts = components.map(function () { return 0; });
+			for (let i = 0; i < members.length; i++) {
+				newCounts[bySizeDesc[i]] = 1;
+			}
+			counts = newCounts;
 		}
 	}
-	assignConsecutiveAreas(members, flattened);
+
+	let memberIndex = 0;
+	for (let c = 0; c < components.length; c++) {
+		const count = counts[c];
+		if (count <= 0) {
+			console.log(
+				"Staff Assigner: garden area with " + components[c].length
+				+ " tile(s) has no gardener available (not enough gardening handymen for every disconnected area)."
+			);
+			continue;
+		}
+		const componentMembers = members.slice(memberIndex, memberIndex + count);
+		memberIndex += count;
+
+		const chunks = chunkTilesForStaffCount(components[c], componentMembers.length);
+		for (let i = 0; i < chunks.length && i < componentMembers.length; i++) {
+			const chunk = chunks[i];
+			const member = componentMembers[i];
+			member.patrolArea.add(chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
+			let teleportTarget: PathTileInfo = chunk[0];
+			if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
+				const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
+				if (nearestPathTile) {
+					teleportTarget = nearestPathTile;
+				}
+			}
+			teleportStaffToTile(member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
+		}
+	}
 }
 
 // Assigns consecutive entertainer areas, putting "perArea" entertainers into
@@ -872,10 +1195,17 @@ function assignEntertainerAreas(members: Staff[], orderedTiles: PathTileInfo[], 
 	for (let a = 0; a < chunks.length && memberIndex < members.length; a++) {
 		const chunk = chunks[a];
 		const coords = chunk.map(function (t) { return tileToWorldXY(t.x, t.y); });
+		let teleportTarget: PathTileInfo = chunk[0];
+		if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
+			const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
+			if (nearestPathTile) {
+				teleportTarget = nearestPathTile;
+			}
+		}
 		for (let p = 0; p < perArea && memberIndex < members.length; p++) {
 			const member = members[memberIndex];
 			member.patrolArea.add(coords);
-			teleportStaffToTile(member, chunk[0].x, chunk[0].y, chunk[0].baseZ);
+			teleportStaffToTile(member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
 			memberIndex++;
 		}
 	}
@@ -907,10 +1237,16 @@ function canTeleportMechanic(member: Staff): boolean {
 }
 
 // Assigns mechanics to ride exits: each patrol area consists of just the
-// ride exit tile and the path tile directly in front of it (in the exit's
-// facing direction). Only runs when exactly enough mechanics are hired to
-// cover every ride exit (difference === 0); otherwise does nothing, since
-// there's no sensible way to split a single-tile-pair area further.
+// ride exit tile and the path tile directly in front of it. Rather than
+// trusting the exit's stored facing direction (which turned out to
+// sometimes point to a side of the exit building with no path connected -
+// e.g. when the exit is offset from the queue/track - and produced patrol
+// areas that weren't reachable from the exit at all), every cardinal
+// neighbour of the exit tile is checked and the one that actually has a
+// footpath element on it is used. Only runs when exactly enough mechanics
+// are hired to cover every ride exit (difference === 0); otherwise does
+// nothing, since there's no sensible way to split a single-tile-pair area
+// further.
 function assignMechanics(): void {
 	const mechanics = getStaffByType("mechanic");
 	const mechanicsNeeded = mechanicsNeededStore.get();
@@ -923,26 +1259,86 @@ function assignMechanics(): void {
 	const rides = map.rides;
 	let mechanicIndex = 0;
 	for (let i = 0; i < rides.length && mechanicIndex < mechanics.length; i++) {
+		if (rides[i].classification !== "ride") {
+			continue;
+		}
 		const stations = rides[i].stations;
 		for (let s = 0; s < stations.length && mechanicIndex < mechanics.length; s++) {
 			const exit = stations[s].exit;
-			if (!exit) {
+			if (!isValidStationExit(exit)) {
 				continue;
 			}
 
 			const exitTileX = Math.floor(exit.x / 32);
 			const exitTileY = Math.floor(exit.y / 32);
-			const offset = CARDINAL_NEIGHBOUR_OFFSETS[exit.direction];
-			const frontTileX = exitTileX + offset.x;
-			const frontTileY = exitTileY + offset.y;
+
+			let frontTileX: number | null = null;
+			let frontTileY: number | null = null;
+			let frontFootpath: FootpathElement | null = null;
+			let frontTileIsAdjacent = false;
+
+			// Prefer the tile in the exit's stored facing direction, but
+			// fall back to whichever cardinal neighbour is actually
+			// placeable (has a clear footpath, no ride entrance/exit,
+			// track, large scenery, or addition on it), in case the stored
+			// direction doesn't line up with where the path really is, or
+			// points at a tile the peep can't be placed on (e.g. an
+			// unrelated ride's entrance/exit sharing the same tile).
+			const preferredOffset = CARDINAL_NEIGHBOUR_OFFSETS[exit.direction];
+			const candidateOffsets = [preferredOffset].concat(CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) { return o !== preferredOffset; }));
+			for (let c = 0; c < candidateOffsets.length; c++) {
+				const offset = candidateOffsets[c];
+				const candidateX = exitTileX + offset.x;
+				const candidateY = exitTileY + offset.y;
+				if (isPeepPlaceableTile(candidateX, candidateY)) {
+					frontTileX = candidateX;
+					frontTileY = candidateY;
+					frontFootpath = findFootpathElement(map.getTile(candidateX, candidateY));
+					frontTileIsAdjacent = true;
+					break;
+				}
+			}
+
+			// The patrol area must always stay just the exit tile plus the
+			// path tile directly in front of it - if no cardinal neighbour is
+			// placeable, there is no valid "front of the ride" tile to patrol,
+			// so the area is just the exit tile on its own. A distant
+			// fallback tile is only ever used as a teleport destination
+			// (below), never added to the patrol area, since that produced
+			// patrol areas far away from the ride.
+			if (frontTileX === null || frontTileY === null) {
+				console.log(
+					"Staff Assigner: could not find a footpath tile directly adjacent to ride exit at ("
+					+ exitTileX + ", " + exitTileY + "), ride " + i + " station " + s + "; patrol area will only cover the exit tile."
+				);
+			}
 
 			const member = mechanics[mechanicIndex];
-			member.patrolArea.add([tileToWorldXY(exitTileX, exitTileY), tileToWorldXY(frontTileX, frontTileY)]);
+			const patrolTiles: CoordsXY[] = [tileToWorldXY(exitTileX, exitTileY)];
+			if (frontTileIsAdjacent && frontTileX !== null && frontTileY !== null) {
+				patrolTiles.push(tileToWorldXY(frontTileX, frontTileY));
+			}
+			member.patrolArea.add(patrolTiles);
 
 			if (canTeleportMechanic(member)) {
-				const frontFootpath = findFootpathElement(map.getTile(frontTileX, frontTileY));
-				const z = frontFootpath ? frontFootpath.baseZ : exit.z;
-				teleportStaffToTile(member, frontTileX, frontTileY, z);
+				let teleportTileX = frontTileX;
+				let teleportTileY = frontTileY;
+				let teleportFootpath = frontFootpath;
+				if (teleportTileX === null || teleportTileY === null) {
+					// No adjacent front tile; teleport to the nearest
+					// reachable footpath tile instead (not part of the
+					// patrol area, just a valid place to stand).
+					const nearestPathTile = findNearestPathTile(exitTileX, exitTileY);
+					if (nearestPathTile) {
+						teleportTileX = nearestPathTile.x;
+						teleportTileY = nearestPathTile.y;
+						teleportFootpath = findFootpathElement(map.getTile(nearestPathTile.x, nearestPathTile.y));
+					}
+				}
+				if (teleportTileX !== null && teleportTileY !== null) {
+					const z = teleportFootpath ? teleportFootpath.baseZ : exit.z;
+					teleportStaffToTile(member, teleportTileX, teleportTileY, z);
+				}
 			}
 
 			mechanicIndex++;
