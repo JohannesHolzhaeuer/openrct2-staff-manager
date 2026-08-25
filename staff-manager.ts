@@ -202,12 +202,9 @@ function findParkEntranceTiles(): CoordsXY[] {
 function findAndReportParkEntrance(): CoordsXY[] {
 	const parkEntranceTiles = findParkEntranceTiles();
 	if (parkEntranceTiles.length === 0) {
-		console.log("Staff Manager: no park entrance found.");
 		parkEntranceInfoStore.set("Park entrance: not found.");
 		return parkEntranceTiles;
 	}
-	const coordsText = parkEntranceTiles.map(function (tile) { return "(" + tile.x + ", " + tile.y + ")"; }).join(", ");
-	console.log("Staff Manager: park entrance tile(s) found at " + coordsText);
 	return parkEntranceTiles;
 }
 
@@ -371,21 +368,14 @@ let lastGardenAreas: PathTileInfo[][] = [];
 function scanFootpathNetwork(): void {
 	const parkEntranceTiles = findParkEntranceTiles();
 	if (parkEntranceTiles.length === 0) {
-		console.log("Staff Manager: cannot scan footpath network, no park entrance found.");
 		return;
 	}
 
 	const result = scanFootpathNetworkFromEntrance(parkEntranceTiles[0]);
-	console.log(
-		"Staff Manager: footpath scan found " + result.pathTiles.length + " path tile(s) and "
-		+ result.queueTiles.length + " queue tile(s)."
-	);
 
 	const gardeningResult = scanGardeningTiles();
-	console.log("Staff Manager: gardening scan found " + gardeningResult.gardenTiles + " garden tile(s).");
 
 	const rideExitCount = countRideExits();
-	console.log("Staff Manager: found " + rideExitCount + " ride exit(s).");
 
 	pathTilesCountStore.set(result.pathTiles.length);
 	queueTilesCountStore.set(result.queueTiles.length);
@@ -741,7 +731,6 @@ function hireStaff(staffTypeId: number, orders: number, countToHire: number, onA
 			// entertainer costume objects loaded). Skip the hire, but still
 			// invoke the completion callback so the pending-action counter in
 			// adjustStaffCounts stays balanced and the UI still refreshes.
-			console.log("Staff Manager: cannot hire entertainer - no entertainer costume objects are loaded.");
 			onActionComplete();
 			continue;
 		}
@@ -865,22 +854,11 @@ function processTeleportQueue(): void {
 	teleportInProgress = true;
 	context.executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function (pickupResult) {
 		if (pickupResult.error) {
-			console.log(
-				"Staff Manager: pickup failed for staff id " + next.id + ": "
-				+ (pickupResult.errorTitle || "") + " - " + (pickupResult.errorMessage || "")
-			);
 			teleportInProgress = false;
 			processTeleportQueue();
 			return;
 		}
 		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function (placeResult) {
-			if (placeResult.error) {
-				console.log(
-					"Staff Manager: place failed for staff id " + next.id + " at ("
-					+ next.x + ", " + next.y + ", " + next.z + "): "
-					+ (placeResult.errorTitle || "") + " - " + (placeResult.errorMessage || "")
-				);
-			}
 			teleportInProgress = false;
 			processTeleportQueue();
 		});
@@ -1186,10 +1164,6 @@ function assignGardeningAreas(members: Staff[]): void {
 	for (let c = 0; c < components.length; c++) {
 		const count = counts[c];
 		if (count <= 0) {
-			console.log(
-				"Staff Manager: garden area with " + components[c].length
-				+ " tile(s) has no gardener available (not enough gardening handymen for every disconnected area)."
-			);
 			continue;
 		}
 		const componentMembers = members.slice(memberIndex, memberIndex + count);
@@ -1352,13 +1326,6 @@ function assignMechanics(): void {
 			// tile is only ever used as a teleport destination (below), never
 			// added to the patrol area, since that produced patrol areas far
 			// away from the ride.
-			if (frontTileX === null || frontTileY === null) {
-				console.log(
-					"Staff Manager: could not find a footpath tile directly adjacent to ride exit at ("
-					+ exitTileX + ", " + exitTileY + "), ride " + i + " station " + s + "; patrol area will only cover the exit tile."
-				);
-			}
-
 			const member = mechanics[mechanicIndex];
 			const patrolTiles: CoordsXY[] = [tileToWorldXY(exitTileX, exitTileY)];
 			if (frontTileX !== null && frontTileY !== null) {
