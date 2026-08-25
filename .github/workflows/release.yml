@@ -28,19 +28,14 @@ jobs:
       - name: Build
         run: npx tsc
 
-      - name: Read tag message
+      - name: Write tag message to file
         id: tag_message
-        run: |
-          {
-            echo "body<<EOF"
-            git tag -l --format='%(contents)' "${{ github.ref_name }}"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+        run: git tag -l --format='%(contents)' "${{ github.ref_name }}" > release_body.md
 
       - name: Create release and upload asset
         uses: softprops/action-gh-release@v2
         with:
           files: dist/staff-manager.js
-          body: ${{ steps.tag_message.outputs.body }}
+          body_path: release_body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
