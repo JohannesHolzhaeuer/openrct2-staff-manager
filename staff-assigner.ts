@@ -150,11 +150,16 @@ function getRideEntranceExitTileKeys(): Set<string> {
 		const stations = rides[i].stations;
 		for (let s = 0; s < stations.length; s++) {
 			const station = stations[s];
+			// Floor to tile coordinates so these keys match the integer-tile
+			// keys used by findParkEntranceTiles/isValidStationExit. Using raw
+			// "x / 32" would produce a fractional key (e.g. "5.5,3") for any
+			// non-tile-aligned coordinate, which would never match and could
+			// let a ride entrance/exit be misdetected as the park entrance.
 			if (station.entrance) {
-				tileKeys.add((station.entrance.x / 32) + "," + (station.entrance.y / 32));
+				tileKeys.add(Math.floor(station.entrance.x / 32) + "," + Math.floor(station.entrance.y / 32));
 			}
 			if (station.exit) {
-				tileKeys.add((station.exit.x / 32) + "," + (station.exit.y / 32));
+				tileKeys.add(Math.floor(station.exit.x / 32) + "," + Math.floor(station.exit.y / 32));
 			}
 		}
 	}
@@ -517,7 +522,11 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			}
 
 			const surface = findSurfaceElement(tile);
-			const isMowable = !!surface && surface.grassLength >= 0 && grassSurfaceStyleIndices.has(surface.surfaceStyle);
+			// A tile is mowable only if its surface is a grass-family style.
+			// grassLength itself is not tested: it is always a valid number
+			// for any surface, so the old ">= 0" check filtered nothing, and
+			// only grass surfaces actually grow long grass that needs mowing.
+			const isMowable = !!surface && grassSurfaceStyleIndices.has(surface.surfaceStyle);
 			const isWaterable = hasWaterableSceneryElement(tile);
 			if (isMowable || isWaterable) {
 				gardenTiles++;
@@ -540,7 +549,6 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 		visited.add(key);
 		while (stack.length > 0) {
 			const current = stack.pop() as CoordsXY;
-			const currentKey = tileKey(current.x, current.y);
 			const surface = findSurfaceElement(map.getTile(current.x, current.y));
 			component.push({ x: current.x, y: current.y, baseHeight: surface ? surface.baseHeight : 0, baseZ: surface ? surface.baseZ : 0, isQueue: false });
 			for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
@@ -704,7 +712,10 @@ function findEntertainerCostumeIndices(): number[] {
 // given staff type. Handymen/mechanics/security use costume index 0 (their
 // default costume); entertainers must use one of the loaded entertainer
 // costume objects (picked at random), since costume 0 is the handyman
-// costume and is rejected by the game for entertainers.
+// costume and is rejected by the game for entertainers. Returns -1 if no
+// valid costume exists (only possible for entertainers when no entertainer
+// costume objects are loaded), so the caller can skip the hire instead of
+// issuing one with costume 0 that the game would silently reject.
 function findCostumeIndexForStaffType(staffTypeId: number): number {
 	if (staffTypeId !== STAFF_TYPE_ID_ENTERTAINER) {
 		return 0;
@@ -712,7 +723,7 @@ function findCostumeIndexForStaffType(staffTypeId: number): number {
 
 	const entertainerCostumeIndices = findEntertainerCostumeIndices();
 	if (entertainerCostumeIndices.length === 0) {
-		return 0;
+		return -1;
 	}
 
 	return entertainerCostumeIndices[Math.floor(Math.random() * entertainerCostumeIndices.length)];
@@ -724,10 +735,20 @@ function findCostumeIndexForStaffType(staffTypeId: number): number {
 // Invokes onActionComplete once per action after its callback has fired.
 function hireStaff(staffTypeId: number, orders: number, countToHire: number, onActionComplete: () => void): void {
 	for (let i = 0; i < countToHire; i++) {
+		const costumeIndex = findCostumeIndexForStaffType(staffTypeId);
+		if (costumeIndex < 0) {
+			// No valid costume for this staff type (e.g. entertainer with no
+			// entertainer costume objects loaded). Skip the hire, but still
+			// invoke the completion callback so the pending-action counter in
+			// adjustStaffCounts stays balanced and the UI still refreshes.
+			console.log("Staff Assigner: cannot hire entertainer - no entertainer costume objects are loaded.");
+			onActionComplete();
+			continue;
+		}
 		context.executeAction("staffhire", {
 			autoPosition: true,
 			staffType: staffTypeId,
-			costumeIndex: findCostumeIndexForStaffType(staffTypeId),
+			costumeIndex: costumeIndex,
 			staffOrders: orders
 		}, function () { onActionComplete(); });
 	}
@@ -1264,6 +1285,15 @@ function assignMechanics(): void {
 		return;
 	}
 
+	// Every mechanic's patrol area is cleared and rebuilt to exactly the exit
+	// tile plus the path tile in front of it. Clearing/re-adding a patrol area
+	// does NOT physically move a mechanic or interrupt a repair in progress -
+	// only teleporting does - so it is safe to reset areas for busy mechanics
+	// too. This is important: skipping busy mechanics here would leave any
+	// stale, larger patrol area (e.g. a 4x4 block from an earlier version of
+	// this plugin) permanently in place, since a busy mechanic would never get
+	// its area rebuilt. The teleport below is the only step gated on whether a
+	// mechanic is busy.
 	clearPatrolAreas(mechanics);
 
 	const rides = map.rides;
@@ -1336,12 +1366,17 @@ function assignMechanics(): void {
 			}
 			member.patrolArea.add(patrolTiles);
 
+			// Only teleport idle mechanics. A busy mechanic (one not standing
+			// on a footpath - see canTeleportMechanic, the best available proxy
+			// for "currently servicing a ride") keeps its correct new patrol
+			// area from above but is not physically dragged off mid-repair; it
+			// will walk to its assigned area once it finishes its current job.
 			if (canTeleportMechanic(member)) {
 				// Prefer standing on the front tile, but only if a peep can
 				// actually be placed there (it may carry a bench/lamp/bin);
-				// otherwise drop the mechanic on the nearest placeable
-				// footpath. The patrol area still stays on the real front tile
-				// regardless of where the mechanic is physically placed.
+				// otherwise drop the mechanic on the nearest placeable footpath.
+				// The patrol area still stays on the real front tile regardless
+				// of where the mechanic is physically placed.
 				let teleportTileX: number | null = null;
 				let teleportTileY: number | null = null;
 				let teleportFootpath: FootpathElement | null = null;
@@ -1350,9 +1385,6 @@ function assignMechanics(): void {
 					teleportTileY = frontTileY;
 					teleportFootpath = frontFootpath;
 				} else {
-					// Front tile missing or obstructed; teleport to the nearest
-					// reachable, placeable footpath tile instead (not part of
-					// the patrol area, just a valid place to stand).
 					const nearestPathTile = findNearestPathTile(exitTileX, exitTileY);
 					if (nearestPathTile) {
 						teleportTileX = nearestPathTile.x;
