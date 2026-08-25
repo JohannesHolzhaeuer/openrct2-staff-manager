@@ -224,6 +224,16 @@ const CARDINAL_NEIGHBOUR_OFFSETS: CoordsXY[] = [
 	{ x: 0, y: 1 },
 	{ x: -1, y: 0 }
 ];
+// OpenRCT2 stores tile-element directions as 0=-X, 1=+Y, 2=+X, 3=-Y. This
+// ordering does NOT match CARDINAL_NEIGHBOUR_OFFSETS, so a stored direction
+// (e.g. a ride exit's facing direction) must be mapped through this table
+// rather than used to index CARDINAL_NEIGHBOUR_OFFSETS directly.
+const DIRECTION_OFFSETS: CoordsXY[] = [
+	{ x: -1, y: 0 },
+	{ x: 0, y: 1 },
+	{ x: 1, y: 0 },
+	{ x: 0, y: -1 }
+];
 
 function tileKey(x: number, y: number): string {
 	return x + "," + y;
@@ -1275,37 +1285,43 @@ function assignMechanics(): void {
 			let frontTileX: number | null = null;
 			let frontTileY: number | null = null;
 			let frontFootpath: FootpathElement | null = null;
-			let frontTileIsAdjacent = false;
 
-			// Prefer the tile in the exit's stored facing direction, but
-			// fall back to whichever cardinal neighbour is actually
-			// placeable (has a clear footpath, no ride entrance/exit,
-			// track, large scenery, or addition on it), in case the stored
-			// direction doesn't line up with where the path really is, or
-			// points at a tile the peep can't be placed on (e.g. an
-			// unrelated ride's entrance/exit sharing the same tile).
-			const preferredOffset = CARDINAL_NEIGHBOUR_OFFSETS[exit.direction];
-			const candidateOffsets = [preferredOffset].concat(CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) { return o !== preferredOffset; }));
+			// The "front" tile is the footpath the exit actually leads onto.
+			// Prefer the exit's stored facing direction (mapped through
+			// DIRECTION_OFFSETS, since the game's direction ordering does not
+			// match CARDINAL_NEIGHBOUR_OFFSETS), then fall back to whichever
+			// cardinal neighbour has a footpath, in case the stored direction
+			// doesn't line up with where the path really is (e.g. an exit
+			// offset from the queue/track). Selection is based purely on a
+			// footpath being present - NOT on peep-placeability - so a path
+			// tile carrying an addition (bench, lamp, bin, queue TV) or sharing
+			// its column with an unrelated element, which blocks teleporting
+			// but is still the correct tile to patrol, is never skipped in
+			// favour of an unrelated neighbour.
+			const preferredOffset = DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
+			const candidateOffsets = [preferredOffset].concat(
+				CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) { return o.x !== preferredOffset.x || o.y !== preferredOffset.y; })
+			);
 			for (let c = 0; c < candidateOffsets.length; c++) {
 				const offset = candidateOffsets[c];
 				const candidateX = exitTileX + offset.x;
 				const candidateY = exitTileY + offset.y;
-				if (isPeepPlaceableTile(candidateX, candidateY)) {
+				const footpath = findFootpathElement(map.getTile(candidateX, candidateY));
+				if (footpath !== null) {
 					frontTileX = candidateX;
 					frontTileY = candidateY;
-					frontFootpath = findFootpathElement(map.getTile(candidateX, candidateY));
-					frontTileIsAdjacent = true;
+					frontFootpath = footpath;
 					break;
 				}
 			}
 
 			// The patrol area must always stay just the exit tile plus the
-			// path tile directly in front of it - if no cardinal neighbour is
-			// placeable, there is no valid "front of the ride" tile to patrol,
-			// so the area is just the exit tile on its own. A distant
-			// fallback tile is only ever used as a teleport destination
-			// (below), never added to the patrol area, since that produced
-			// patrol areas far away from the ride.
+			// path tile directly in front of it - if no cardinal neighbour has
+			// a footpath, there is no valid "front of the ride" tile to patrol,
+			// so the area is just the exit tile on its own. A distant fallback
+			// tile is only ever used as a teleport destination (below), never
+			// added to the patrol area, since that produced patrol areas far
+			// away from the ride.
 			if (frontTileX === null || frontTileY === null) {
 				console.log(
 					"Staff Assigner: could not find a footpath tile directly adjacent to ride exit at ("
@@ -1315,19 +1331,28 @@ function assignMechanics(): void {
 
 			const member = mechanics[mechanicIndex];
 			const patrolTiles: CoordsXY[] = [tileToWorldXY(exitTileX, exitTileY)];
-			if (frontTileIsAdjacent && frontTileX !== null && frontTileY !== null) {
+			if (frontTileX !== null && frontTileY !== null) {
 				patrolTiles.push(tileToWorldXY(frontTileX, frontTileY));
 			}
 			member.patrolArea.add(patrolTiles);
 
 			if (canTeleportMechanic(member)) {
-				let teleportTileX = frontTileX;
-				let teleportTileY = frontTileY;
-				let teleportFootpath = frontFootpath;
-				if (teleportTileX === null || teleportTileY === null) {
-					// No adjacent front tile; teleport to the nearest
-					// reachable footpath tile instead (not part of the
-					// patrol area, just a valid place to stand).
+				// Prefer standing on the front tile, but only if a peep can
+				// actually be placed there (it may carry a bench/lamp/bin);
+				// otherwise drop the mechanic on the nearest placeable
+				// footpath. The patrol area still stays on the real front tile
+				// regardless of where the mechanic is physically placed.
+				let teleportTileX: number | null = null;
+				let teleportTileY: number | null = null;
+				let teleportFootpath: FootpathElement | null = null;
+				if (frontTileX !== null && frontTileY !== null && isPeepPlaceableTile(frontTileX, frontTileY)) {
+					teleportTileX = frontTileX;
+					teleportTileY = frontTileY;
+					teleportFootpath = frontFootpath;
+				} else {
+					// Front tile missing or obstructed; teleport to the nearest
+					// reachable, placeable footpath tile instead (not part of
+					// the patrol area, just a valid place to stand).
 					const nearestPathTile = findNearestPathTile(exitTileX, exitTileY);
 					if (nearestPathTile) {
 						teleportTileX = nearestPathTile.x;
