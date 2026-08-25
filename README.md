@@ -8,7 +8,7 @@ entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
 (re)assign** staff so the right number always patrol the right places — sending
 each staff member to their **nearest** free zone.
 
-- **Version:** 0.9.0
+- **Version:** 0.9.1
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
