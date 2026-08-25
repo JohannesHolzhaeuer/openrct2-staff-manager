@@ -11,7 +11,7 @@ import {
  * ui-mockup.drawio. This version only lays out the window and widgets; it
  * does not implement any staff-management functionality yet.
  *
- * Author: Johannes
+ * Author: Johannes Holzhäuer
  * Licence: MIT
  *****************************************************************************/
 
@@ -1689,7 +1689,7 @@ function main(): void {
 registerPlugin({
 	name: "Staff Manager",
 	version: "0.9.0",
-	authors: ["Johannes"],
+	authors: ["Johannes Holzhäuer"],
 	type: "local",
 	licence: "MIT",
 	minApiVersion: 34,

@@ -1,10 +1,12 @@
 # Staff Manager
 
+![Staff Manager screenshot](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/raw/main/screenshot.png)
+
 An [OpenRCT2](https://openrct2.org/) plugin that automates park staff management:
-it splits your paths (or ride **queues**) among **handymen, security guards and
-mascots**, assigns **mechanics** to ride exits, manages **inspection
-intervals**, and can automatically **hire, fire and (re)assign** staff as your
-park changes — always sending each staff member to their **nearest** free zone.
+it splits your paths (and ride **queues**) among **handymen, security guards and
+entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
+(re)assign** staff so the right number always patrol the right places — sending
+each staff member to their **nearest** free zone.
 
 - **Version:** 0.9.0
 - **Type:** local (single‑player / client‑side)
@@ -16,68 +18,55 @@ park changes — always sending each staff member to their **nearest** free zone
 
 ## Features
 
-### 🧹 Path staff — Handymen, Security, Mascots
-- **One area per staff member.** The park's footpaths are split into equal,
-  contiguous patrol areas and one is assigned to each staff member.
-- **Nearest‑zone assignment.** Every staff member is matched to the **closest
-  free zone** to where they currently stand, minimising walking.
+### 🧹 Path staff — Handymen, Guards, Entertainers
+- **One area per staff member.** The park's pathways are split into contiguous
+  patrol areas and one is assigned to each staff member.
+- **Nearest‑zone assignment.** Every staff member is matched to the **closest free
+  zone** to where they currently stand, minimising walking.
 - **Only relevant paths.** Path counting uses a flood‑fill from the **park
   entrance** and keeps only tiles on **park‑owned land** — so unusable public
   streets (e.g. *Bumbly Beach*) are ignored.
-- **Configurable density.** A spinner sets how many path tiles each staff
-  member should cover; the status line shows *Paths · Needed · Hired · Assignable*.
-- **Handymen mowing rule.** Handymen with **grass mowing enabled are left
-  alone** — only path‑cleaning handymen are managed.
-- **Staff are placed in their area.** Each assigned staff member is moved into
-  the centre of its area (onto a real path/queue tile).
+- **Configurable density.** A spinner sets how many tiles each staff member should
+  cover; the stats table shows *Hired · Needed · Difference* per type.
+- **Handymen split in two.** Handymen are classified by their orders:
+  - **Cleanup** handymen patrol the **path and queue** network.
+  - **Gardening** handymen water and **mow** the park's grass/scenery tiles,
+    with each connected garden area guaranteed at least one gardener.
+- **Staff are placed in their area.** Each assigned staff member is moved into the
+  centre of its area (onto a real, safely‑placeable path/queue tile).
 
-### 🎭 Mascots — dedicated options
-Mascots have their own controls instead of the generic density spinner:
-- **Assign to queue lines** (checkbox): place mascots along ride **queues** to
-  keep queuing guests happy, instead of general paths.
-- **Queue tiles / mascot** — max queue tiles each mascot covers (queue mode).
-- **Path tiles / mascot** — tiles each mascot covers (path mode).
-- **Mascots per area** — how many mascots share each area; **> 1 = overlapping**
-  (the area grows so the tiles‑per‑mascot density is preserved).
+### 🎭 Entertainers — dedicated options
+Entertainers have their own controls instead of the generic density spinner:
+- **Tiles / Staff** — how many tiles each entertainer covers.
+- **Staff / Area** — how many entertainers share each area; **> 1 = overlapping**
+  (the area grows so the tiles‑per‑staff density is preserved).
+- **Queue** toggle — include ride **queue** tiles in the patrol set, so
+  entertainers can keep queuing guests happy instead of only patrolling plain paths.
 
 ### 🔧 Mechanics
-- **One mechanic per ride exit**, each patrolling the exit plus the 3 path tiles leading up to it.
-- **Nearest‑mechanic matching:** each uncovered exit gets the closest free,
-  non‑busy mechanic.
-- **Inspection interval** dropdown (10 min … Never) applied to **all rides**,
-  independent of ride type. Newly assigned rides get an inspection triggered.
-- **Busy mechanics are protected:** a mechanic currently inspecting/fixing a
-  ride is never reassigned or fired.
+- **One mechanic per ride exit.** Each mechanic patrols the exit tile plus the
+  path tile directly in front of it (chosen by checking every cardinal neighbour
+  for an actual footpath, rather than trusting the exit's stored facing direction).
+- **Busy mechanics are protected.** A mechanic currently servicing a ride is never
+  teleported or interrupted; they keep their patrol area but finish their job first.
 
 ### 👥 Hire / Fire
-- If an assignment needs **more** staff than available, a dialog offers to
-  **hire** the shortfall.
-- If it needs **fewer**, a dialog offers to **fire** the surplus — **newest
-  staff first** (busy mechanics are skipped).
-- Dialog wording is grammatically correct per type, e.g. *Hire 1 guard*,
-  *Fire 3 mascots*, *Hire 2 mechanics*, *Fire 1 handyman*.
+- **Adjust staff count** button hires or fires the right number of **every** type
+  at once to match the calculated *Needed* counts — hiring when understaffed,
+  firing staff when overstaffed.
+- **Oldest staff first.** Surplus staff are fired oldest‑first for a stable,
+  consistent result.
 
-### 🤖 Automatic mode
-- **Auto mechanics:** on ride‑exit or staff changes, automatically hire missing
-  / fire surplus mechanics and reassign — no dialogs.
-- **Per‑type auto toggles** for **handymen, security and mascots** (one switch
-  each): automatically right‑size and reassign when **paths, land rights or
-  staff** change. These are **debounced** (path‑dragging fires many events) and
-  loop‑guarded against the plugin's own hire/fire actions.
-
-### 🔔 Notifications
-Park messages report when staff are **hired**, **fired**, or **assigned /
-reassigned** to a different spot, e.g.
-`Handymen: 5 assigned, 2 reassigned over 130 path tiles.`
-
-### 🖥️ UI & performance
-- **Resizable** window with a section (and picture) per staff type; controls
-  reflow to the window width.
-- All heavy work (whole‑map scan, bulk actions) is **chunked across game
-  ticks**, so the game never freezes. *(OpenRCT2 plugin JS is single‑threaded;
-  there is no true multithreading — long jobs are spread across ticks.)*
-- The map scan is **cached** and shared by all path staff; the density spinners
-  recompute *Needed* instantly without rescanning.
+### 🖥️ UI & behaviour
+- One resizable window with an **Enabled** toggle and a *Hired / Needed /
+  Difference* stat table per staff type.
+- **Assign** builds every type's patrol areas from the most recently scanned tiles
+  and teleports one staff member to the start of each new area.
+- Staff teleports are **serialised through a single queue**, because OpenRCT2 only
+  supports one peep being “picked up” at a time — overlapping pickups would
+  otherwise clobber each other.
+- A status line reports the scanned counts, e.g.
+  *Path tiles: n, Queue tiles: n, Garden tiles: n*.
 
 ---
 
@@ -99,7 +88,7 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 - **OpenRCT2** installed at least once, so the local `plugin` folder (or your own custom
   location) exists to deploy into.
 - Optional: **Visual Studio 2022/2026** with the Node.js/JavaScript workload if you want to open
-  `openrct2-staff-manager.sln` and build from the IDE instead of the command line (this runs the
+  `openrct2-staff-manager.slnx` and build from the IDE instead of the command line (this runs the
   same `npm run build` script under the hood).
 
 1. Install dependencies: `npm install`.
@@ -129,29 +118,28 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 ## Usage
 
 1. **Open the window** from the toolbox menu.
-2. For each path‑staff section (Handymen / Security / Mascots):
-   - Set the **density** (path tiles per staff; for mascots, the queue/path
-     tiles‑per‑mascot and mascots‑per‑area, plus the queue‑lines toggle).
-   - Click **Calculate & assign … areas**. If you don't have enough (or have
-     too many) staff, confirm the **Hire/Fire** dialog.
-   - Optionally tick **Auto** to keep that type managed automatically.
-3. In the **Mechanics** section:
-   - Pick an **Inspection interval** (applies to all rides).
-   - Click **Assign mechanics to exits now** (offers to hire/fire as needed).
-   - Optionally tick **Auto mechanics** for hands‑off management.
+2. For each staff type, tick the **Enabled** checkbox to include it.
+3. Click **Adjust staff count** to hire/fire the right number of each type based
+   on your settings (this is what fills the *Needed* column).
+4. Click **Assign** to build patrol areas and move staff into them.
+5. Tune the per‑type spinners (tiles/staff, entertainer staff/area, handyman
+   gardening density, entertainer queue toggle) and repeat steps 3–4 as your park
+   changes.
 
 ---
 
 ## How it decides which tiles count
 
 1. **Scan** every tile for footpaths (incl. queue flag), surface ownership and
-   the park entrance (chunked across ticks).
+   the park entrance.
 2. **Flood‑fill** from the park entrance across connected footpath **edges**.
 3. **Keep** only reachable tiles on **owned land**, split into **paths** and
    **queues**.
-4. **Match** staff to the **nearest** zone of the appropriate set (paths, or
-   queues for mascots in queue mode), or into fixed‑size overlapping areas for
-   mascots.
+4. **Scan gardening tiles** — tiles with mowable grass or waterable scenery —
+   grouped into connected components.
+5. **Match** staff to the **nearest** zone (paths, or paths+queues for
+   entertainers with the Queue toggle on), or into fixed‑size overlapping areas for
+   entertainers. Mechanics get the exit tile plus the adjacent path tile.
 
 If the entrance can't be found, it falls back to seeding from owned path tiles.
 
@@ -159,54 +147,57 @@ If the entrance can't be found, it falls back to seeding from owned path tiles.
 
 ## Notes & limitations
 
-- **Mechanic dispatch:** the scripting API doesn't expose which ride a mechanic
-  is dispatched to, so “busy” is inferred from the mechanic standing on a ride
-  (track/exit) tile.
-- **`staffhire` reliability:** hiring can occasionally be rejected by the game
-  (money/limits); the plugin reports how many actually succeeded and assigns
-  whatever exists.
-- **Icons:** each section shows the built‑in staff icon. Distinct per‑type
-  sprites aren't stable numeric constants across builds, so the same
-  guaranteed‑valid staff icon is used for all types (editable at the top of the
-  file via `STAFF_SPRITE`).
-- **Reachability vs. connection:** a mechanic/handyman can only work paths/exits
-  that are actually **connected** to the network.
-- **Matching cost:** nearest‑zone matching is O(n²) per pass — fine for the
-  usual dozens of staff; extreme counts (hundreds of one type) would be slower.
+- **Mechanic dispatch:** the scripting API doesn't expose which ride a mechanic is
+  dispatched to, so “busy” is inferred from the mechanic not standing on a
+  footpath tile.
+- **Patrol areas can't be verified to be connected:** areas are split by cardinal
+  adjacency and disconnected pockets are merged to the nearest centroid, so a patrol
+  area is generally reachable — but unusual layouts can still produce awkward shapes.
+- **Teleport vs. patrol:** a staff member's patrol area is always built in full,
+  but the physical teleport target is the **nearest safely‑placeable** path tile,
+  since the game rejects placement on obstructed tiles (benches, scenery, queue TV,
+  embedded ride elements, etc.).
 - **Single‑player focus:** actions are skipped on network clients.
 
 ---
 
 ## Configuration (in‑file)
 
-Near the top of `staff-manager.ts` you can tweak:
+Near the top of `staff-manager.ts` the default tunables are defined as flex
+stores. They're exposed directly in the UI, but their initial defaults live in
+code:
 
-| Constant | Purpose |
+| Store (default) | Purpose |
 | --- | --- |
-| `STAFF_SPRITE` | Icon sprite id per staff type |
-| `STAFF_ORDERS` | Default staff orders on hire (e.g. handyman = sweep+water+bins, no mowing) |
-| `SCAN_ROWS_PER_TICK` | Map‑scan chunk size (responsiveness vs. speed) |
-| `ACTIONS_PER_TICK` | Bulk game‑action chunk size |
-| `AUTO_PATH_DEBOUNCE_MS` | Debounce delay for auto path‑staff runs |
+| `handymenTilesPerStaffStore` (8) | Path/queue tiles per cleanup handyman |
+| `handymenMowerTilesPerStaffStore` (256) | Garden tiles per gardening handyman |
+| `guardsTilesPerStaffStore` (16) | Plain path tiles per guard |
+| `entertainersTilesPerStaffStore` (16) | Tiles per entertainer |
+| `entertainersPerAreaStore` (1) | Entertainers assigned per area |
+| `entertainersIncludeQueueStore` (true) | Whether entertainers patrol queues |
+| `*EnabledStore` (true) | Whether each staff type is managed |
 
 ---
 
-## Changelog (recent)
+## Changelog
 
-- **0.9.0** – Renamed to Staff Manager; bug fixes for gardening area allocation and mechanic patrol areas.
-- **1.0.0** – Initial release.
+- **0.9.0** – Renamed from the plugin's original working title to **Staff
+  Manager**; added per‑staff‑type enable controls; rewrote the UI; improved
+  entrance detection, mechanic patrol assignment (cardinal‑neighbour front‑tile
+  matching, busy‑mechanic protection), gardening granularity, and patrol
+  connectivity; removed leftover console logging.
 
 ---
 
 ## TODO
 
-- **Fixing bugs** — continue shaking out edge cases in patrol-area assignment (gardening,
-  mechanics, handymen) and staff hire/fire flows.
-- **Adding automatic management** — expand the automatic hire/fire/reassign behavior so the plugin
-  can keep staffing right-sized without manual intervention as the park changes.
+- **Fix patrol‑area edge cases** — continue shaking out issues in area assignment
+  (gardening, mechanics, handymen) and the hire/fire flows.
+- **Automatic staffing** — consider optional automatic hire/fire/reassign so staffing
+  stays right‑sized as the park changes without pressing the buttons.
 
 ---
 
 ## Licence
 
-MIT © Johannes
+MIT © Johannes Holzhäuer

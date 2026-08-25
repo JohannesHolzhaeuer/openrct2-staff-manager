@@ -5,8 +5,9 @@ Guidance for AI coding agents (and humans) working in this repository.
 ## Project overview
 
 This is an [OpenRCT2](https://openrct2.io/) plugin called **Staff Manager**. It automates park
-staff management (handymen, security, mascots/entertainers, mechanics) by splitting the park's
-paths into patrol areas and assigning staff accordingly.
+staff management (handymen, security guards, entertainers, mechanics) by splitting the park's
+paths and queues into patrol areas and assigning staff accordingly. Handymen are split between
+**cleanup** (paths + queues) and **gardening** (mow/water); mechanics patrol ride exits.
 
 - Single-plugin project: all runtime logic lives in one root-level TypeScript file.
 - Distributed as a single compiled JavaScript file that OpenRCT2 loads as a "local" plugin.
@@ -48,9 +49,10 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
 - The compiled output has no module system — the plugin must remain a single self-contained
   script; do not introduce `import`/`export` or split into multiple compiled modules (aside from
   the existing `import` of `openrct2-flexui`, which esbuild bundles into the single output file).
-- Keep long-running work (map scans, bulk assignments) chunked/asynchronous using the existing
-  patterns (e.g. `forEachAsync`, `context.setTimeout`, busy/token guards) to avoid blocking the
-  game loop.
+- Note that map scans and bulk assignments currently run synchronously (they are not chunked
+  across ticks with `forEachAsync`/`context.setTimeout`). Staff teleports ARE serialised through a
+  single queue (`teleportQueue`/`processTeleportQueue`) because OpenRCT2 only supports one peep
+  being picked up at a time — preserve this when adding any teleport logic.
 - Plugin metadata (name, version, author) is set in the `registerPlugin(...)` call at the bottom
   of `staff-manager.ts`; keep `package.json`'s `version` field in sync when bumping versions for a
   release.
