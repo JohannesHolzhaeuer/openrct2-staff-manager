@@ -858,7 +858,7 @@ function processTeleportQueue(): void {
 			processTeleportQueue();
 			return;
 		}
-		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function (placeResult) {
+		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function () {
 			teleportInProgress = false;
 			processTeleportQueue();
 		});
@@ -1129,11 +1129,11 @@ function assignGardeningAreas(members: Staff[]): void {
 		// Hired count doesn't match total need (e.g. hiring/firing hasn't
 		// caught up yet); fall back to a largest-remainder allocation of
 		// the actually-available gardeners, proportional to tile count.
-		let allocations = components.map(function (area) {
+		const allocations = components.map(function (area) {
 			return (area.length / totalTiles) * members.length;
 		});
 		counts = allocations.map(Math.floor);
-		let assignedTotal = counts.reduce(function (sum, c) { return sum + c; }, 0);
+		const assignedTotal = counts.reduce(function (sum, c) { return sum + c; }, 0);
 		let remainder = members.length - assignedTotal;
 
 		// Distribute leftover gardeners (from flooring) to the components with
