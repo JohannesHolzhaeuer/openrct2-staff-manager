@@ -1,4 +1,4 @@
-# Staff Assigner
+# Staff Manager
 
 An [OpenRCT2](https://openrct2.org/) plugin that automates park staff management:
 it splits your paths (or ride **queues**) among **handymen, security guards and
@@ -6,11 +6,11 @@ mascots**, assigns **mechanics** to ride exits, manages **inspection
 intervals**, and can automatically **hire, fire and (re)assign** staff as your
 park changes — always sending each staff member to their **nearest** free zone.
 
-- **Version:** 1.0.0
+- **Version:** 0.9.0
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
-- **Source:** `staff-assigner.ts` (TypeScript, compiles to `dist/staff-assigner.js`)
+- **Source:** `staff-manager.ts` (TypeScript, compiles to `dist/staff-manager.js`)
 
 ---
 
@@ -99,12 +99,12 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 - **OpenRCT2** installed at least once, so the local `plugin` folder (or your own custom
   location) exists to deploy into.
 - Optional: **Visual Studio 2022/2026** with the Node.js/JavaScript workload if you want to open
-  `openrct2-staff-assigner.sln` and build from the IDE instead of the command line (this runs the
+  `openrct2-staff-manager.sln` and build from the IDE instead of the command line (this runs the
   same `npm run build` script under the hood).
 
 1. Install dependencies: `npm install`.
 2. Build: `npm run build`.
-   - Compiles `staff-assigner.ts` to `dist/staff-assigner.js`.
+   - Compiles `staff-manager.ts` to `dist/staff-manager.js`.
    - Then automatically copies (`deploy.js`) that file straight into your
      local OpenRCT2 **plugin** folder:
      - **Windows:** `Documents\OpenRCT2\plugin\`
@@ -119,10 +119,10 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 ## Installation
 
 1. Run `npm install` then `npm run build` (see [Building](#building)) — this
-   compiles and deploys `staff-assigner.js` directly into your OpenRCT2 plugin
+   compiles and deploys `staff-manager.js` directly into your OpenRCT2 plugin
    folder.
 2. Start OpenRCT2 (or, in single‑player, use the plugin **hot‑reload**).
-3. Open it from the **map / red‑toolbox button → “Staff Assigner”**.
+3. Open it from the **map / red‑toolbox button → “Staff Manager”**.
 
 ---
 
@@ -179,7 +179,7 @@ If the entrance can't be found, it falls back to seeding from owned path tiles.
 
 ## Configuration (in‑file)
 
-Near the top of `staff-assigner.ts` you can tweak:
+Near the top of `staff-manager.ts` you can tweak:
 
 | Constant | Purpose |
 | --- | --- |
@@ -193,7 +193,17 @@ Near the top of `staff-assigner.ts` you can tweak:
 
 ## Changelog (recent)
 
+- **0.9.0** – Renamed to Staff Manager; bug fixes for gardening area allocation and mechanic patrol areas.
 - **1.0.0** – Initial release.
+
+---
+
+## TODO
+
+- **Fixing bugs** — continue shaking out edge cases in patrol-area assignment (gardening,
+  mechanics, handymen) and staff hire/fire flows.
+- **Adding automatic management** — expand the automatic hire/fire/reassign behavior so the plugin
+  can keep staffing right-sized without manual intervention as the park changes.
 
 ---
 

@@ -8,14 +8,13 @@
     <BuildScript>build</BuildScript>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="staff-assigner.ts" />
+    <Content Include="staff-manager.ts" />
     <Content Include="deploy.js" />
     <Content Include="tsconfig.json" />
     <Content Include="package.json" />
     <Content Include="README.md" />
   </ItemGroup>
   <ItemGroup>
-    <None Include=".github\copilot-instructions.md" />
     <None Include=".github\workflows\release.yml" />
   </ItemGroup>
 </Project>

@@ -10,7 +10,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
-const SOURCE_FILE = path.join(__dirname, "dist", "staff-assigner.js");
+const SOURCE_FILE = path.join(__dirname, "dist", "staff-manager.js");
 
 // On Windows, "Documents" can be redirected (e.g. by OneDrive) away from
 // %USERPROFILE%\Documents. Ask the registry for the real "Personal" shell
@@ -51,7 +51,7 @@ function main() {
 	}
 
 	const pluginDir = process.env.OPENRCT2_PLUGIN_DIR || defaultPluginDir();
-	const destFile = path.join(pluginDir, "staff-assigner.js");
+	const destFile = path.join(pluginDir, "staff-manager.js");
 
 	fs.mkdirSync(pluginDir, { recursive: true });
 	fs.copyFileSync(SOURCE_FILE, destFile);

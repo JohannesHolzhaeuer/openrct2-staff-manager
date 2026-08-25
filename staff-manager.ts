@@ -5,7 +5,7 @@ import {
 	Scale
 } from "openrct2-flexui";
 /*****************************************************************************
- * Staff Assigner
+ * Staff Manager
  * ---------------------------------------------------------------------------
  * This is a from-scratch rebuild of the plugin's UI, based on the mockup in
  * ui-mockup.drawio. This version only lays out the window and widgets; it
@@ -202,12 +202,12 @@ function findParkEntranceTiles(): CoordsXY[] {
 function findAndReportParkEntrance(): CoordsXY[] {
 	const parkEntranceTiles = findParkEntranceTiles();
 	if (parkEntranceTiles.length === 0) {
-		console.log("Staff Assigner: no park entrance found.");
+		console.log("Staff Manager: no park entrance found.");
 		parkEntranceInfoStore.set("Park entrance: not found.");
 		return parkEntranceTiles;
 	}
 	const coordsText = parkEntranceTiles.map(function (tile) { return "(" + tile.x + ", " + tile.y + ")"; }).join(", ");
-	console.log("Staff Assigner: park entrance tile(s) found at " + coordsText);
+	console.log("Staff Manager: park entrance tile(s) found at " + coordsText);
 	return parkEntranceTiles;
 }
 
@@ -371,21 +371,21 @@ let lastGardenAreas: PathTileInfo[][] = [];
 function scanFootpathNetwork(): void {
 	const parkEntranceTiles = findParkEntranceTiles();
 	if (parkEntranceTiles.length === 0) {
-		console.log("Staff Assigner: cannot scan footpath network, no park entrance found.");
+		console.log("Staff Manager: cannot scan footpath network, no park entrance found.");
 		return;
 	}
 
 	const result = scanFootpathNetworkFromEntrance(parkEntranceTiles[0]);
 	console.log(
-		"Staff Assigner: footpath scan found " + result.pathTiles.length + " path tile(s) and "
+		"Staff Manager: footpath scan found " + result.pathTiles.length + " path tile(s) and "
 		+ result.queueTiles.length + " queue tile(s)."
 	);
 
 	const gardeningResult = scanGardeningTiles();
-	console.log("Staff Assigner: gardening scan found " + gardeningResult.gardenTiles + " garden tile(s).");
+	console.log("Staff Manager: gardening scan found " + gardeningResult.gardenTiles + " garden tile(s).");
 
 	const rideExitCount = countRideExits();
-	console.log("Staff Assigner: found " + rideExitCount + " ride exit(s).");
+	console.log("Staff Manager: found " + rideExitCount + " ride exit(s).");
 
 	pathTilesCountStore.set(result.pathTiles.length);
 	queueTilesCountStore.set(result.queueTiles.length);
@@ -741,7 +741,7 @@ function hireStaff(staffTypeId: number, orders: number, countToHire: number, onA
 			// entertainer costume objects loaded). Skip the hire, but still
 			// invoke the completion callback so the pending-action counter in
 			// adjustStaffCounts stays balanced and the UI still refreshes.
-			console.log("Staff Assigner: cannot hire entertainer - no entertainer costume objects are loaded.");
+			console.log("Staff Manager: cannot hire entertainer - no entertainer costume objects are loaded.");
 			onActionComplete();
 			continue;
 		}
@@ -866,7 +866,7 @@ function processTeleportQueue(): void {
 	context.executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function (pickupResult) {
 		if (pickupResult.error) {
 			console.log(
-				"Staff Assigner: pickup failed for staff id " + next.id + ": "
+				"Staff Manager: pickup failed for staff id " + next.id + ": "
 				+ (pickupResult.errorTitle || "") + " - " + (pickupResult.errorMessage || "")
 			);
 			teleportInProgress = false;
@@ -876,7 +876,7 @@ function processTeleportQueue(): void {
 		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function (placeResult) {
 			if (placeResult.error) {
 				console.log(
-					"Staff Assigner: place failed for staff id " + next.id + " at ("
+					"Staff Manager: place failed for staff id " + next.id + " at ("
 					+ next.x + ", " + next.y + ", " + next.z + "): "
 					+ (placeResult.errorTitle || "") + " - " + (placeResult.errorMessage || "")
 				);
@@ -1187,7 +1187,7 @@ function assignGardeningAreas(members: Staff[]): void {
 		const count = counts[c];
 		if (count <= 0) {
 			console.log(
-				"Staff Assigner: garden area with " + components[c].length
+				"Staff Manager: garden area with " + components[c].length
 				+ " tile(s) has no gardener available (not enough gardening handymen for every disconnected area)."
 			);
 			continue;
@@ -1354,7 +1354,7 @@ function assignMechanics(): void {
 			// away from the ride.
 			if (frontTileX === null || frontTileY === null) {
 				console.log(
-					"Staff Assigner: could not find a footpath tile directly adjacent to ride exit at ("
+					"Staff Manager: could not find a footpath tile directly adjacent to ride exit at ("
 					+ exitTileX + ", " + exitTileY + "), ride " + i + " station " + s + "; patrol area will only cover the exit tile."
 				);
 			}
@@ -1650,11 +1650,11 @@ const CONTENT_SPACING = 4; // spacing between the window's top-level content row
 const WINDOW_CHROME_HEIGHT = 29; // title bar + top/bottom window padding
 const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
 
-function staffAssignerWindowTemplate(): WindowTemplate {
+function staffManagerWindowTemplate(): WindowTemplate {
 	if (!windowTemplate) {
 		const windowWidth = 400;
 		windowTemplate = flexWindow({
-			title: "Staff Assigner",
+			title: "Staff Manager",
 			width: windowWidth,
 			height: WINDOW_HEIGHT,
 			position: { x: Math.round((ui.width - windowWidth) / 2), y: Math.round((ui.height - WINDOW_HEIGHT) / 2) },
@@ -1706,7 +1706,7 @@ function staffAssignerWindowTemplate(): WindowTemplate {
 }
 
 function openWindow(): void {
-	staffAssignerWindowTemplate().open();
+	staffManagerWindowTemplate().open();
 	refreshHiredAndAssignedStaffCounts();
 	findAndReportParkEntrance();
 	scanFootpathNetwork();
@@ -1715,13 +1715,13 @@ function openWindow(): void {
 // --- Main --------------------------------------------------------------------
 function main(): void {
 	if (typeof ui !== "undefined") {
-		ui.registerMenuItem("Staff Assigner", function () { openWindow(); });
+		ui.registerMenuItem("Staff Manager", function () { openWindow(); });
 	}
 }
 
 registerPlugin({
-	name: "Staff Assigner",
-	version: "1.0.0",
+	name: "Staff Manager",
+	version: "0.9.0",
 	authors: ["Johannes"],
 	type: "local",
 	licence: "MIT",
