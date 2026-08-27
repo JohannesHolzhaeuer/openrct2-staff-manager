@@ -39,6 +39,9 @@ jobs:
       - name: Build
         run: npx tsc
 
+      - name: Run tests
+        run: npm test
+
       - name: Write tag message to file
         id: tag_message
         run: git tag -l --format='%(contents)' "${{ github.ref_name }}" > release_body.md

@@ -37,21 +37,27 @@ checkbox) instead of the generic density spinner used by handymen/guards.
   vendor a local copy.
 - `tsconfig.json` — compiles `src/**/*.ts` to `dist/staff-manager.js` (ES2023, no module
   system, strict mode).
-- `package.json` — `build` script runs `tsc --noEmit && esbuild ... && node deploy.js`; `watch`
-  runs `esbuild --watch`.
+- `package.json` — `build` script runs `test && typecheck && esbuild ... && node deploy.js`; `watch`
+  runs `esbuild --watch`; `test` runs `vitest run`; `typecheck` runs `tsc --noEmit`.
 - `deploy.js` — copies `dist/staff-manager.js` into the local OpenRCT2 `plugin` folder (OS-specific
   default path, overridable via `OPENRCT2_PLUGIN_DIR` env var) so it can be hot-reloaded in-game.
 - `openrct2-staff-manager.slnx` / `openrct2-staff-manager.esproj` — Visual Studio JavaScript/TypeScript
-  project so the plugin can be opened and built from Visual Studio.
-- `.github/workflows/release.yml` — CI pipeline that builds the plugin and publishes a GitHub
-  Release with `dist/staff-manager.js` attached whenever a tag matching `v*` is pushed.
+  project so the plugin can be opened and built from Visual Studio. `BaseIntermediateOutputPath` is set to
+  `.tmp\obj\` so VS build artefacts don't pollute the repo root.
+- `.github/workflows/release.yml` — CI pipeline that builds the plugin, runs the tests, and publishes
+  a GitHub Release with `dist/staff-manager.js` attached whenever a tag matching `v*` is pushed.
+- `.github/workflows/develop-prerelease.yml` — CI pipeline that builds the plugin, runs the tests, and
+  publishes a `develop` prerelease tracking the tip of `main`.
+- `test/` — Vitest unit tests for the pure, testable logic in `src/`.
 
 ## Build & run
 
 ```powershell
 npm install        # first time only
-npm run build      # tsc typecheck + esbuild bundle + deploy to local OpenRCT2 plugin folder
+npm run build      # test + tsc typecheck + esbuild bundle + deploy to local OpenRCT2 plugin folder
 npm run watch       # esbuild --watch, for iterative development (does not auto-deploy)
+npm test           # run the unit tests alone (vitest run)
+npm run typecheck  # run the TypeScript compiler alone (tsc --noEmit)
 ```
 
 Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.slnx` runs the same
@@ -86,7 +92,19 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
 
 ## Testing changes
 
-There is no automated test suite. Validate changes by:
-1. Running `npm run build` to confirm the TypeScript compiles without errors.
+Validate changes by:
+1. Running `npm run build` to confirm the typecheck AND the unit tests (`vitest`) pass.
 2. Loading the deployed `staff-manager.js` in OpenRCT2 and exercising the affected functionality
    (open the plugin window from the map/red-toolbox menu, verify staff assignment behavior).
+
+### Tests
+
+Unit tests live in `test/` and cover the pure, testable logic in `src/` (they don't touch
+OpenRCT2's live map/UI). They run on every `npm run build` and in CI (both workflows run
+`npm test`). Because the bundled plugin runs in QuickJS-NG with no module loader, tests only
+exercise exported pure helpers (`computeNeeded`, `tileKey`, `isValidStationExit`,
+`classifyHandyman`, config defaults, …). OpenRCT2 globals that functions read at call time
+(e.g. `map.size`) are stubbed in `beforeAll`/`afterAll`; never import `src/ui.ts` in a test.
+
+When adding a new pure helper worth testing, export it from its module and add a `describe`/`it`
+case in `test/`. Avoid relying on notes that map scans and bulk assignments run synchronously.

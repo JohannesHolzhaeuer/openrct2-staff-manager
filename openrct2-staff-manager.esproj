@@ -2,7 +2,7 @@
   <PropertyGroup>
     <StartupCommand>npm run build</StartupCommand>
     <JavaScriptTestRoot>.\</JavaScriptTestRoot>
-    <JavaScriptTestFramework>Jasmine</JavaScriptTestFramework>
+    <JavaScriptTestFramework>Vitest</JavaScriptTestFramework>
     <!-- Allows the build (F6/Ctrl+Shift+B) command to execute npm run build -->
     <ShouldRunBuildScript>true</ShouldRunBuildScript>
     <BuildScript>build</BuildScript>

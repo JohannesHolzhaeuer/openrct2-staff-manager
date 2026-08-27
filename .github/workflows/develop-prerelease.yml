@@ -32,6 +32,9 @@ jobs:
       - name: Build
         run: npx tsc
 
+      - name: Run tests
+        run: npm test
+
       - name: Move develop tag to latest main
         run: |
           git config user.name "github-actions[bot]"

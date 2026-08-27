@@ -105,6 +105,20 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
    recompiles; run `npm run build` again, or press the game's plugin
    hot-reload, after a `watch` recompile to redeploy the file).
 
+### Tests
+
+Unit tests are written with [Vitest](https://vitest.dev) and cover the
+testable, pure logic in `src/` (they don't touch OpenRCT2's live map/UI).
+They run automatically as part of every build (`npm run build` = test → typecheck
+→ bundle → deploy), or alone via `npm run test`.
+
+- Tests live in [`test/`](test/). The OpenRCT2 globals that functions read
+  at call time (e.g. `map.size`) are stubbed in `beforeAll`/`afterAll`.
+- Because the bundled plugin runs in QuickJS-NG with no module loader, tests
+  only exercise exported pure helpers (`computeNeeded`, `tileKey`,
+  `isValidStationExit`, `classifyHandyman`, config defaults, …) — they do not
+  load `src/ui.ts` or open a real window.
+
 ## Installation
 
 1. Run `npm install` then `npm run build` (see [Building](#building)) — this
