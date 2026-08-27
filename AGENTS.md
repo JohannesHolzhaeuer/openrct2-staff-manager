@@ -9,6 +9,13 @@ staff management (handymen, security guards, entertainers, mechanics) by splitti
 paths and queues into patrol areas and assigning staff accordingly. Handymen are split between
 **cleanup** (paths + queues) and **gardening** (mow/water); mechanics patrol ride exits.
 
+Patrol/gardening area construction is height‑ and water‑aware: tiles are only linked into the
+same area when actually walkable between each other (matching footpath/slope heights, no
+unclimbable terrain steps, never across water), so every assigned patrol area is guaranteed to be
+one contiguous, fully reachable region rather than accidentally including unreachable tiles at a
+different height. Entertainers have dedicated controls (Tiles/Staff, Staff/Area, and a Queue
+checkbox) instead of the generic density spinner used by handymen/guards.
+
 - Single-plugin project: all runtime logic lives in one root-level TypeScript file.
 - Distributed as a single compiled JavaScript file that OpenRCT2 loads as a "local" plugin.
 

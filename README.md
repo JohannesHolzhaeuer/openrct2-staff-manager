@@ -39,8 +39,8 @@ each staff member to their **nearest** free zone.
 Entertainers have their own controls instead of the generic density spinner:
 - **Tiles / Staff** — how many tiles each entertainer covers.
 - **Staff / Area** — how many entertainers share each area; **> 1 = overlapping**
-  (the area grows so the tiles‑per‑staff density is preserved).
-- **Queue** toggle — include ride **queue** tiles in the patrol set, so
+  (the area grows so the tiles‑per‑staff density is preserved). Defaults to 2.
+- **Queue** checkbox — include ride **queue** tiles in the patrol set, so
   entertainers can keep queuing guests happy instead of only patrolling plain paths.
 
 ### 🔧 Mechanics
@@ -123,7 +123,7 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
    on your settings (this is what fills the *Needed* column).
 4. Click **Assign** to build patrol areas and move staff into them.
 5. Tune the per‑type spinners (tiles/staff, entertainer staff/area, handyman
-   gardening density, entertainer queue toggle) and repeat steps 3–4 as your park
+   gardening density, entertainer Queue checkbox) and repeat steps 3–4 as your park
    changes.
 
 ---
@@ -138,7 +138,7 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 4. **Scan gardening tiles** — tiles with mowable grass or waterable scenery —
    grouped into connected components.
 5. **Match** staff to the **nearest** zone (paths, or paths+queues for
-   entertainers with the Queue toggle on), or into fixed‑size overlapping areas for
+   entertainers with the Queue checkbox on), or into fixed‑size overlapping areas for
    entertainers. Mechanics get the exit tile plus the adjacent path tile.
 
 If the entrance can't be found, it falls back to seeding from owned path tiles.
@@ -150,9 +150,12 @@ If the entrance can't be found, it falls back to seeding from owned path tiles.
 - **Mechanic dispatch:** the scripting API doesn't expose which ride a mechanic is
   dispatched to, so “busy” is inferred from the mechanic not standing on a
   footpath tile.
-- **Patrol areas can't be verified to be connected:** areas are split by cardinal
-  adjacency and disconnected pockets are merged to the nearest centroid, so a patrol
-  area is generally reachable — but unusual layouts can still produce awkward shapes.
+- **Patrol areas are height‑ and water‑aware.** Tiles are only linked into the
+  same patrol area when actually walkable between each other (matching path/slope
+  heights, no unclimbable height differences, never through water), so an area is
+  always one contiguous, fully reachable region. If there are more disconnected
+  pockets than staff to cover them, the largest pockets are covered first rather
+  than merging areas a staff member couldn't actually walk across.
 - **Teleport vs. patrol:** a staff member's patrol area is always built in full,
   but the physical teleport target is the **nearest safely‑placeable** path tile,
   since the game rejects placement on obstructed tiles (benches, scenery, queue TV,
@@ -173,7 +176,7 @@ code:
 | `handymenMowerTilesPerStaffStore` (256) | Garden tiles per gardening handyman |
 | `guardsTilesPerStaffStore` (16) | Plain path tiles per guard |
 | `entertainersTilesPerStaffStore` (16) | Tiles per entertainer |
-| `entertainersPerAreaStore` (1) | Entertainers assigned per area |
+| `entertainersPerAreaStore` (2) | Entertainers assigned per area |
 | `entertainersIncludeQueueStore` (true) | Whether entertainers patrol queues |
 | `*EnabledStore` (true) | Whether each staff type is managed |
 
