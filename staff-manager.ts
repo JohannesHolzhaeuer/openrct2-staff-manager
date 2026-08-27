@@ -1,6 +1,6 @@
 /// <reference path="node_modules/@openrct2/types/openrct2.d.ts" />
 import {
-	window as flexWindow, box, horizontal, vertical, label, button, spinner, toggle, checkbox,
+	window as flexWindow, box, horizontal, vertical, label, button, spinner, checkbox,
 	store as flexStore, compute, isStore, WindowTemplate, WidgetCreator, FlexiblePosition, Store, WritableStore, Bindable,
 	Scale
 } from "openrct2-flexui";
@@ -34,7 +34,7 @@ const handymenTilesPerStaffStore = flexStore<number>(8);
 const handymenMowerTilesPerStaffStore = flexStore<number>(256);
 const guardsTilesPerStaffStore = flexStore<number>(16);
 const entertainersTilesPerStaffStore = flexStore<number>(16);
-const entertainersPerAreaStore = flexStore<number>(1);
+const entertainersPerAreaStore = flexStore<number>(2);
 const entertainersIncludeQueueStore = flexStore<boolean>(true);
 
 // Whether each staff type is enabled. When a staff type is disabled, it is
@@ -1778,7 +1778,7 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, as
 							})
 						]
 					}),
-					toggle({ text: "Queue", width: "100%", height: 14, isPressed: entertainersIncludeQueueStore, disabled: controlsDisabled, onChange: function (isPressed) { entertainersIncludeQueueStore.set(isPressed); } }),
+					checkbox({ text: "Queue", width: "100%", height: 14, isChecked: entertainersIncludeQueueStore, disabled: controlsDisabled, onChange: function (isChecked) { entertainersIncludeQueueStore.set(isChecked); } }),
 						...statTable(needed, hired, assigned, controlsDisabled)
 					]
 				})
