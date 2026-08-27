@@ -8,7 +8,7 @@ entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
 (re)assign** staff so the right number always patrol the right places — sending
 each staff member to their **nearest** free zone.
 
-- **Version:** 0.9.1
+- **Version:** 0.9.2
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
@@ -181,6 +181,11 @@ code:
 
 ## Changelog
 
+- **0.9.2** – Made patrol and gardening areas height‑ and water‑aware: paths
+  and land tiles are now only linked when actually walkable (matching slope
+  heights, no cliffs, no water), so patrol areas are always one contiguous,
+  fully reachable region instead of sometimes stranding staff on disconnected
+  or submerged tiles.
 - **0.9.0** – Renamed from the plugin's original working title to **Staff
   Manager**; added per‑staff‑type enable controls; rewrote the UI; improved
   entrance detection, mechanic patrol assignment (cardinal‑neighbour front‑tile
