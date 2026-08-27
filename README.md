@@ -206,6 +206,34 @@ code:
 
 ---
 
+## Localization
+
+The plugin's UI text is localized through a small, self-contained TypeScript
+i18n layer in [`src/i18n/`](src/i18n/) — OpenRCT2's built-in `StringId`/
+`data/language/*.txt` localization system is part of the C++ core and isn't
+exposed to plugins, so this layer replaces it entirely.
+
+- **Language detection**: on startup, the plugin reads
+  `context.configuration.get("general.language", "en-GB")` inside a
+  try/catch (the API can vary between OpenRCT2 versions). If the read fails,
+  or the detected language has no matching dictionary, the plugin falls back
+  to **`en-GB`**, which is the canonical/fallback dictionary and always
+  contains every translation key.
+- **Adding a new language**: copy [`src/i18n/en-GB.ts`](src/i18n/en-GB.ts) to
+  `src/i18n/<language-code>.ts` (e.g. `fr-FR.ts`), translate every value
+  (the `Translations` type in [`src/i18n/types.ts`](src/i18n/types.ts) makes
+  the TypeScript compiler fail the build if a key is missing or misspelled),
+  then import and register the dictionary in the `translations` map in
+  [`src/i18n/index.ts`](src/i18n/index.ts).
+- **Build-time bundling**: translations live in separate `.ts` source files
+  purely for maintainability. QuickJS-NG (the engine the bundled plugin runs
+  in) has no runtime module loader or file-system access, so translations are
+  never read from disk while the game is running — esbuild inlines every
+  language file into the single bundled `dist/staff-manager.js` at build
+  time.
+
+---
+
 ## Licence
 
 MIT © Johannes Holzhäuer
