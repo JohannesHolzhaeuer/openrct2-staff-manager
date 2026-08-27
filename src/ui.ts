@@ -44,13 +44,13 @@ function statRow(name: string, value: Bindable<number>, tooltip: string, disable
 	});
 }
 
-function statTable(needed: Bindable<number>, hired: Bindable<number>, disabled: Bindable<boolean>): Array<WidgetCreator<FlexiblePosition>> {
+function statTable(needed: Bindable<number>, hired: Bindable<number>, disabled: Bindable<boolean>): WidgetCreator<FlexiblePosition>[] {
 	const difference = (isStore(needed) || isStore(hired))
 		? compute(
 			isStore(needed) ? needed : flexStore(needed),
 			isStore(hired) ? hired : flexStore(hired),
 			function (n: number, h: number) { return n - h; })
-		: (needed as number) - (hired as number);
+		: (needed) - (hired);
 	// The colour token forces a text colour that would otherwise override the
 	// greyed-out appearance a label gets from being disabled, so use no colour
 	// override at all (empty prefix) whenever the row is disabled.
@@ -86,14 +86,14 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 					spacing: 4,
 					height: 14,
 					content: [
-						label({ text: spinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, tooltip: spinnerTooltip || t("tooltip.handymenCleanupSpinner"), disabled: controlsDisabled }),
+						label({ text: spinnerLabel ?? "", width: "2w", height: 14, padding: { top: 2 }, tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"), disabled: controlsDisabled }),
 						spinner({
 							value: tilesPerStaff,
 							minimum: 0,
 							maximum: 999,
 							width: "3w",
 							height: 14,
-							tooltip: spinnerTooltip || t("tooltip.handymenCleanupSpinner"),
+							tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
 							disabled: controlsDisabled,
 							onChange: function (value) { tilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
 						})
@@ -103,7 +103,7 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 					spacing: 4,
 					height: 14,
 					content: [
-						label({ text: mowerSpinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, tooltip: t("tooltip.handymenGardeningSpinner"), disabled: controlsDisabled }),
+						label({ text: mowerSpinnerLabel ?? "", width: "2w", height: 14, padding: { top: 2 }, tooltip: t("tooltip.handymenGardeningSpinner"), disabled: controlsDisabled }),
 						spinner({
 							value: mowerTilesPerStaff,
 							minimum: 0,

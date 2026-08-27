@@ -4,15 +4,16 @@ import { tileKey, isValidStationExit } from "../src/scan";
 import { classifyHandyman, HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING, STAFF_TYPE_ID_ENTERTAINER } from "../src/staff";
 
 // Stub the OpenRCT2 global `map` object so functions that read map.size work.
-const origMap = (globalThis as any).map;
+const testGlobal = globalThis as unknown as { map?: { size: CoordsXY } };
+const origMap = testGlobal.map;
 beforeAll(() => {
-	(globalThis as any).map = { size: { x: 256, y: 256 } };
+	testGlobal.map = { size: { x: 256, y: 256 } };
 });
 afterAll(() => {
 	if (origMap === undefined) {
-		delete (globalThis as any).map;
+		delete testGlobal.map;
 	} else {
-		(globalThis as any).map = origMap;
+		testGlobal.map = origMap;
 	}
 });
 
@@ -50,16 +51,16 @@ describe("isValidStationExit", () => {
 
 describe("classifyHandyman", () => {
 	it("cleanup when orders are sweeping+empty bins only", () => {
-		expect(classifyHandyman({ orders: HANDYMAN_ORDERS_CLEANUP } as any)).toBe("cleanup");
+		expect(classifyHandyman({ orders: HANDYMAN_ORDERS_CLEANUP } as Handyman)).toBe("cleanup");
 	});
 	it("gardening when orders include watering/mowing", () => {
-		expect(classifyHandyman({ orders: HANDYMAN_ORDERS_GARDENING } as any)).toBe("gardening");
+		expect(classifyHandyman({ orders: HANDYMAN_ORDERS_GARDENING } as Handyman)).toBe("gardening");
 	});
 	it("no orders defaults to cleanup", () => {
-		expect(classifyHandyman({ orders: 0 } as any)).toBe("cleanup");
+		expect(classifyHandyman({ orders: 0 } as Handyman)).toBe("cleanup");
 	});
 	it("mixed orders incl. gardening => gardening", () => {
-		expect(classifyHandyman({ orders: HANDYMAN_ORDERS_CLEANUP | 8 } as any)).toBe("gardening");
+		expect(classifyHandyman({ orders: HANDYMAN_ORDERS_CLEANUP | 8 } as Handyman)).toBe("gardening");
 	});
 	it("STAFF_TYPE_ID_ENTERTAINER constant present", () => {
 		expect(STAFF_TYPE_ID_ENTERTAINER).toBe(3);

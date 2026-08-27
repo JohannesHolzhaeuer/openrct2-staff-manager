@@ -5,7 +5,7 @@ import { deDE } from "./de-DE";
 
 // Language code -> dictionary. Add a new language by copying en-GB.ts,
 // translating every value, and registering it here.
-export const translations: { [languageCode: string]: Translations } = {
+export const translations: Record<string, Translations> = {
 	"en-GB": enGB,
 	"de-DE": deDE
 };
@@ -18,7 +18,7 @@ const FALLBACK_LANGUAGE = "en-GB";
 function detectLanguage(): string {
 	try {
 		const language = context.configuration.get<string>("general.language", FALLBACK_LANGUAGE);
-		if (language && translations[language]) {
+		if (language && Object.hasOwn(translations, language)) {
 			return language;
 		}
 	} catch {
@@ -37,7 +37,7 @@ function detectLanguage(): string {
 // without requiring a plugin reload.
 function getDict(): Translations {
 	const activeLanguage = detectLanguage();
-	return translations[activeLanguage] || translations[FALLBACK_LANGUAGE];
+	return translations[activeLanguage];
 }
 
 // Typed translation helper. Supports positional placeholders {0}, {1}, ...
@@ -45,9 +45,9 @@ function getDict(): Translations {
 // context.formatString before being passed in). Falls back from the active
 // language, to en-GB, to the raw key - it never throws or returns blank.
 export function t(key: TranslationKey, ...args: (string | number)[]): string {
-	const s = (getDict()[key] ?? translations[FALLBACK_LANGUAGE][key] ?? key) as string;
+	const s = getDict()[key];
 	return args.reduce<string>(
-		(acc, a, i) => acc.replaceAll(`{${i}}`, String(a)),
+		(acc, a, i) => acc.replaceAll(`{${String(i)}}`, String(a)),
 		s
 	);
 }

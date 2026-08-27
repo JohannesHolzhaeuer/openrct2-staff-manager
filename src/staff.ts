@@ -46,10 +46,9 @@ export function classifyHandyman(member: Handyman): HandymanPurpose {
 export function getHandymenByPurpose(purpose: HandymanPurpose): Handyman[] {
 	const staff = map.getAllEntities("staff");
 	const result: Handyman[] = [];
-	for (let i = 0; i < staff.length; i++) {
-		const member = staff[i];
-		if (member.staffType === "handyman" && classifyHandyman(member as Handyman) === purpose) {
-			result.push(member as Handyman);
+	for (const member of staff) {
+		if (member.staffType === "handyman" && classifyHandyman(member) === purpose) {
+			result.push(member);
 		}
 	}
 	return result;
@@ -58,9 +57,9 @@ export function getHandymenByPurpose(purpose: HandymanPurpose): Handyman[] {
 export function getStaffByType(staffType: StaffType): Staff[] {
 	const staff = map.getAllEntities("staff");
 	const result: Staff[] = [];
-	for (let i = 0; i < staff.length; i++) {
-		if (staff[i].staffType === staffType) {
-			result.push(staff[i] as Staff);
+	for (const member of staff) {
+		if (member.staffType === staffType) {
+			result.push(member);
 		}
 	}
 	return result;
@@ -71,7 +70,7 @@ export function getStaffByType(staffType: StaffType): Staff[] {
 // while the entity is alive). Invokes onActionComplete once per action after
 // its callback has fired (regardless of success/failure).
 function fireOldestStaff(members: Staff[], countToFire: number, onActionComplete: () => void): void {
-	const sorted = members.slice().sort(function (a, b) { return (a.id || 0) - (b.id || 0); });
+	const sorted = members.slice().sort(function (a, b) { return (a.id ?? 0) - (b.id ?? 0); });
 	for (let i = 0; i < countToFire && i < sorted.length; i++) {
 		const id = sorted[i].id;
 		if (id !== null) {
@@ -94,11 +93,11 @@ const ENTERTAINER_COSTUME_IDENTIFIER_PARTS = [
 function findEntertainerCostumeIndices(): number[] {
 	const peepAnimationObjects = objectManager.getAllObjects("peep_animations");
 	const result: number[] = [];
-	for (let i = 0; i < peepAnimationObjects.length; i++) {
-		const identifier = peepAnimationObjects[i].identifier.toLowerCase();
-		for (let p = 0; p < ENTERTAINER_COSTUME_IDENTIFIER_PARTS.length; p++) {
-			if (identifier.indexOf(ENTERTAINER_COSTUME_IDENTIFIER_PARTS[p]) !== -1) {
-				result.push(peepAnimationObjects[i].index);
+	for (const peepAnimationObject of peepAnimationObjects) {
+		const identifier = peepAnimationObject.identifier.toLowerCase();
+		for (const costumePart of ENTERTAINER_COSTUME_IDENTIFIER_PARTS) {
+			if (identifier.includes(costumePart)) {
+				result.push(peepAnimationObject.index);
 				break;
 			}
 		}
@@ -231,8 +230,8 @@ export function adjustStaffCounts(): void {
 function countHiredStaff(staffType: StaffType): number {
 	const staff = map.getAllEntities("staff");
 	let count = 0;
-	for (let i = 0; i < staff.length; i++) {
-		if (staff[i].staffType === staffType) {
+	for (const member of staff) {
+		if (member.staffType === staffType) {
 			count++;
 		}
 	}
@@ -242,8 +241,7 @@ function countHiredStaff(staffType: StaffType): number {
 function countAssignedStaff(staffType: StaffType): number {
 	const staff = map.getAllEntities("staff");
 	let count = 0;
-	for (let i = 0; i < staff.length; i++) {
-		const member = staff[i];
+	for (const member of staff) {
 		if (member.staffType === staffType && member.patrolArea.tiles.length > 0) {
 			count++;
 		}
@@ -342,10 +340,10 @@ function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): Pat
 
 	const tileByKey = new Map<string, PathTileInfo>();
 	const order: string[] = [];
-	for (let i = 0; i < tiles.length; i++) {
-		const key = tileKey(tiles[i].x, tiles[i].y);
+	for (const tile of tiles) {
+		const key = tileKey(tile.x, tile.y);
 		if (!tileByKey.has(key)) {
-			tileByKey.set(key, tiles[i]);
+			tileByKey.set(key, tile);
 			order.push(key);
 		}
 	}
@@ -355,9 +353,9 @@ function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): Pat
 
 	while (remaining.size > 0) {
 		let startKey: string | null = null;
-		for (let i = 0; i < order.length; i++) {
-			if (remaining.has(order[i])) {
-				startKey = order[i];
+		for (const key of order) {
+			if (remaining.has(key)) {
+				startKey = key;
 				break;
 			}
 		}
@@ -373,13 +371,15 @@ function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): Pat
 		while (queueIndex < queue.length && region.length < targetSize) {
 			const key = queue[queueIndex];
 			queueIndex++;
-			const current = tileByKey.get(key) as PathTileInfo;
+			const current = tileByKey.get(key);
+			if (!current) {
+				break;
+			}
 			region.push(current);
 			if (region.length >= targetSize) {
 				break;
 			}
-			for (let i = 0; i < current.neighbourKeys.length; i++) {
-				const neighbourKey = current.neighbourKeys[i];
+			for (const neighbourKey of current.neighbourKeys) {
 				if (remaining.has(neighbourKey)) {
 					remaining.delete(neighbourKey);
 					queue.push(neighbourKey);
@@ -414,8 +414,8 @@ function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): Pat
 	while (chunks.length > staffCount) {
 		const keySets = chunks.map(function (chunk) {
 			const keys = new Set<string>();
-			for (let i = 0; i < chunk.length; i++) {
-				keys.add(tileKey(chunk[i].x, chunk[i].y));
+			for (const tile of chunk) {
+				keys.add(tileKey(tile.x, tile.y));
 			}
 			return keys;
 		});
@@ -457,10 +457,9 @@ function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): Pat
 // Whether any tile of the given chunk has a walkable link into the given set
 // of tile keys, i.e. whether the two chunks form one contiguous area.
 function chunksConnect(chunk: PathTileInfo[], otherKeys: Set<string>): boolean {
-	for (let i = 0; i < chunk.length; i++) {
-		const neighbourKeys = chunk[i].neighbourKeys;
-		for (let n = 0; n < neighbourKeys.length; n++) {
-			if (otherKeys.has(neighbourKeys[n])) {
+	for (const tile of chunk) {
+		for (const neighbourKey of tile.neighbourKeys) {
+			if (otherKeys.has(neighbourKey)) {
 				return true;
 			}
 		}
@@ -471,8 +470,8 @@ function chunksConnect(chunk: PathTileInfo[], otherKeys: Set<string>): boolean {
 // Clears every given staff member's patrol area. Used at the start of each
 // staff type's (re-)assignment so stale patrol areas don't linger.
 function clearPatrolAreas(members: Staff[]): void {
-	for (let i = 0; i < members.length; i++) {
-		members[i].patrolArea.clear();
+	for (const member of members) {
+		member.patrolArea.clear();
 	}
 }
 
@@ -496,7 +495,7 @@ function isPeepPlaceableTile(x: number, y: number): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if (element.type === "footpath") {
-			footpath = element as FootpathElement;
+			footpath = element;
 		} else if (element.type === "entrance" || element.type === "track" || element.type === "large_scenery") {
 			return false;
 		}
@@ -521,8 +520,7 @@ function isPeepPlaceableTile(x: number, y: number): boolean {
 function findNearestPathTile(x: number, y: number): PathTileInfo | null {
 	let best: PathTileInfo | null = null;
 	let bestDistance = Number.POSITIVE_INFINITY;
-	for (let i = 0; i < lastAllPathTiles.length; i++) {
-		const tile = lastAllPathTiles[i];
+	for (const tile of lastAllPathTiles) {
 		if (!isPeepPlaceableTile(tile.x, tile.y)) {
 			continue;
 		}
@@ -700,7 +698,7 @@ function findFootpathElement(tile: Tile): FootpathElement | null {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if (element.type === "footpath") {
-			return element as FootpathElement;
+			return element;
 		}
 	}
 	return null;
@@ -712,9 +710,6 @@ function findFootpathElement(tile: Tile): FootpathElement | null {
 // while one that isn't (e.g. inside a ride's building) is assumed to be
 // busy fixing/inspecting it and is left alone.
 function canTeleportMechanic(member: Staff): boolean {
-	if (member.x === null || member.y === null) {
-		return false;
-	}
 	const tileX = Math.floor(member.x / 32);
 	const tileY = Math.floor(member.y / 32);
 	return findFootpathElement(map.getTile(tileX, tileY)) !== null;
@@ -785,8 +780,7 @@ function assignMechanics(): void {
 			const candidateOffsets = [preferredOffset].concat(
 				CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) { return o.x !== preferredOffset.x || o.y !== preferredOffset.y; })
 			);
-			for (let c = 0; c < candidateOffsets.length; c++) {
-				const offset = candidateOffsets[c];
+			for (const offset of candidateOffsets) {
 				const candidateX = exitTileX + offset.x;
 				const candidateY = exitTileY + offset.y;
 				const footpath = findFootpathElement(map.getTile(candidateX, candidateY));
@@ -870,7 +864,7 @@ function getEntertainerTiles(includeQueue: boolean): PathTileInfo[] {
 // the currently hired handymen (oldest first, for a stable/consistent
 // result) between cleanup and gardening in proportion to the needed counts.
 function reassignHandymenOrders(): void {
-	const handymen = getStaffByType("handyman").slice().sort(function (a, b) { return (a.id || 0) - (b.id || 0); });
+	const handymen = getStaffByType("handyman").slice().sort(function (a, b) { return (a.id ?? 0) - (b.id ?? 0); });
 	if (handymen.length === 0) {
 		return;
 	}

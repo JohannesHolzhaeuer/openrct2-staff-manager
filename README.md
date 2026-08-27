@@ -93,9 +93,10 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 
 1. Install dependencies: `npm install`.
 2. Build: `npm run build`.
-   - Compiles `src/` (entry `src/main.ts`) to `dist/staff-manager.js`.
-   - Then automatically copies (`deploy.js`) that file straight into your
-     local OpenRCT2 **plugin** folder:
+   - Lints, runs the unit tests, type-checks, and compiles `src/` (entry
+     `src/main.ts`) to `dist/staff-manager.js`, then automatically copies
+     (`deploy.js`) that file straight into your local OpenRCT2 **plugin**
+     folder:
      - **Windows:** `Documents\OpenRCT2\plugin\`
      - **macOS:** `~/Library/Application Support/OpenRCT2/plugin/`
      - **Linux:** `~/.config/OpenRCT2/plugin/`
@@ -105,12 +106,20 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
    recompiles; run `npm run build` again, or press the game's plugin
    hot-reload, after a `watch` recompile to redeploy the file).
 
+### Code quality
+
+- **Type-safe linting.** `npm run build` starts with `npm run lint` (`eslint .`).
+  Plugin source and tests are checked with the type-aware
+  `recommendedTypeChecked`/`strictTypeChecked`/`stylisticTypeChecked` presets,
+  and the plain-JS build tooling (`deploy.js`, `eslint.config.js`) with ESLint
+  core plus `@stylistic/eslint-plugin`. Run `npm run lint` on its own any time.
+
 ### Tests
 
 Unit tests are written with [Vitest](https://vitest.dev) and cover the
 testable, pure logic in `src/` (they don't touch OpenRCT2's live map/UI).
-They run automatically as part of every build (`npm run build` = test → typecheck
-→ bundle → deploy), or alone via `npm run test`.
+They run automatically as part of every build (`npm run build` = lint → test →
+typecheck → bundle → deploy), or alone via `npm run test`.
 
 - Tests live in [`test/`](test/). The OpenRCT2 globals that functions read
   at call time (e.g. `map.size`) are stubbed in `beforeAll`/`afterAll`.

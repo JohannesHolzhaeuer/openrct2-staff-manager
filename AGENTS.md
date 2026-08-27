@@ -37,8 +37,14 @@ checkbox) instead of the generic density spinner used by handymen/guards.
   vendor a local copy.
 - `tsconfig.json` — compiles `src/**/*.ts` to `dist/staff-manager.js` (ES2023, no module
   system, strict mode).
-- `package.json` — `build` script runs `test && typecheck && esbuild ... && node deploy.js`; `watch`
-  runs `esbuild --watch`; `test` runs `vitest run`; `typecheck` runs `tsc --noEmit`.
+- `eslint.config.js` — dual-config ESLint flat config. Plugin source and unit tests
+  (`src/**/*.ts`, `test/**/*.ts`) use the **type-aware** presets
+  `recommendedTypeChecked` + `strictTypeChecked` + `stylisticTypeChecked`, wired to ESLint's
+  `projectService` so rules have type info (tests are added to `allowDefaultProject` since
+  `tsconfig.json` only includes `src/`). Plain-JS build tooling (`deploy.js`,
+  `eslint.config.js`, `*.cjs`, `*.mjs`) is linted with ESLint core (`@eslint/js`) plus
+  `@stylistic/eslint-plugin`, with Node globals from the `globals` package and a strict/core
+  rule set — do not apply the TS presets there.
 - `deploy.js` — copies `dist/staff-manager.js` into the local OpenRCT2 `plugin` folder (OS-specific
   default path, overridable via `OPENRCT2_PLUGIN_DIR` env var) so it can be hot-reloaded in-game.
 - `openrct2-staff-manager.slnx` / `openrct2-staff-manager.esproj` — Visual Studio JavaScript/TypeScript
@@ -54,10 +60,11 @@ checkbox) instead of the generic density spinner used by handymen/guards.
 
 ```powershell
 npm install        # first time only
-npm run build      # test + tsc typecheck + esbuild bundle + deploy to local OpenRCT2 plugin folder
+npm run build      # lint + test + tsc typecheck + esbuild bundle + deploy to local OpenRCT2 plugin folder
 npm run watch       # esbuild --watch, for iterative development (does not auto-deploy)
 npm test           # run the unit tests alone (vitest run)
 npm run typecheck  # run the TypeScript compiler alone (tsc --noEmit)
+npm run lint       # run the linter alone (eslint .)
 ```
 
 Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.slnx` runs the same
@@ -93,7 +100,7 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
 ## Testing changes
 
 Validate changes by:
-1. Running `npm run build` to confirm the typecheck AND the unit tests (`vitest`) pass.
+1. Running `npm run build` to confirm lint, typecheck, AND the unit tests (`vitest`) pass.
 2. Loading the deployed `staff-manager.js` in OpenRCT2 and exercising the affected functionality
    (open the plugin window from the map/red-toolbox menu, verify staff assignment behavior).
 
@@ -105,6 +112,5 @@ OpenRCT2's live map/UI). They run on every `npm run build` and in CI (both workf
 exercise exported pure helpers (`computeNeeded`, `tileKey`, `isValidStationExit`,
 `classifyHandyman`, config defaults, …). OpenRCT2 globals that functions read at call time
 (e.g. `map.size`) are stubbed in `beforeAll`/`afterAll`; never import `src/ui.ts` in a test.
-
 When adding a new pure helper worth testing, export it from its module and add a `describe`/`it`
 case in `test/`. Avoid relying on notes that map scans and bulk assignments run synchronously.

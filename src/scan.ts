@@ -25,7 +25,7 @@ export interface PathTileInfo {
 }
 
 export function tileKey(x: number, y: number): string {
-	return x + "," + y;
+	return String(x) + "," + String(y);
 }
 
 // Cardinal neighbour offsets used to walk the footpath network tile by tile.
@@ -54,21 +54,16 @@ export const DIRECTION_OFFSETS: CoordsXY[] = [
 function getRideEntranceExitTileKeys(): Set<string> {
 	const tileKeys = new Set<string>();
 	const rides = map.rides;
-	for (let i = 0; i < rides.length; i++) {
-		const stations = rides[i].stations;
-		for (let s = 0; s < stations.length; s++) {
-			const station = stations[s];
+	for (const ride of rides) {
+		const stations = ride.stations;
+		for (const station of stations) {
 			// Floor to tile coordinates so these keys match the integer-tile
 			// keys used by findParkEntranceTiles/isValidStationExit. Using raw
 			// "x / 32" would produce a fractional key (e.g. "5.5,3") for any
 			// non-tile-aligned coordinate, which would never match and could
 			// let a ride entrance/exit be misdetected as the park entrance.
-			if (station.entrance) {
-				tileKeys.add(Math.floor(station.entrance.x / 32) + "," + Math.floor(station.entrance.y / 32));
-			}
-			if (station.exit) {
-				tileKeys.add(Math.floor(station.exit.x / 32) + "," + Math.floor(station.exit.y / 32));
-			}
+			tileKeys.add(String(Math.floor(station.entrance.x / 32)) + "," + String(Math.floor(station.entrance.y / 32)));
+			tileKeys.add(String(Math.floor(station.exit.x / 32)) + "," + String(Math.floor(station.exit.y / 32)));
 		}
 	}
 	return tileKeys;
@@ -82,7 +77,7 @@ export function findParkEntranceTiles(): CoordsXY[] {
 	const parkEntranceTiles: CoordsXY[] = [];
 	for (let x = 0; x < mapSize.x; x++) {
 		for (let y = 0; y < mapSize.y; y++) {
-			const tileKey = x + "," + y;
+			const tileKey = String(x) + "," + String(y);
 			if (rideEntranceExitTileKeys.has(tileKey)) {
 				continue;
 			}
@@ -96,7 +91,7 @@ export function findParkEntranceTiles(): CoordsXY[] {
 				// A park entrance spans 3 tiles (two side "legs" plus a middle tile);
 				// only the middle tile (sequence 0) has the footpath that leads into
 				// the park, so only that tile is reported/used as the entrance.
-				if (element.type === "entrance" && (element as EntranceElement).sequence === 0) {
+				if (element.type === "entrance" && (element).sequence === 0) {
 					parkEntranceTiles.push({ x: x, y: y });
 				}
 			}
@@ -143,7 +138,7 @@ function findFootpathElements(x: number, y: number): FootpathInfo[] {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if (element.type === "footpath") {
-			const footpathElement = element as FootpathElement;
+			const footpathElement = element;
 			result.push({
 				baseHeight: footpathElement.baseHeight,
 				baseZ: footpathElement.baseZ,
@@ -181,7 +176,7 @@ function findSurfaceElement(tile: Tile): SurfaceElement | null {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if (element.type === "surface") {
-			return element as SurfaceElement;
+			return element;
 		}
 	}
 	return null;
@@ -195,10 +190,10 @@ const MAX_WALKABLE_HEIGHT_DIFFERENCE = 2;
 // Whether staff can walk between two neighbouring land tiles, i.e. whether
 // their terrain heights are close enough not to form an unclimbable step.
 function surfacesConnect(from: SurfaceElement | null, to: SurfaceElement | null): boolean {
-	if (!isLandSurface(from) || !isLandSurface(to)) {
+	if (!from || !to || !isLandSurface(from) || !isLandSurface(to)) {
 		return false;
 	}
-	return Math.abs((from as SurfaceElement).baseHeight - (to as SurfaceElement).baseHeight) <= MAX_WALKABLE_HEIGHT_DIFFERENCE;
+	return Math.abs(from.baseHeight - to.baseHeight) <= MAX_WALKABLE_HEIGHT_DIFFERENCE;
 }
 
 // Whether a surface tile is dry land rather than water. In OpenRCT2, water is
@@ -207,8 +202,8 @@ function surfacesConnect(from: SurfaceElement | null, to: SurfaceElement | null)
 // submerged. Handymen (mowing/watering) must never be sent onto such tiles -
 // they can't stand on water - so this must be checked in addition to the
 // surface style.
-function isLandSurface(surface: SurfaceElement | null): boolean {
-	return !!surface && surface.waterHeight === 0;
+function isLandSurface(surface: SurfaceElement | null): surface is SurfaceElement {
+	return surface?.waterHeight === 0;
 }
 
 // Whether a tile is actually owned by the park. Deliberately excludes tiles
@@ -262,7 +257,10 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 	}
 
 	while (stack.length > 0) {
-		const current = stack.pop() as PendingStep;
+		const current = stack.pop();
+		if (!current) {
+			break;
+		}
 
 		if (current.x < 0 || current.y < 0 || current.x >= map.size.x || current.y >= map.size.y) {
 			continue;
@@ -284,15 +282,14 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 		const isOwned = isParkOwnedTile(current.x, current.y);
 		const footpaths = findFootpathElements(current.x, current.y);
 
-		for (let f = 0; f < footpaths.length; f++) {
-			const footpath = footpaths[f];
+		for (const footpath of footpaths) {
 			// Only step onto this path if it actually meets the path we came
 			// from at the same height.
 			if (current.z !== null && footpathEdgeZ(footpath, current.fromDirection) !== current.z) {
 				continue;
 			}
 
-			const nodeKey = current.x + "," + current.y + "," + footpath.baseZ;
+			const nodeKey = String(current.x) + "," + String(current.y) + "," + String(footpath.baseZ);
 			if (visited.has(nodeKey)) {
 				continue;
 			}
@@ -323,13 +320,7 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
 				const edgeZ = footpathEdgeZ(footpath, d);
 				const neighbourFootpaths = findFootpathElements(neighbour.x, neighbour.y);
-				let connects = false;
-				for (let n = 0; n < neighbourFootpaths.length; n++) {
-					if (footpathsConnect(footpath, neighbourFootpaths[n], d)) {
-						connects = true;
-						break;
-					}
-				}
+				const connects = neighbourFootpaths.some((neighbourFootpath) => footpathsConnect(footpath, neighbourFootpath, d));
 				if (!connects) {
 					continue;
 				}
@@ -337,11 +328,11 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 				// once both tiles are known to be part of the park's network).
 				if (info) {
 					const neighbourKey = tileKey(neighbour.x, neighbour.y);
-					if (info.neighbourKeys.indexOf(neighbourKey) === -1) {
+					if (!info.neighbourKeys.includes(neighbourKey)) {
 						info.neighbourKeys.push(neighbourKey);
 					}
 					const neighbourInfo = tilesByKey.get(neighbourKey);
-					if (neighbourInfo && neighbourInfo.neighbourKeys.indexOf(key) === -1) {
+					if (neighbourInfo && !neighbourInfo.neighbourKeys.includes(key)) {
 						neighbourInfo.neighbourKeys.push(key);
 					}
 				}
@@ -380,9 +371,9 @@ function hasWaterableSceneryElement(tile: Tile): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if (element.type === "small_scenery") {
-			const sceneryElement = element as SmallSceneryElement;
+			const sceneryElement = element;
 			const sceneryObject = objectManager.getObject("small_scenery", sceneryElement.object);
-			if (sceneryObject && (sceneryObject.flags & SMALL_SCENERY_FLAG_CAN_BE_WATERED) !== 0) {
+			if ((sceneryObject.flags & SMALL_SCENERY_FLAG_CAN_BE_WATERED) !== 0) {
 				return true;
 			}
 		}
@@ -398,10 +389,10 @@ function hasWaterableSceneryElement(tile: Tile): boolean {
 function findGrassSurfaceStyleIndices(): Set<number> {
 	const surfaceObjects = objectManager.getAllObjects("terrain_surface");
 	const result = new Set<number>();
-	for (let i = 0; i < surfaceObjects.length; i++) {
-		const identifier = surfaceObjects[i].identifier.toLowerCase();
-		if (identifier.indexOf("grass") !== -1) {
-			result.add(surfaceObjects[i].index);
+	for (const surfaceObject of surfaceObjects) {
+		const identifier = surfaceObject.identifier.toLowerCase();
+		if (identifier.includes("grass")) {
+			result.add(surfaceObject.index);
 		}
 	}
 	return result;
@@ -440,7 +431,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			// grassLength itself is not tested: it is always a valid number
 			// for any surface, so the old ">= 0" check filtered nothing, and
 			// only grass surfaces actually grow long grass that needs mowing.
-			const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices.has((surface as SurfaceElement).surfaceStyle);
+			const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices.has(surface.surfaceStyle);
 			const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
 			if (isMowable || isWaterable) {
 				gardenTiles++;
@@ -462,9 +453,12 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 		const componentByKey = new Map<string, PathTileInfo>();
 		const stack: CoordsXY[] = [{ x: startX, y: startY }];
 		visited.add(key);
-		while (stack.length > 0) {
-			const current = stack.pop() as CoordsXY;
-			const currentKey = tileKey(current.x, current.y);
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (!current) {
+			break;
+		}
+		const currentKey = tileKey(current.x, current.y);
 			const surface = findSurfaceElement(map.getTile(current.x, current.y));
 			const info: PathTileInfo = {
 				x: current.x,
@@ -476,8 +470,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			};
 			component.push(info);
 			componentByKey.set(currentKey, info);
-			for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
-				const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
+			for (const offset of CARDINAL_NEIGHBOUR_OFFSETS) {
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
 				const neighbourKey = tileKey(neighbour.x, neighbour.y);
 				if (!isGardenTile.has(neighbourKey)) {
@@ -495,7 +488,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 				}
 				info.neighbourKeys.push(neighbourKey);
 				const neighbourInfo = componentByKey.get(neighbourKey);
-				if (neighbourInfo && neighbourInfo.neighbourKeys.indexOf(currentKey) === -1) {
+				if (neighbourInfo && !neighbourInfo.neighbourKeys.includes(currentKey)) {
 					neighbourInfo.neighbourKeys.push(currentKey);
 				}
 				if (!visited.has(neighbourKey)) {
@@ -535,13 +528,13 @@ export function isValidStationExit(exit: CoordsXYZD | null | undefined): exit is
 export function countRideExits(): number {
 	const rides = map.rides;
 	let count = 0;
-	for (let i = 0; i < rides.length; i++) {
-		if (rides[i].classification !== "ride") {
+	for (const ride of rides) {
+		if (ride.classification !== "ride") {
 			continue;
 		}
-		const stations = rides[i].stations;
-		for (let s = 0; s < stations.length; s++) {
-			if (isValidStationExit(stations[s].exit)) {
+		const stations = ride.stations;
+		for (const station of stations) {
+			if (isValidStationExit(station.exit)) {
 				count++;
 			}
 		}

@@ -6,15 +6,19 @@
   "license": "MIT",
   "author": "Johannes Holzhäuer",
   "scripts": {
-    "build": "npm run test && npm run typecheck && esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 && node deploy.js",
+    "build": "npm run lint && npm run test && npm run typecheck && esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 && node deploy.js",
+    "lint": "eslint .",
     "watch": "esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@openrct2/types": "^0.5.4",
+    "@stylistic/eslint-plugin": "^5.10.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.8.1",
+    "globals": "^17.11.0",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.11"
