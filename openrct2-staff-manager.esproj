@@ -8,7 +8,12 @@
     <BuildScript>build</BuildScript>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="staff-manager.ts" />
+    <Content Include="src\main.ts" />
+    <Content Include="src\ui.ts" />
+    <Content Include="src\scan.ts" />
+    <Content Include="src\staff.ts" />
+    <Content Include="src\store.ts" />
+    <Content Include="src\config.ts" />
     <Content Include="deploy.js" />
     <Content Include="tsconfig.json" />
     <Content Include="package.json" />

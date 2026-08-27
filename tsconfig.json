@@ -16,8 +16,7 @@
     "removeComments": false
   },
   "include": [
-    "staff-manager.ts",
-    "src/i18n/**/*.ts",
+    "src/**/*.ts",
     "node_modules/@openrct2/types/openrct2.d.ts"
   ]
 }

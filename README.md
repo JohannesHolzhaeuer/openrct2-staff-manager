@@ -12,7 +12,7 @@ each staff member to their **nearest** free zone.
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
-- **Source:** `staff-manager.ts` (TypeScript, compiles to `dist/staff-manager.js`)
+- **Source:** `src/` (TypeScript, `src/main.ts` entry point, compiles to `dist/staff-manager.js`)
 
 ---
 
@@ -93,7 +93,7 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 
 1. Install dependencies: `npm install`.
 2. Build: `npm run build`.
-   - Compiles `staff-manager.ts` to `dist/staff-manager.js`.
+   - Compiles `src/` (entry `src/main.ts`) to `dist/staff-manager.js`.
    - Then automatically copies (`deploy.js`) that file straight into your
      local OpenRCT2 **plugin** folder:
      - **Windows:** `Documents\OpenRCT2\plugin\`
@@ -166,9 +166,9 @@ If the entrance can't be found, it falls back to seeding from owned path tiles.
 
 ## Configuration (in‑file)
 
-Near the top of `staff-manager.ts` the default tunables are defined as flex
-stores. They're exposed directly in the UI, but their initial defaults live in
-code:
+Near the top of `src/config.ts` the default tunables are defined (and the
+initial values are assigned to the stores in `src/store.ts`). They're exposed
+directly in the UI, but their initial defaults live in code:
 
 | Store (default) | Purpose |
 | --- | --- |

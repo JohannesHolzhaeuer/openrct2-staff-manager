@@ -6,8 +6,8 @@
   "license": "MIT",
   "author": "Johannes Holzhäuer",
   "scripts": {
-    "build": "tsc --noEmit && esbuild staff-manager.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 && node deploy.js",
-    "watch": "esbuild staff-manager.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 --watch"
+    "build": "tsc --noEmit && esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 && node deploy.js",
+    "watch": "esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 --watch"
   },
   "devDependencies": {
     "@openrct2/types": "^0.5.4",
