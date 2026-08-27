@@ -138,7 +138,10 @@ const adjustButtonDisabledStore = compute(
 
 // --- Park entrance detection ---------------------------------------------------
 // Text shown at the top of the window describing where the park entrance was found.
-const parkEntranceInfoStore = flexStore<string>(t("parkEntrance.summary", 0, 0, 0));
+// Not translated via t() here: this initial value only exists for the brief
+// moment before openWindow() triggers a scan and overwrites it (t() must not
+// be called at module-load time - see src/i18n/index.ts for why).
+const parkEntranceInfoStore = flexStore<string>("Path tiles: 0, Queue tiles: 0, Garden tiles: 0");
 
 // Builds the set of tile keys (in "x,y" tile-coordinate form) that are occupied
 // by a real ride entrance or exit, so they can be excluded when looking for the
@@ -1787,7 +1790,9 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, as
 }
 
 // --- Window ------------------------------------------------------------------
-let windowTemplate: WindowTemplate | null = null;
+// Not cached: the template embeds plain (non-reactive) translated strings
+// for titles/labels/tooltips, so it must be rebuilt on every call in order
+// to pick up an in-game UI language change the next time the window opens.
 
 const GROUP_WIDTH: Scale = "1w"; // each column takes an equal share of the available width
 const BOX_TITLE_HEIGHT = 11; // height reserved for the box's own title label
@@ -1812,9 +1817,8 @@ const WINDOW_CHROME_HEIGHT = 29; // title bar + top/bottom window padding
 const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
 
 function staffManagerWindowTemplate(): WindowTemplate {
-	if (!windowTemplate) {
-		const windowWidth = 400;
-		windowTemplate = flexWindow({
+	const windowWidth = 400;
+	return flexWindow({
 			title: t("window.title"),
 			width: windowWidth,
 			height: WINDOW_HEIGHT,
@@ -1861,9 +1865,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 					]
 				})
 			]
-		});
-	}
-	return windowTemplate;
+	});
 }
 
 function openWindow(): void {
@@ -1876,7 +1878,7 @@ function openWindow(): void {
 // --- Main --------------------------------------------------------------------
 function main(): void {
 	if (typeof ui !== "undefined") {
-		ui.registerMenuItem(t("menu.title"), function () { openWindow(); });
+		ui.registerMenuItem("Staff Manager", function () { openWindow(); });
 	}
 }
 
