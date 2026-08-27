@@ -6,6 +6,7 @@
     <!-- Allows the build (F6/Ctrl+Shift+B) command to execute npm run build -->
     <ShouldRunBuildScript>true</ShouldRunBuildScript>
     <BuildScript>build</BuildScript>
+    <BaseIntermediateOutputPath>.tmp\obj\</BaseIntermediateOutputPath>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="src\main.ts" />
