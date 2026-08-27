@@ -15,6 +15,7 @@
     <Content Include="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".github\workflows\develop-prerelease.yml" />
     <None Include=".github\workflows\release.yml" />
   </ItemGroup>
 </Project>
