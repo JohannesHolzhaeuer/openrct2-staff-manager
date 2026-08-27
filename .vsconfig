@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "components": [
+	"Microsoft.VisualStudio.Workload.NodeJs",
+	"Microsoft.VisualStudio.Component.TypeScript",
+	"Microsoft.VisualStudio.Component.JavaScript.Diagnostics",
+	"Microsoft.VisualStudio.Component.Git"
+  ]
+}
