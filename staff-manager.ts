@@ -1693,12 +1693,12 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 		content: vertical({
 			spacing: 3,
 			content: [
-				checkbox({ text: "Enabled", width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, onChange: function (isChecked) { enabled.set(isChecked); } }),
+				checkbox({ text: "Enabled", width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, tooltip: "Whether this staff type is managed by Adjust staff count and Assign. Unticking excludes it entirely from both actions.", onChange: function (isChecked) { enabled.set(isChecked); } }),
 				...(tilesPerStaff ? [horizontal({
 					spacing: 4,
 					height: 14,
 					content: [
-						label({ text: spinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, disabled: controlsDisabled }),
+						label({ text: spinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, tooltip: spinnerTooltip || "The number of pathway/queue tiles a single cleanup-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many cleanup handymen are Needed.", disabled: controlsDisabled }),
 						spinner({
 							value: tilesPerStaff,
 							minimum: 0,
@@ -1715,7 +1715,7 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 					spacing: 4,
 					height: 14,
 					content: [
-						label({ text: mowerSpinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, disabled: controlsDisabled }),
+						label({ text: mowerSpinnerLabel || "", width: "2w", height: 14, padding: { top: 2 }, tooltip: "The number of gardening tiles (tiles that need mowing or watering) a single gardening-assigned handyman is expected to patrol (tiles per staff). Used to calculate how many gardening handymen are Needed.", disabled: controlsDisabled }),
 						spinner({
 							value: mowerTilesPerStaff,
 							minimum: 0,
@@ -1744,18 +1744,19 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, as
 		content: vertical({
 			spacing: 3,
 			content: [
-				checkbox({ text: "Enabled", width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, onChange: function (isChecked) { enabled.set(isChecked); } }),
+				checkbox({ text: "Enabled", width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, tooltip: "Whether entertainers are managed by Adjust staff count and Assign. Unticking excludes them entirely from both actions.", onChange: function (isChecked) { enabled.set(isChecked); } }),
 				horizontal({
 						spacing: 4,
 						height: 14,
 						content: [
-							label({ text: "Tiles / Staff", width: "2w", height: 14, padding: { top: 2 }, disabled: controlsDisabled }),
+							label({ text: "Tiles / Staff", width: "2w", height: 14, padding: { top: 2 }, tooltip: "The number of pathway (and, if the Queue checkbox is on, queue) tiles a single entertainer is expected to patrol (tiles per staff). Used to calculate how many entertainers are Needed.", disabled: controlsDisabled }),
 							spinner({
 								value: entertainersTilesPerStaffStore,
 								minimum: 0,
 								maximum: 999,
 								width: "3w",
 								height: 14,
+								tooltip: "The number of pathway (and, if the Queue checkbox is on, queue) tiles a single entertainer is expected to patrol (tiles per staff). Used to calculate how many entertainers are Needed.",
 								disabled: controlsDisabled,
 								onChange: function (value) { entertainersTilesPerStaffStore.set(value); }
 							})
@@ -1765,20 +1766,20 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, as
 						spacing: 4,
 						height: 14,
 						content: [
-							label({ text: "Staff / Area", width: "2w", height: 14, padding: { top: 2 }, disabled: controlsDisabled }),
+							label({ text: "Staff / Area", width: "2w", height: 14, padding: { top: 2 }, tooltip: "The number of entertainers to assign per patrol area; more than 1 makes areas overlap so the tiles-per-staff density is preserved.", disabled: controlsDisabled }),
 							spinner({
 								value: entertainersPerAreaStore,
 								minimum: 0,
 								maximum: 999,
 								width: "3w",
 								height: 14,
-								tooltip: "The number of entertainers to assign per patrol area.",
+								tooltip: "The number of entertainers to assign per patrol area; more than 1 makes areas overlap so the tiles-per-staff density is preserved.",
 								disabled: controlsDisabled,
 								onChange: function (value) { entertainersPerAreaStore.set(value); }
 							})
 						]
 					}),
-					checkbox({ text: "Queue", width: "100%", height: 14, isChecked: entertainersIncludeQueueStore, disabled: controlsDisabled, onChange: function (isChecked) { entertainersIncludeQueueStore.set(isChecked); } }),
+					checkbox({ text: "Queue", width: "100%", height: 14, isChecked: entertainersIncludeQueueStore, disabled: controlsDisabled, tooltip: "Whether entertainers also patrol ride queue tiles, in addition to plain pathway tiles.", onChange: function (isChecked) { entertainersIncludeQueueStore.set(isChecked); } }),
 						...statTable(needed, hired, assigned, controlsDisabled)
 					]
 				})
@@ -1820,7 +1821,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 			position: { x: Math.round((ui.width - windowWidth) / 2), y: Math.round((ui.height - WINDOW_HEIGHT) / 2) },
 			spacing: 4,
 			content: [
-				label({ text: parkEntranceInfoStore, width: "100%", height: 14 }),
+				label({ text: parkEntranceInfoStore, width: "100%", height: 14, tooltip: "Summary of the most recent map scan: reachable pathway, queue and garden tile counts, refreshed by Adjust staff count/Assign." }),
 				horizontal({
 					spacing: 6,
 					height: COLUMN_ROW_HEIGHT,
@@ -1845,17 +1846,17 @@ function staffManagerWindowTemplate(): WindowTemplate {
 						})
 					]
 				}),
-				label({ text: "", width: "100%", height: APPLY_MESSAGE_ROW_HEIGHT, alignment: "centred" }),
+				label({ text: "", width: "100%", height: APPLY_MESSAGE_ROW_HEIGHT, alignment: "centred", tooltip: "Reserved for status messages after Adjust staff count/Assign." }),
 				horizontal({
 					spacing: 4,
 					width: "100%",
 					height: APPLY_ROW_HEIGHT,
 					content: [
 						button({
-							text: "Adjust staff count", width: "50%", height: APPLY_ROW_HEIGHT, disabled: adjustButtonDisabledStore, onClick: function () { adjustStaffCounts(); }
+							text: "Adjust staff count", width: "50%", height: APPLY_ROW_HEIGHT, tooltip: "Hire or fire staff of every enabled type to match the calculated Needed counts (hires when understaffed, fires oldest-first when overstaffed).", disabled: adjustButtonDisabledStore, onClick: function () { adjustStaffCounts(); }
 						}),
 						button({
-							text: "Assign", width: "50%", height: APPLY_ROW_HEIGHT, disabled: staffControlsDisabledStore, onClick: function () { assignStaff(); }
+							text: "Assign", width: "50%", height: APPLY_ROW_HEIGHT, tooltip: "Rebuild patrol areas from the most recently scanned tiles and teleport each staff member to the start of their new area.", disabled: staffControlsDisabledStore, onClick: function () { assignStaff(); }
 						})
 					]
 				})
