@@ -2,8 +2,8 @@ name: Develop Prerelease
 
 on:
   push:
-	branches:
-	  - main
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -14,50 +14,50 @@ concurrency:
 
 jobs:
   prerelease:
-	runs-on: ubuntu-latest
-	steps:
-	  - name: Checkout
-		uses: actions/checkout@v5
-		with:
-		  fetch-depth: 0
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-	  - name: Setup Node.js
-		uses: actions/setup-node@v5
-		with:
-		  node-version: "22"
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
 
-	  - name: Install dependencies
-		run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-	  - name: Build
-		run: npx tsc
+      - name: Build
+        run: npx tsc
 
-	  - name: Move develop tag to latest main
-		run: |
-		  git config user.name "github-actions[bot]"
-		  git config user.email "github-actions[bot]@users.noreply.github.com"
-		  git tag -f -a develop -m "Development build from $(git rev-parse --short HEAD): $(git log -1 --format=%s)"
-		  git push origin refs/tags/develop --force
+      - name: Move develop tag to latest main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f -a develop -m "Development build from $(git rev-parse --short HEAD): $(git log -1 --format=%s)"
+          git push origin refs/tags/develop --force
 
-	  - name: Write release body
-		run: |
-		  {
-			echo "Automatically built prerelease tracking the tip of main."
-			echo ""
-			echo "Commit: ${{ github.sha }}"
-			echo ""
-			git log -1 --format='%s%n%n%b' HEAD
-		  } > release_body.md
+      - name: Write release body
+        run: |
+          {
+            echo "Automatically built prerelease tracking the tip of main."
+            echo ""
+            echo "Commit: ${{ github.sha }}"
+            echo ""
+            git log -1 --format='%s%n%n%b' HEAD
+          } > release_body.md
 
-	  - name: Create or update develop prerelease
-		uses: softprops/action-gh-release@v2
-		with:
-		  tag_name: develop
-		  name: develop
-		  prerelease: true
-		  make_latest: "false"
-		  target_commitish: ${{ github.sha }}
-		  files: dist/staff-manager.js
-		  body_path: release_body.md
-		env:
-		  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create or update develop prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: develop
+          name: develop
+          prerelease: true
+          make_latest: "false"
+          target_commitish: ${{ github.sha }}
+          files: dist/staff-manager.js
+          body_path: release_body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
