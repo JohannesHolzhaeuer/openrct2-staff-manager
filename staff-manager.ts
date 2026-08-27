@@ -217,6 +217,15 @@ interface PathTileInfo {
 	baseHeight: number;
 	baseZ: number;
 	isQueue: boolean;
+	// Keys (see tileKey) of the tiles this tile is actually walkable to.
+	// Plain x/y adjacency is NOT enough to decide this: two neighbouring
+	// tiles can sit at completely different heights (e.g. a path on a
+	// bridge crossing a path below, or two terraces separated by a cliff),
+	// in which case staff cannot step from one to the other. Connectivity
+	// is therefore computed once, while the tiles are being collected, and
+	// carried on the tile itself so that patrol areas built later are
+	// guaranteed to be genuinely walkable in one piece.
+	neighbourKeys: string[];
 }
 
 // Cardinal neighbour offsets used to walk the footpath network tile by tile.
@@ -241,6 +250,65 @@ function tileKey(x: number, y: number): string {
 	return x + "," + y;
 }
 
+// A footpath element on a tile, reduced to what is needed to reason about
+// whether staff can walk from it onto a neighbouring tile.
+interface FootpathInfo {
+	baseHeight: number;
+	baseZ: number;
+	isQueue: boolean;
+	slopeDirection: number | null;
+}
+
+// The vertical size (in baseZ units) a sloped footpath spans: a footpath
+// slope always climbs exactly one height level, which is two baseHeight
+// steps, i.e. 16 baseZ units.
+const FOOTPATH_SLOPE_HEIGHT = 16;
+
+// Collects every footpath element on a tile. A tile can carry more than one
+// (e.g. a path on a bridge above another path), and they are at different
+// heights, so they must be treated as separate walkable nodes.
+function findFootpathElements(x: number, y: number): FootpathInfo[] {
+	const result: FootpathInfo[] = [];
+	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
+		return result;
+	}
+	const tile = map.getTile(x, y);
+	for (let e = 0; e < tile.numElements; e++) {
+		const element = tile.getElement(e);
+		if (element.type === "footpath") {
+			const footpathElement = element as FootpathElement;
+			result.push({
+				baseHeight: footpathElement.baseHeight,
+				baseZ: footpathElement.baseZ,
+				isQueue: footpathElement.isQueue,
+				slopeDirection: footpathElement.slopeDirection
+			});
+		}
+	}
+	return result;
+}
+
+// The world height of a footpath at the edge facing the given direction
+// (using OpenRCT2's 0=-X, 1=+Y, 2=+X, 3=-Y direction convention). A flat
+// path is at baseZ all around; a sloped path is at baseZ on three edges and
+// one level higher on the edge it slopes up towards.
+function footpathEdgeZ(footpath: FootpathInfo, direction: number): number {
+	return footpath.slopeDirection === direction ? footpath.baseZ + FOOTPATH_SLOPE_HEIGHT : footpath.baseZ;
+}
+
+function oppositeDirection(direction: number): number {
+	return (direction + 2) % 4;
+}
+
+// Whether staff can step from the given footpath onto a footpath on the
+// neighbouring tile in the given direction: the two paths must meet at the
+// same height on their shared edge. This is what makes a patrol area
+// genuinely walkable - x/y adjacency alone would happily join a path on a
+// bridge to the path passing underneath it.
+function footpathsConnect(from: FootpathInfo, to: FootpathInfo, direction: number): boolean {
+	return footpathEdgeZ(from, direction) === footpathEdgeZ(to, oppositeDirection(direction));
+}
+
 // Finds the surface element on a tile, if any.
 function findSurfaceElement(tile: Tile): SurfaceElement | null {
 	for (let e = 0; e < tile.numElements; e++) {
@@ -250,6 +318,20 @@ function findSurfaceElement(tile: Tile): SurfaceElement | null {
 		}
 	}
 	return null;
+}
+
+// The maximum difference in surface baseHeight between two neighbouring land
+// tiles that staff can still walk across. A sloped tile spans exactly one
+// height level, which is 2 baseHeight steps; anything steeper is a cliff.
+const MAX_WALKABLE_HEIGHT_DIFFERENCE = 2;
+
+// Whether staff can walk between two neighbouring land tiles, i.e. whether
+// their terrain heights are close enough not to form an unclimbable step.
+function surfacesConnect(from: SurfaceElement | null, to: SurfaceElement | null): boolean {
+	if (!from || !to) {
+		return false;
+	}
+	return Math.abs(from.baseHeight - to.baseHeight) <= MAX_WALKABLE_HEIGHT_DIFFERENCE;
 }
 
 // Whether a tile is actually owned by the park. Deliberately excludes tiles
@@ -268,26 +350,42 @@ function isParkOwnedTile(x: number, y: number): boolean {
 // directions (depth-first, so consecutive tiles in the resulting list stay
 // physically close together) and separately collects plain path tiles and
 // queue tiles, together with their coordinates and base height.
+//
+// The walk is height-aware: it only steps onto a neighbouring footpath whose
+// shared edge is at the same height (taking path slopes into account), so
+// paths that merely happen to be x/y neighbours at different heights (a
+// bridge over a path, two terraces next to a cliff, a slope approached from
+// its raised side) are correctly treated as *not* connected. Each collected
+// tile records the tiles it is genuinely walkable to, so the patrol areas
+// built from these tiles later are contiguous by construction.
 function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: PathTileInfo[]; queueTiles: PathTileInfo[]; allTiles: PathTileInfo[] } {
 	const pathTiles: PathTileInfo[] = [];
 	const queueTiles: PathTileInfo[] = [];
 	const allTiles: PathTileInfo[] = [];
+	// Visited nodes are (tile, path height) pairs, not just tiles: a tile can
+	// carry several stacked footpaths that are not connected to each other.
 	const visited = new Set<string>();
-	const stack: CoordsXY[] = [];
+	const tilesByKey = new Map<string, PathTileInfo>();
+	// A step to take: onto tile (x, y), arriving from `fromDirection`, where
+	// the path we are stepping off meets this tile at height `z`. A null z
+	// means "no height constraint" and is only used for the initial steps out
+	// of the park entrance.
+	interface PendingStep {
+		x: number;
+		y: number;
+		z: number | null;
+		fromDirection: number;
+	}
+	const stack: PendingStep[] = [];
 
 	// Seed the search with the tiles directly next to the entrance.
-	for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
-		const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
-		stack.push({ x: entranceTile.x + offset.x, y: entranceTile.y + offset.y });
+	for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
+		const offset = DIRECTION_OFFSETS[d];
+		stack.push({ x: entranceTile.x + offset.x, y: entranceTile.y + offset.y, z: null, fromDirection: oppositeDirection(d) });
 	}
 
 	while (stack.length > 0) {
-		const current = stack.pop() as CoordsXY;
-		const key = tileKey(current.x, current.y);
-		if (visited.has(key)) {
-			continue;
-		}
-		visited.add(key);
+		const current = stack.pop() as PendingStep;
 
 		if (current.x < 0 || current.y < 0 || current.x >= map.size.x || current.y >= map.size.y) {
 			continue;
@@ -307,46 +405,70 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 		// tiles (e.g. surrounding land/water) are still dead ends, so the
 		// walk doesn't spread across the whole map.
 		const isOwned = isParkOwnedTile(current.x, current.y);
+		const footpaths = findFootpathElements(current.x, current.y);
 
-		const tile = map.getTile(current.x, current.y);
-		let isPath = false;
-		let isQueue = false;
-		let baseHeight = 0;
-		let baseZ = 0;
-		for (let e = 0; e < tile.numElements; e++) {
-			const element = tile.getElement(e);
-			if (element.type === "footpath") {
-				const footpathElement = element as FootpathElement;
-				isPath = true;
-				isQueue = footpathElement.isQueue;
-				baseHeight = footpathElement.baseHeight;
-				baseZ = footpathElement.baseZ;
-				break;
+		for (let f = 0; f < footpaths.length; f++) {
+			const footpath = footpaths[f];
+			// Only step onto this path if it actually meets the path we came
+			// from at the same height.
+			if (current.z !== null && footpathEdgeZ(footpath, current.fromDirection) !== current.z) {
+				continue;
 			}
-		}
 
-		if (isOwned && isPath) {
-			if (isQueue) {
-				queueTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: true });
-			} else {
-				pathTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: false });
+			const nodeKey = current.x + "," + current.y + "," + footpath.baseZ;
+			if (visited.has(nodeKey)) {
+				continue;
 			}
-			allTiles.push({ x: current.x, y: current.y, baseHeight: baseHeight, baseZ: baseZ, isQueue: isQueue });
-		}
+			visited.add(nodeKey);
 
-		// Only continue walking through this tile if it's a path tile,
-		// whether owned (park's own network) or not (e.g. the entrance
-		// approach, a gap between two owned sections). Non-path tiles don't
-		// connect the footpath network and are dead ends.
-		if (!isPath) {
-			continue;
-		}
+			const key = tileKey(current.x, current.y);
+			let info = tilesByKey.get(key);
+			if (isOwned && !info) {
+				info = {
+					x: current.x,
+					y: current.y,
+					baseHeight: footpath.baseHeight,
+					baseZ: footpath.baseZ,
+					isQueue: footpath.isQueue,
+					neighbourKeys: []
+				};
+				tilesByKey.set(key, info);
+				if (footpath.isQueue) {
+					queueTiles.push(info);
+				} else {
+					pathTiles.push(info);
+				}
+				allTiles.push(info);
+			}
 
-		for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
-			const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
-			const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
-			if (!visited.has(tileKey(neighbour.x, neighbour.y))) {
-				stack.push(neighbour);
+			for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
+				const offset = DIRECTION_OFFSETS[d];
+				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
+				const edgeZ = footpathEdgeZ(footpath, d);
+				const neighbourFootpaths = findFootpathElements(neighbour.x, neighbour.y);
+				let connects = false;
+				for (let n = 0; n < neighbourFootpaths.length; n++) {
+					if (footpathsConnect(footpath, neighbourFootpaths[n], d)) {
+						connects = true;
+						break;
+					}
+				}
+				if (!connects) {
+					continue;
+				}
+				// Record the walkable link between the two tiles (both ends,
+				// once both tiles are known to be part of the park's network).
+				if (info) {
+					const neighbourKey = tileKey(neighbour.x, neighbour.y);
+					if (info.neighbourKeys.indexOf(neighbourKey) === -1) {
+						info.neighbourKeys.push(neighbourKey);
+					}
+					const neighbourInfo = tilesByKey.get(neighbourKey);
+					if (neighbourInfo && neighbourInfo.neighbourKeys.indexOf(key) === -1) {
+						neighbourInfo.neighbourKeys.push(key);
+					}
+				}
+				stack.push({ x: neighbour.x, y: neighbour.y, z: edgeZ, fromDirection: oppositeDirection(d) });
 			}
 		}
 	}
@@ -535,17 +657,46 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 		const startX = parseInt(parts[0], 10);
 		const startY = parseInt(parts[1], 10);
 		const component: PathTileInfo[] = [];
+		const componentByKey = new Map<string, PathTileInfo>();
 		const stack: CoordsXY[] = [{ x: startX, y: startY }];
 		visited.add(key);
 		while (stack.length > 0) {
 			const current = stack.pop() as CoordsXY;
+			const currentKey = tileKey(current.x, current.y);
 			const surface = findSurfaceElement(map.getTile(current.x, current.y));
-			component.push({ x: current.x, y: current.y, baseHeight: surface ? surface.baseHeight : 0, baseZ: surface ? surface.baseZ : 0, isQueue: false });
+			const info: PathTileInfo = {
+				x: current.x,
+				y: current.y,
+				baseHeight: surface ? surface.baseHeight : 0,
+				baseZ: surface ? surface.baseZ : 0,
+				isQueue: false,
+				neighbourKeys: []
+			};
+			component.push(info);
+			componentByKey.set(currentKey, info);
 			for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
 				const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
 				const neighbourKey = tileKey(neighbour.x, neighbour.y);
-				if (!visited.has(neighbourKey) && isGardenTile.has(neighbourKey)) {
+				if (!isGardenTile.has(neighbourKey)) {
+					continue;
+				}
+				// Two neighbouring land tiles only belong to the same area if
+				// staff can actually walk between them: a difference of more
+				// than one height level (2 baseHeight steps, the most a
+				// sloped tile can span) means a cliff/wall of terrain that
+				// cannot be climbed, so the tiles must end up in separate
+				// areas rather than in one patrol area a handyman gets stuck
+				// in.
+				if (!surfacesConnect(surface, findSurfaceElement(map.getTile(neighbour.x, neighbour.y)))) {
+					continue;
+				}
+				info.neighbourKeys.push(neighbourKey);
+				const neighbourInfo = componentByKey.get(neighbourKey);
+				if (neighbourInfo && neighbourInfo.neighbourKeys.indexOf(currentKey) === -1) {
+					neighbourInfo.neighbourKeys.push(currentKey);
+				}
+				if (!visited.has(neighbourKey)) {
 					visited.add(neighbourKey);
 					stack.push(neighbour);
 				}
@@ -928,9 +1079,8 @@ function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): Pat
 			if (region.length >= targetSize) {
 				break;
 			}
-			for (let i = 0; i < CARDINAL_NEIGHBOUR_OFFSETS.length; i++) {
-				const offset = CARDINAL_NEIGHBOUR_OFFSETS[i];
-				const neighbourKey = tileKey(current.x + offset.x, current.y + offset.y);
+			for (let i = 0; i < current.neighbourKeys.length; i++) {
+				const neighbourKey = current.neighbourKeys[i];
 				if (remaining.has(neighbourKey)) {
 					remaining.delete(neighbourKey);
 					queue.push(neighbourKey);
@@ -949,45 +1099,75 @@ function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): Pat
 			}
 
 			// The tile set may consist of several disconnected pockets (e.g.
-			// separate lawn patches split apart by paths or rides), each of which
-			// produces its own chunk above. If that leaves more chunks than there
-			// are staff to assign them to, the surplus chunks would otherwise be
-			// silently dropped by callers that only iterate up to staffCount,
-			// leaving some areas with no assigned staff at all. To avoid that,
-			// repeatedly merge the two closest chunks (by centroid distance) into
-			// one until the chunk count is at most staffCount, so every tile always
-			// ends up part of some staff member's patrol area.
+			// separate lawn patches split apart by paths or rides, or paths at
+			// heights that cannot be reached from one another), each of which
+			// produces its own chunk above. If that leaves more chunks than
+			// there are staff to assign them to, the surplus chunks would
+			// otherwise be silently dropped by callers that only iterate up to
+			// staffCount, leaving some areas with no assigned staff at all. To
+			// avoid that, repeatedly merge the smallest chunk into a chunk it
+			// is actually *connected* to, so every resulting patrol area stays
+			// one contiguous, fully walkable piece. Chunks that share no
+			// walkable link are never merged (that is exactly what used to
+			// produce patrol areas a handyman got stuck in); if nothing can be
+			// merged any more, the surplus chunks are kept and the largest
+			// areas are assigned first.
 			while (chunks.length > staffCount) {
-				const centroids = chunks.map(function (chunk) {
-					let sumX = 0;
-					let sumY = 0;
+				const keySets = chunks.map(function (chunk) {
+					const keys = new Set<string>();
 					for (let i = 0; i < chunk.length; i++) {
-						sumX += chunk[i].x;
-						sumY += chunk[i].y;
+						keys.add(tileKey(chunk[i].x, chunk[i].y));
 					}
-					return { x: sumX / chunk.length, y: sumY / chunk.length };
+					return keys;
 				});
 
-				let bestA = 0;
-				let bestB = 1;
-				let bestDistance = Number.POSITIVE_INFINITY;
+				let bestA = -1;
+				let bestB = -1;
+				let bestSize = Number.POSITIVE_INFINITY;
 				for (let a = 0; a < chunks.length; a++) {
 					for (let b = a + 1; b < chunks.length; b++) {
-						const distance = Math.abs(centroids[a].x - centroids[b].x) + Math.abs(centroids[a].y - centroids[b].y);
-						if (distance < bestDistance) {
-							bestDistance = distance;
+						if (!chunksConnect(chunks[a], keySets[b])) {
+							continue;
+						}
+						const size = chunks[a].length + chunks[b].length;
+						if (size < bestSize) {
+							bestSize = size;
 							bestA = a;
 							bestB = b;
 						}
 					}
 				}
 
+				if (bestA === -1) {
+					break;
+				}
+
 				chunks[bestA] = chunks[bestA].concat(chunks[bestB]);
 				chunks.splice(bestB, 1);
 			}
 
+			// With fewer staff than (unmergeable) areas, cover the biggest
+			// areas first instead of whichever happened to be found first.
+			if (chunks.length > staffCount) {
+				chunks.sort(function (a, b) { return b.length - a.length; });
+			}
+
 			return chunks;
 		}
+
+// Whether any tile of the given chunk has a walkable link into the given set
+// of tile keys, i.e. whether the two chunks form one contiguous area.
+function chunksConnect(chunk: PathTileInfo[], otherKeys: Set<string>): boolean {
+	for (let i = 0; i < chunk.length; i++) {
+		const neighbourKeys = chunk[i].neighbourKeys;
+		for (let n = 0; n < neighbourKeys.length; n++) {
+			if (otherKeys.has(neighbourKeys[n])) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
 
 // Clears every given staff member's patrol area. Used at the start of each
 // staff type's (re-)assignment so stale patrol areas don't linger.
