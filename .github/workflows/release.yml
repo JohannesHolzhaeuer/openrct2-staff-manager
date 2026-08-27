@@ -17,6 +17,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Re-fetch tag to restore annotation
+        # actions/checkout dereferences the pushed tag to its commit when
+        # checking it out, so the local refs/tags/<name> ref becomes a
+        # lightweight tag pointing straight at the commit and loses the
+        # annotated tag object (message/tagger) entirely. Without this,
+        # `git tag -l --format=%(contents)` below silently falls back to
+        # printing the *commit* message instead of the tag message. Force
+        # re-fetching the tag ref from origin restores the real annotated
+        # tag object so its message can be read correctly.
+        run: git fetch origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}" --force
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
