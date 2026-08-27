@@ -1346,7 +1346,7 @@ function assignGardeningAreas(members: Staff[]): void {
 		// prioritized to receive at least one by taking from any
 		// multiply-allocated component, largest first.
 		if (members.length < components.length) {
-			const bySizeDesc = components.map(function (area, i) { return i; })
+			const bySizeDesc = components.map(function (_, i) { return i; })
 				.sort(function (a, b) { return components[b].length - components[a].length; });
 			const newCounts = components.map(function () { return 0; });
 			for (let i = 0; i < members.length; i++) {
@@ -1659,7 +1659,7 @@ function statRow(name: string, value: Bindable<number>, tooltip: string, disable
 	});
 }
 
-function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, disabled: Bindable<boolean>): Array<WidgetCreator<FlexiblePosition>> {
+function statTable(needed: Bindable<number>, hired: Bindable<number>, disabled: Bindable<boolean>): Array<WidgetCreator<FlexiblePosition>> {
 	const difference = (isStore(needed) || isStore(hired))
 		? compute(
 			isStore(needed) ? needed : flexStore(needed),
@@ -1688,7 +1688,7 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, assigned: 
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, enabled: WritableStore<boolean>, controlsDisabled: Store<boolean>, spinnerLabel?: string, mowerTilesPerStaff?: WritableStore<number>, mowerSpinnerLabel?: string, spinnerTooltip?: string, onSettingsChanged?: () => void): WidgetCreator<FlexiblePosition> {
+function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, needed: Bindable<number>, hired: Bindable<number>, width: Scale, height: Scale, enabled: WritableStore<boolean>, controlsDisabled: Store<boolean>, spinnerLabel?: string, mowerTilesPerStaff?: WritableStore<number>, mowerSpinnerLabel?: string, spinnerTooltip?: string, onSettingsChanged?: () => void): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
@@ -1731,7 +1731,7 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 						})
 					]
 						})] : []),
-						...statTable(needed, hired, assigned, controlsDisabled)
+						...statTable(needed, hired, controlsDisabled)
 					]
 				})
 	});
@@ -1739,7 +1739,7 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 
 // One bordered box for entertainers: same as staffGroup plus a "Queue"
 // toggle underneath, laid out vertically like in the mockup.
-function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, assigned: Bindable<number>, width: Scale, height: Scale, enabled: WritableStore<boolean>, controlsDisabled: Store<boolean>): WidgetCreator<FlexiblePosition> {
+function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, width: Scale, height: Scale, enabled: WritableStore<boolean>, controlsDisabled: Store<boolean>): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: t("staffGroup.entertainers.title"),
 		width: width,
@@ -1783,8 +1783,9 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, as
 						]
 					}),
 					checkbox({ text: t("checkbox.queue"), width: "100%", height: 14, isChecked: entertainersIncludeQueueStore, disabled: controlsDisabled, tooltip: t("tooltip.entertainersQueueCheckbox"), onChange: function (isChecked) { entertainersIncludeQueueStore.set(isChecked); } }),
-						...statTable(needed, hired, assigned, controlsDisabled)
+						...statTable(needed, hired, controlsDisabled)
 					]
+					
 				})
 	});
 }
@@ -1835,8 +1836,8 @@ function staffManagerWindowTemplate(): WindowTemplate {
 							width: GROUP_WIDTH,
 							height: STACK_HEIGHT,
 							content: [
-									staffGroup(t("staffGroup.handymen.title"), handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, handymenAssignedStore, "100%", HANDYMEN_HEIGHT, handymenEnabledStore, handymenControlsDisabledStore, t("spinnerLabel.cleanup"), handymenMowerTilesPerStaffStore, t("spinnerLabel.gardening"), t("tooltip.handymenCleanupSpinner")),
-											staffGroup(t("staffGroup.guards.title"), guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, guardsAssignedStore, "100%", GROUP_HEIGHT, guardsEnabledStore, guardsControlsDisabledStore, t("spinnerLabel.tilesPerStaff"), undefined, undefined, t("tooltip.guardsSpinner"))
+									staffGroup(t("staffGroup.handymen.title"), handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, "100%", HANDYMEN_HEIGHT, handymenEnabledStore, handymenControlsDisabledStore, t("spinnerLabel.cleanup"), handymenMowerTilesPerStaffStore, t("spinnerLabel.gardening"), t("tooltip.handymenCleanupSpinner")),
+											staffGroup(t("staffGroup.guards.title"), guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, "100%", GROUP_HEIGHT, guardsEnabledStore, guardsControlsDisabledStore, t("spinnerLabel.tilesPerStaff"), undefined, undefined, t("tooltip.guardsSpinner"))
 										]
 									}),
 								vertical({
@@ -1844,8 +1845,8 @@ function staffManagerWindowTemplate(): WindowTemplate {
 									width: GROUP_WIDTH,
 									height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
 									content: [
-											staffGroup(t("staffGroup.mechanics.title"), null, mechanicsNeededStore, mechanicsHiredStore, mechanicsAssignedStore, "100%", MECHANICS_HEIGHT, mechanicsEnabledStore, mechanicsControlsDisabledStore),
-											entertainersGroup(entertainersNeededStore, entertainersHiredStore, entertainersAssignedStore, "100%", ENTERTAINERS_HEIGHT, entertainersEnabledStore, entertainersControlsDisabledStore)
+											staffGroup(t("staffGroup.mechanics.title"), null, mechanicsNeededStore, mechanicsHiredStore, "100%", MECHANICS_HEIGHT, mechanicsEnabledStore, mechanicsControlsDisabledStore),
+											entertainersGroup(entertainersNeededStore, entertainersHiredStore, "100%", ENTERTAINERS_HEIGHT, entertainersEnabledStore, entertainersControlsDisabledStore)
 								]
 						})
 					]
