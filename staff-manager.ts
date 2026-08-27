@@ -328,10 +328,20 @@ const MAX_WALKABLE_HEIGHT_DIFFERENCE = 2;
 // Whether staff can walk between two neighbouring land tiles, i.e. whether
 // their terrain heights are close enough not to form an unclimbable step.
 function surfacesConnect(from: SurfaceElement | null, to: SurfaceElement | null): boolean {
-	if (!from || !to) {
+	if (!isLandSurface(from) || !isLandSurface(to)) {
 		return false;
 	}
-	return Math.abs(from.baseHeight - to.baseHeight) <= MAX_WALKABLE_HEIGHT_DIFFERENCE;
+	return Math.abs((from as SurfaceElement).baseHeight - (to as SurfaceElement).baseHeight) <= MAX_WALKABLE_HEIGHT_DIFFERENCE;
+}
+
+// Whether a surface tile is dry land rather than water. In OpenRCT2, water is
+// not a separate tile/element type: it's stored as a waterHeight on the
+// surface element itself, so a perfectly "grass"-styled surface can still be
+// submerged. Handymen (mowing/watering) must never be sent onto such tiles -
+// they can't stand on water - so this must be checked in addition to the
+// surface style.
+function isLandSurface(surface: SurfaceElement | null): boolean {
+	return !!surface && surface.waterHeight === 0;
 }
 
 // Whether a tile is actually owned by the park. Deliberately excludes tiles
@@ -634,12 +644,15 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			}
 
 			const surface = findSurfaceElement(tile);
-			// A tile is mowable only if its surface is a grass-family style.
+			// A tile is mowable only if its surface is a grass-family style
+			// and isn't submerged under water (waterHeight === 0): a tile
+			// can be "grass" styled and still have water on top of it, but
+			// staff can't stand on water to mow/water it.
 			// grassLength itself is not tested: it is always a valid number
 			// for any surface, so the old ">= 0" check filtered nothing, and
 			// only grass surfaces actually grow long grass that needs mowing.
-			const isMowable = !!surface && grassSurfaceStyleIndices.has(surface.surfaceStyle);
-			const isWaterable = hasWaterableSceneryElement(tile);
+			const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices.has((surface as SurfaceElement).surfaceStyle);
+			const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
 			if (isMowable || isWaterable) {
 				gardenTiles++;
 				isGardenTile.add(tileKey(x, y));
@@ -664,7 +677,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			const current = stack.pop() as CoordsXY;
 			const currentKey = tileKey(current.x, current.y);
 			const surface = findSurfaceElement(map.getTile(current.x, current.y));
-			const info: PathTileInfo = {
+				const info: PathTileInfo = {
 				x: current.x,
 				y: current.y,
 				baseHeight: surface ? surface.baseHeight : 0,
