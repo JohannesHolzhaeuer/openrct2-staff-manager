@@ -62,8 +62,16 @@ function getRideEntranceExitTileKeys(): Set<string> {
 			// "x / 32" would produce a fractional key (e.g. "5.5,3") for any
 			// non-tile-aligned coordinate, which would never match and could
 			// let a ride entrance/exit be misdetected as the park entrance.
-			tileKeys.add(String(Math.floor(station.entrance.x / 32)) + "," + String(Math.floor(station.entrance.y / 32)));
-			tileKeys.add(String(Math.floor(station.exit.x / 32)) + "," + String(Math.floor(station.exit.y / 32)));
+			// Despite the API types showing them as always present, entrance/exit can
+			// be null in practice (unused station slots), so guard before reading x/y.
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+			if (station.entrance) {
+				tileKeys.add(String(Math.floor(station.entrance.x / 32)) + "," + String(Math.floor(station.entrance.y / 32)));
+			}
+			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+			if (station.exit) {
+				tileKeys.add(String(Math.floor(station.exit.x / 32)) + "," + String(Math.floor(station.exit.y / 32)));
+			}
 		}
 	}
 	return tileKeys;
