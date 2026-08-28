@@ -15,7 +15,7 @@ import {
 	entertainersNeededStore, entertainersHiredStore,
 	mechanicsNeededStore, mechanicsHiredStore,
 	handymenControlsDisabledStore, guardsControlsDisabledStore, entertainersControlsDisabledStore, mechanicsControlsDisabledStore,
-	staffControlsDisabledStore, adjustButtonDisabledStore
+	staffControlsDisabledStore, adjustButtonDisabledStore, statusTextStore
 } from "./store";
 import { scanFootpathNetwork, findAndReportParkEntrance } from "./scan";import { adjustStaffCounts, assignStaff, refreshHiredAndAssignedStaffCounts } from "./staff";
 
@@ -235,18 +235,15 @@ function staffManagerWindowTemplate(): WindowTemplate {
 						})
 					]
 				}),
-				label({ text: "", width: "100%", height: APPLY_MESSAGE_ROW_HEIGHT, alignment: "centred", tooltip: t("applyMessage.tooltip") }),
+				label({ text: statusTextStore, width: "100%", height: APPLY_MESSAGE_ROW_HEIGHT, alignment: "centred", tooltip: t("applyMessage.tooltip") }),
 				horizontal({
 					spacing: 4,
 					width: "100%",
 					height: APPLY_ROW_HEIGHT,
 					content: [
-						button({
-							text: t("button.adjustStaffCount"), width: "50%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustStaffCount.tooltip"), disabled: adjustButtonDisabledStore, onClick: function () { adjustStaffCounts(); }
-						}),
-						button({
-							text: t("button.assign"), width: "50%", height: APPLY_ROW_HEIGHT, tooltip: t("button.assign.tooltip"), disabled: staffControlsDisabledStore, onClick: function () { assignStaff(); }
-						})
+					button({
+						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), disabled: adjustButtonDisabledStore, onClick: function () { adjustStaffCounts(assignStaff); }
+					})
 					]
 				})
 			]

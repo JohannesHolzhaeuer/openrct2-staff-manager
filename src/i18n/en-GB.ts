@@ -12,10 +12,14 @@ export const enGB: Translations = {
 
 	"applyMessage.tooltip": "Reserved for status messages after Adjust staff count/Assign.",
 
-	"button.adjustStaffCount": "Adjust staff count",
-	"button.adjustStaffCount.tooltip": "Hire or fire staff of every enabled type to match the calculated Needed counts (hires when understaffed, fires oldest-first when overstaffed).",
-	"button.assign": "Assign",
-	"button.assign.tooltip": "Rebuild patrol areas from the most recently scanned tiles and teleport each staff member to the start of their new area.",
+	"status.assigningHandymen": "Assigning handymen...",
+	"status.assigningGuards": "Assigning guards...",
+	"status.assigningEntertainers": "Assigning entertainers...",
+	"status.assigningMechanics": "Assigning mechanics...",
+	"status.adjusting": "Adjusting staff count...",
+
+	"button.adjustAndAssign": "Adjust and assign",
+	"button.adjustAndAssign.tooltip": "Hire or fire staff of every enabled type to match the calculated Needed counts (hires when understaffed, fires oldest-first when overstaffed), then rebuild patrol areas from the most recently scanned tiles and teleport each staff member to the start of their new area.",
 
 	"staffGroup.enabled": "Enabled",
 	"staffGroup.enabledTooltip": "Whether this staff type is managed by Adjust staff count and Assign. Unticking excludes it entirely from both actions.",

@@ -12,10 +12,14 @@ export const deDE: Translations = {
 
 	"applyMessage.tooltip": "Reserviert für Statusmeldungen nach Personalanzahl anpassen/Zuweisen.",
 
-	"button.adjustStaffCount": "Personalanzahl anpassen",
-	"button.adjustStaffCount.tooltip": "Stellt Personal jedes aktivierten Typs ein oder entlässt es, um die berechnete Bedarfsanzahl zu erreichen (Einstellung bei Unterbesetzung, Entlassung der ältesten zuerst bei Überbesetzung).",
-	"button.assign": "Zuweisen",
-	"button.assign.tooltip": "Baut die Patrouillenbereiche anhand der zuletzt gescannten Fliesen neu auf und teleportiert jedes Personalmitglied an den Anfang seines neuen Bereichs.",
+	"status.assigningHandymen": "Hausmeister werden zugewiesen...",
+	"status.assigningGuards": "Wachleute werden zugewiesen...",
+	"status.assigningEntertainers": "Entertainer werden zugewiesen...",
+	"status.assigningMechanics": "Mechaniker werden zugewiesen...",
+	"status.adjusting": "Personalanzahl wird angepasst...",
+
+	"button.adjustAndAssign": "Anpassen und zuweisen",
+	"button.adjustAndAssign.tooltip": "Stellt Personal jedes aktivierten Typs ein oder entlässt es, um die berechnete Bedarfsanzahl zu erreichen (Einstellung bei Unterbesetzung, Entlassung der ältesten zuerst bei Überbesetzung) und baut anschließend die Patrouillenbereiche anhand der zuletzt gescannten Fliesen neu auf und teleportiert jedes Personalmitglied an den Anfang seines neuen Bereichs.",
 
 	"staffGroup.enabled": "Aktiviert",
 	"staffGroup.enabledTooltip": "Ob dieser Personaltyp von Personalanzahl anpassen und Zuweisen verwaltet wird. Deaktivieren schließt ihn vollständig von beiden Aktionen aus.",

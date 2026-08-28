@@ -13,10 +13,14 @@ export interface Translations {
 
 	"applyMessage.tooltip": string;
 
-	"button.adjustStaffCount": string;
-	"button.adjustStaffCount.tooltip": string;
-	"button.assign": string;
-	"button.assign.tooltip": string;
+	"status.assigningHandymen": string;
+	"status.assigningGuards": string;
+	"status.assigningEntertainers": string;
+	"status.assigningMechanics": string;
+	"status.adjusting": string;
+
+	"button.adjustAndAssign": string;
+	"button.adjustAndAssign.tooltip": string;
 
 	"staffGroup.enabled": string;
 	"staffGroup.enabledTooltip": string;

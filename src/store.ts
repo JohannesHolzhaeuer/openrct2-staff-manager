@@ -69,6 +69,11 @@ export const staffControlsDisabledStore = compute(tilesCalculatedStore, function
 // must not be called at module-load time - see src/i18n/index.ts for why).
 export const parkEntranceInfoStore = flexStore<string>("Path tiles: 0, Queue tiles: 0, Garden tiles: 0");
 
+// Text shown in the status row during "Adjust and assign". Updated as each
+// staff type's processing step runs, so the player can see which step is
+// being done. Empty when idle.
+export const statusTextStore = flexStore<string>("");
+
 // Per-staff-type "disabled" stores for the spinners/toggles/labels within
 // each staff group box: disabled whenever the general controls are disabled
 // (tiles not yet calculated) OR the staff type's own "Enabled" toggle is off.

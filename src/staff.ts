@@ -6,12 +6,13 @@ import {
 	entertainersIncludeQueueStore, entertainersPerAreaStore,
 	handymenHiredStore, handymenAssignedStore, guardsHiredStore, guardsAssignedStore,
 	entertainersHiredStore, entertainersAssignedStore, mechanicsHiredStore, mechanicsAssignedStore,
-	computeNeeded
+	computeNeeded, statusTextStore
 } from "./store";
 import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
 	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo
 } from "./scan";
+import { t } from "./i18n";
 
 // --- Handyman orders bitmasks ------------------------------------------------
 // Handyman "orders" bitmask values (see StaffHireArgs/StaffSetOrdersArgs):
@@ -182,12 +183,15 @@ function adjustStaffOfType(staffType: StaffType, staffTypeId: number, orders: nu
 // staff first if overstaffed. The Hired/Assigned/Difference stats are
 // refreshed once all the queued hire/fire game actions have completed, so
 // the UI updates instantly and accurately (executeAction is asynchronous).
-export function adjustStaffCounts(): void {
+export function adjustStaffCounts(onComplete?: () => void): void {
 	let pendingCount = 0;
 	const onActionComplete: () => void = function () {
 		pendingCount--;
 		if (pendingCount <= 0) {
 			refreshHiredAndAssignedStaffCounts();
+			if (onComplete) {
+				onComplete();
+			}
 		}
 	};
 
@@ -213,9 +217,13 @@ export function adjustStaffCounts(): void {
 
 	if (pendingCount === 0) {
 		refreshHiredAndAssignedStaffCounts();
+		if (onComplete) {
+			onComplete();
+		}
 		return;
 	}
 
+	setStatus(t("status.adjusting"));
 	adjustHandymen("cleanup", handymenCleanupNeeded, onActionComplete);
 	adjustHandymen("gardening", handymenGardeningNeeded, onActionComplete);
 	adjustStaffOfType("security", STAFF_TYPE_ID_SECURITY, 0, guardsNeeded, onActionComplete);
@@ -475,6 +483,34 @@ function clearPatrolAreas(members: Staff[]): void {
 	}
 }
 
+// Applies `perTask` to each task, but only a bounded number per game tick, so
+// assigning patrol areas to (or moving) many staff members doesn't block the game
+// loop for the whole duration. Each step is re-scheduled with `context.setTimeout`
+// (delay 0 fires on the next frame), letting the game render/simulate in between.
+// `onComplete` runs once every task has been processed.
+const TASKS_PER_TICK = 8;
+
+// Helper to set the window's status row while "Adjust and assign" is running.
+function setStatus(text: string): void {
+	statusTextStore.set(text);
+}
+
+function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void, onComplete: () => void): void {
+	let index = 0;
+	function step(): void {
+		const end = Math.min(tasks.length, index + TASKS_PER_TICK);
+		for (; index < end; index++) {
+			perTask(tasks[index], index);
+		}
+		if (index < tasks.length) {
+			context.setTimeout(step, 0);
+		} else {
+			onComplete();
+		}
+	}
+	step();
+}
+
 // Whether a staff member can actually be placed on the given tile via
 // "peeppickup". A tile can have a walkable footpath element on it and still
 // reject placement because of something else stacked on the same (x, y)
@@ -541,16 +577,15 @@ function findNearestPathTile(x: number, y: number): PathTileInfo | null {
 // as a ride entrance/exit or a bench), so the nearest actually-placeable
 // tile is used as the teleport target instead; the patrol area itself still
 // covers the full chunk regardless.
-function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[]): void {
+function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[], onComplete: () => void): void {
 	clearPatrolAreas(members);
 	if (members.length === 0) {
+		onComplete();
 		return;
 	}
 	const chunks = chunkTilesForStaffCount(orderedTiles, members.length);
-	for (let i = 0; i < chunks.length && i < members.length; i++) {
-		const chunk = chunks[i];
+	const tasks = chunks.slice(0, members.length).map(function (chunk, i) {
 		const member = members[i];
-		member.patrolArea.add(chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
 		let teleportTarget: PathTileInfo = chunk[0];
 		if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
 			const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
@@ -558,8 +593,12 @@ function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[]):
 				teleportTarget = nearestPathTile;
 			}
 		}
-		teleportStaffToTile(member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
-	}
+		return { member: member, chunk: chunk, teleportTarget: teleportTarget };
+	});
+	applyInBatches(tasks, function (task) {
+		task.member.patrolArea.add(task.chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
+		teleportStaffToTile(task.member, task.teleportTarget.x, task.teleportTarget.y, task.teleportTarget.baseZ);
+	}, onComplete);
 }
 
 // Assigns gardening areas built from the garden tiles' connected components.
@@ -576,9 +615,10 @@ function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[]):
 // component when there are enough gardeners to go around; if there are
 // fewer gardeners than components, the smallest components are left
 // unassigned (logged) rather than silently merged into an unrelated area.
-function assignGardeningAreas(members: Staff[]): void {
+function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 	clearPatrolAreas(members);
 	if (members.length === 0) {
+		onComplete();
 		return;
 	}
 
@@ -638,6 +678,7 @@ function assignGardeningAreas(members: Staff[]): void {
 	}
 
 	let memberIndex = 0;
+	const tasks: { member: Staff; chunk: PathTileInfo[]; teleportTarget: PathTileInfo }[] = [];
 	for (let c = 0; c < components.length; c++) {
 		const count = counts[c];
 		if (count <= 0) {
@@ -649,8 +690,6 @@ function assignGardeningAreas(members: Staff[]): void {
 		const chunks = chunkTilesForStaffCount(components[c], componentMembers.length);
 		for (let i = 0; i < chunks.length && i < componentMembers.length; i++) {
 			const chunk = chunks[i];
-			const member = componentMembers[i];
-			member.patrolArea.add(chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
 			let teleportTarget: PathTileInfo = chunk[0];
 			if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
 				const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
@@ -658,21 +697,27 @@ function assignGardeningAreas(members: Staff[]): void {
 					teleportTarget = nearestPathTile;
 				}
 			}
-			teleportStaffToTile(member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
+			tasks.push({ member: componentMembers[i], chunk: chunk, teleportTarget: teleportTarget });
 		}
 	}
+	applyInBatches(tasks, function (task) {
+		task.member.patrolArea.add(task.chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
+		teleportStaffToTile(task.member, task.teleportTarget.x, task.teleportTarget.y, task.teleportTarget.baseZ);
+	}, onComplete);
 }
 
 // Assigns consecutive entertainer areas, putting "perArea" entertainers into
 // each patrol area (all sharing the same tiles), rather than one staff
 // member per area like the other staff types.
-function assignEntertainerAreas(members: Staff[], orderedTiles: PathTileInfo[], perArea: number): void {
+function assignEntertainerAreas(members: Staff[], orderedTiles: PathTileInfo[], perArea: number, onComplete: () => void): void {
 	clearPatrolAreas(members);
 	if (members.length === 0 || orderedTiles.length === 0 || perArea <= 0) {
+		onComplete();
 		return;
 	}
 	const areaCount = Math.max(1, Math.ceil(members.length / perArea));
 	const chunks = chunkTilesForStaffCount(orderedTiles, areaCount);
+	const tasks: { member: Staff; coords: CoordsXY[]; teleportTarget: PathTileInfo }[] = [];
 	let memberIndex = 0;
 	for (let a = 0; a < chunks.length && memberIndex < members.length; a++) {
 		const chunk = chunks[a];
@@ -684,13 +729,14 @@ function assignEntertainerAreas(members: Staff[], orderedTiles: PathTileInfo[], 
 				teleportTarget = nearestPathTile;
 			}
 		}
-		for (let p = 0; p < perArea && memberIndex < members.length; p++) {
-			const member = members[memberIndex];
-			member.patrolArea.add(coords);
-			teleportStaffToTile(member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
-			memberIndex++;
+		for (let p = 0; p < perArea && memberIndex < members.length; p++, memberIndex++) {
+			tasks.push({ member: members[memberIndex], coords: coords, teleportTarget: teleportTarget });
 		}
 	}
+	applyInBatches(tasks, function (task) {
+		task.member.patrolArea.add(task.coords);
+		teleportStaffToTile(task.member, task.teleportTarget.x, task.teleportTarget.y, task.teleportTarget.baseZ);
+	}, onComplete);
 }
 
 // Finds the footpath element on a tile, if any (mirrors findSurfaceElement).
@@ -726,10 +772,11 @@ function canTeleportMechanic(member: Staff): boolean {
 // are hired to cover every ride exit (difference === 0); otherwise does
 // nothing, since there's no sensible way to split a single-tile-pair area
 // further.
-function assignMechanics(): void {
+function assignMechanics(onComplete: () => void): void {
 	const mechanics = getStaffByType("mechanic");
 	const mechanicsNeeded = mechanicsNeededStore.get();
 	if (mechanics.length !== mechanicsNeeded) {
+		onComplete();
 		return;
 	}
 
@@ -745,6 +792,7 @@ function assignMechanics(): void {
 	clearPatrolAreas(mechanics);
 
 	const rides = map.rides;
+	const tasks: { member: Staff; patrolTiles: CoordsXY[]; teleportTarget: { x: number; y: number; z: number } | null }[] = [];
 	let mechanicIndex = 0;
 	for (let i = 0; i < rides.length && mechanicIndex < mechanics.length; i++) {
 		if (rides[i].classification !== "ride") {
@@ -804,13 +852,13 @@ function assignMechanics(): void {
 			if (frontTileX !== null && frontTileY !== null) {
 				patrolTiles.push(tileToWorldXY(frontTileX, frontTileY));
 			}
-			member.patrolArea.add(patrolTiles);
 
 			// Only teleport idle mechanics. A busy mechanic (one not standing
 			// on a footpath - see canTeleportMechanic, the best available proxy
 			// for "currently servicing a ride") keeps its correct new patrol
 			// area from above but is not physically dragged off mid-repair; it
 			// will walk to its assigned area once it finishes its current job.
+			let teleportTarget: { x: number; y: number; z: number } | null = null;
 			if (canTeleportMechanic(member)) {
 				// Prefer standing on the front tile, but only if a peep can
 				// actually be placed there (it may carry a bench/lamp/bin);
@@ -833,14 +881,27 @@ function assignMechanics(): void {
 					}
 				}
 				if (teleportTileX !== null && teleportTileY !== null) {
-					const z = teleportFootpath ? teleportFootpath.baseZ : exit.z;
-					teleportStaffToTile(member, teleportTileX, teleportTileY, z);
+					teleportTarget = {
+						x: teleportTileX * 32 + 16,
+						y: teleportTileY * 32 + 16,
+						z: teleportFootpath ? teleportFootpath.baseZ : exit.z
+					};
 				}
 			}
-
+			tasks.push({ member: member, patrolTiles: patrolTiles, teleportTarget: teleportTarget });
 			mechanicIndex++;
 		}
 	}
+	applyInBatches(tasks, function (task) {
+		task.member.patrolArea.add(task.patrolTiles);
+		if (task.teleportTarget) {
+			const id = task.member.id;
+			if (id !== null) {
+				teleportQueue.push({ id: id, x: task.teleportTarget.x, y: task.teleportTarget.y, z: task.teleportTarget.z });
+				processTeleportQueue();
+			}
+		}
+	}, onComplete);
 }
 
 // Builds the ordered tile list entertainers patrol: path tiles, plus queue
@@ -895,18 +956,60 @@ function reassignHandymenOrders(): void {
 // the start of each new area. Only deals with already-hired staff; use
 // "Adjust staff count" first to hire/fire staff to match the Needed counts.
 export function assignStaff(): void {
-	if (handymenEnabledStore.get()) {
-		reassignHandymenOrders();
-		assignConsecutiveAreas(getHandymenByPurpose("cleanup"), lastAllPathTiles);
-		assignGardeningAreas(getHandymenByPurpose("gardening"));
+	function next(): void {
+		stepIndex++;
+		if (stepIndex < steps.length) {
+			steps[stepIndex]();
+		}
 	}
-	if (guardsEnabledStore.get()) {
-		assignConsecutiveAreas(getStaffByType("security"), lastAllPathTiles.filter(function (t) { return !t.isQueue; }));
-	}
-	if (entertainersEnabledStore.get()) {
-		assignEntertainerAreas(getStaffByType("entertainer"), getEntertainerTiles(entertainersIncludeQueueStore.get()), entertainersPerAreaStore.get());
-	}
-	if (mechanicsEnabledStore.get()) {
-		assignMechanics();
-	}
+
+	const steps: (() => void)[] = [
+		function () {
+			if (!handymenEnabledStore.get()) {
+				next();
+				return;
+			}
+			reassignHandymenOrders();
+			let remaining = 2;
+			const done: () => void = function () {
+				remaining--;
+				if (remaining <= 0) {
+					next();
+				}
+			};
+			setStatus(t("status.assigningHandymen"));
+			assignConsecutiveAreas(getHandymenByPurpose("cleanup"), lastAllPathTiles, done);
+			assignGardeningAreas(getHandymenByPurpose("gardening"), done);
+		},
+		function () {
+			if (guardsEnabledStore.get()) {
+				setStatus(t("status.assigningGuards"));
+				assignConsecutiveAreas(getStaffByType("security"), lastAllPathTiles.filter(function (t) { return !t.isQueue; }), next);
+			} else {
+				next();
+			}
+		},
+		function () {
+			if (entertainersEnabledStore.get()) {
+				setStatus(t("status.assigningEntertainers"));
+				assignEntertainerAreas(getStaffByType("entertainer"), getEntertainerTiles(entertainersIncludeQueueStore.get()), entertainersPerAreaStore.get(), next);
+			} else {
+				next();
+			}
+		},
+		function () {
+			if (mechanicsEnabledStore.get()) {
+				setStatus(t("status.assigningMechanics"));
+				assignMechanics(next);
+			} else {
+				next();
+			}
+		},
+		function () {
+			setStatus("");
+		}
+	];
+
+	let stepIndex = 0;
+	steps[0]();
 }
