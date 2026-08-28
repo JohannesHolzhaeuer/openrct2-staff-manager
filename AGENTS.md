@@ -37,16 +37,20 @@ checkbox) instead of the generic density spinner used by handymen/guards.
   vendor a local copy.
 - `tsconfig.json` — compiles `src/**/*.ts` to `dist/staff-manager.js` (ES2023, no module
   system, strict mode).
-- `eslint.config.js` — dual-config ESLint flat config. Plugin source and unit tests
+- `tsconfig.node.json` — type-checks the Node build-tooling `.ts` files (`deploy.ts`,
+  `eslint.config.ts`) against `@types/node` as part of `npm run typecheck`.
+- `eslint.config.ts` — dual-config ESLint flat config. Plugin source and unit tests
   (`src/**/*.ts`, `test/**/*.ts`) use the **type-aware** presets
   `recommendedTypeChecked` + `strictTypeChecked` + `stylisticTypeChecked`, wired to ESLint's
   `projectService` so rules have type info (tests are added to `allowDefaultProject` since
-  `tsconfig.json` only includes `src/`). Plain-JS build tooling (`deploy.js`,
-  `eslint.config.js`, `*.cjs`, `*.mjs`) is linted with ESLint core (`@eslint/js`) plus
-  `@stylistic/eslint-plugin`, with Node globals from the `globals` package and a strict/core
-  rule set — do not apply the TS presets there.
-- `deploy.js` — copies `dist/staff-manager.js` into the local OpenRCT2 `plugin` folder (OS-specific
-  default path, overridable via `OPENRCT2_PLUGIN_DIR` env var) so it can be hot-reloaded in-game.
+  `tsconfig.json` only includes `src/`). Build-tooling `.ts` files (`deploy.ts`,
+  `eslint.config.ts`, `*.cjs`, `*.mjs`) are linted with the `@typescript-eslint/parser`
+  plus ESLint core (`@eslint/js`) and `@stylistic/eslint-plugin`, with Node globals from the
+  `globals` package and a strict/core rule set — do not apply the TS type-aware presets there.
+  ESLint loads this TS config via `jiti` (ESLint 10 natively supports `.ts` configs).
+- `deploy.ts` — copies `dist/staff-manager.js` into the local OpenRCT2 `plugin` folder
+  (OS-specific default path, overridable via `OPENRCT2_PLUGIN_DIR` env var) so it can be
+  hot-reloaded in-game. Run with `node` (project is `"type": "module"`).
 - `openrct2-staff-manager.slnx` / `openrct2-staff-manager.esproj` — Visual Studio JavaScript/TypeScript
   project so the plugin can be opened and built from Visual Studio. `BaseIntermediateOutputPath` is set to
   `.tmp\obj\` so VS build artefacts don't pollute the repo root.
@@ -63,7 +67,7 @@ npm install        # first time only
 npm run build      # lint + test + tsc typecheck + esbuild bundle + deploy to local OpenRCT2 plugin folder
 npm run watch       # esbuild --watch, for iterative development (does not auto-deploy)
 npm test           # run the unit tests alone (vitest run)
-npm run typecheck  # run the TypeScript compiler alone (tsc --noEmit)
+npm run typecheck  # run the TypeScript compiler alone (src + tsconfig.node.json)
 npm run lint       # run the linter alone (eslint .)
 ```
 

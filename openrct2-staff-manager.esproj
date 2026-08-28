@@ -15,8 +15,9 @@
     <Content Include="src\staff.ts" />
     <Content Include="src\store.ts" />
     <Content Include="src\config.ts" />
-    <Content Include="deploy.js" />
+    <Content Include="deploy.ts" />
     <Content Include="tsconfig.json" />
+    <Content Include="tsconfig.node.json" />
     <Content Include="package.json" />
     <Content Include="README.md" />
   </ItemGroup>

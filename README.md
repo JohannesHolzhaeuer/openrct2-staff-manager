@@ -79,8 +79,10 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 
 ### Prerequisites
 
-- **[Node.js](https://nodejs.org/) 18+ (LTS recommended) with npm** — required to install
-  dependencies and run the TypeScript compiler. Verify with:
+- **[Node.js](https://nodejs.org/) 24+ with npm** — required to install
+  dependencies, run the TypeScript compiler, and run the `.ts` build tooling
+  (`deploy.ts`, `eslint.config.ts`) through Node's native TypeScript support.
+  Verify with:
   ```powershell
   node -v
   npm -v
@@ -95,7 +97,7 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 2. Build: `npm run build`.
    - Lints, runs the unit tests, type-checks, and compiles `src/` (entry
      `src/main.ts`) to `dist/staff-manager.js`, then automatically copies
-     (`deploy.js`) that file straight into your local OpenRCT2 **plugin**
+     (`deploy.ts`) that file straight into your local OpenRCT2 **plugin**
      folder:
      - **Windows:** `Documents\OpenRCT2\plugin\`
      - **macOS:** `~/Library/Application Support/OpenRCT2/plugin/`
@@ -111,8 +113,9 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 - **Type-safe linting.** `npm run build` starts with `npm run lint` (`eslint .`).
   Plugin source and tests are checked with the type-aware
   `recommendedTypeChecked`/`strictTypeChecked`/`stylisticTypeChecked` presets,
-  and the plain-JS build tooling (`deploy.js`, `eslint.config.js`) with ESLint
-  core plus `@stylistic/eslint-plugin`. Run `npm run lint` on its own any time.
+  and the TypeScript build tooling (`deploy.ts`, `eslint.config.ts`) with
+  ESLint core plus `@stylistic/eslint-plugin`. Run `npm run lint` on its own
+  any time.
 
 ### Tests
 
