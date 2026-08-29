@@ -12,6 +12,10 @@ export const enGB: Translations = {
 
 	"applyMessage.tooltip": "Reserved for status messages after Adjust staff count/Assign.",
 
+	"auto.on": "Automatic assignment is ON",
+	"auto.off": "Automatic assignment is OFF",
+	"auto.tooltip": "Automatically re-scan the park and adjust/assign staff whenever a path, ride, exit or park entrance changes.",
+
 	"status.assigningHandymen": "Assigning handymen...",
 	"status.assigningGuards": "Assigning guards...",
 	"status.assigningEntertainers": "Assigning entertainers...",

@@ -12,6 +12,10 @@ export const deDE: Translations = {
 
 	"applyMessage.tooltip": "Reserviert für Statusmeldungen nach Personalanzahl anpassen/Zuweisen.",
 
+	"auto.on": "Automatische Zuweisung ist AN",
+	"auto.off": "Automatische Zuweisung ist AUS",
+	"auto.tooltip": "Den Park automatisch neu scannen und Personal anpassen/zuweisen, sobald sich Wege, Fahrgeschäfte, Ausgänge oder der Parkeingang ändern.",
+
 	"status.assigningHandymen": "Hausmeister werden zugewiesen...",
 	"status.assigningGuards": "Wachleute werden zugewiesen...",
 	"status.assigningEntertainers": "Entertainer werden zugewiesen...",

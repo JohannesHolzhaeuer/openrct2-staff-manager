@@ -12,7 +12,8 @@ import {
 	DEFAULT_HANDYMEN_ENABLED,
 	DEFAULT_GUARDS_ENABLED,
 	DEFAULT_ENTERTAINERS_ENABLED,
-	DEFAULT_MECHANICS_ENABLED
+	DEFAULT_MECHANICS_ENABLED,
+	DEFAULT_AUTO_ENABLED
 } from "./config";
 
 // --- Raw scan-result stores -------------------------------------------------
@@ -73,6 +74,15 @@ export const parkEntranceInfoStore = flexStore<string>("Path tiles: 0, Queue til
 // staff type's processing step runs, so the player can see which step is
 // being done. Empty when idle.
 export const statusTextStore = flexStore<string>("");
+
+// Whether automatic adjust+assign is enabled. Persisted in context.sharedStorage
+// (key "staffManager.autoEnabled") via the auto.ts module, so it survives across
+// game/plugin launches. Loaded at startup from the saved value.
+export const autoEnabledStore = flexStore<boolean>(
+	typeof context !== "undefined"
+		? context.sharedStorage.get("staffManager.autoEnabled.v1", DEFAULT_AUTO_ENABLED)
+		: DEFAULT_AUTO_ENABLED
+);
 
 // Per-staff-type "disabled" stores for the spinners/toggles/labels within
 // each staff group box: disabled whenever the general controls are disabled
