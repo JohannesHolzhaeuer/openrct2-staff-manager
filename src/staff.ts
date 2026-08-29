@@ -512,17 +512,17 @@ function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void
 	step();
 }
 
-// Whether a staff member can actually be placed on the given tile via
-// "peeppickup". A tile can have a walkable footpath element on it and still
-// reject placement because of something else stacked on the same (x, y)
-// column: a ride entrance/exit element (even from an unrelated ride placed
-// on a bridge/tunnel above or below), an embedded ride track element (e.g.
-// mini golf holes, which are technically "footpath" but belong to the
-// ride), a large scenery item, or a footpath "addition" (bench, lamp, bin,
-// queue TV, or decorative items like a swamp plant). All of these produce a
-// "Can't place person here..." error from the game, so they're all treated
-// as unsafe teleport targets, even though they may be perfectly fine as
-// patrol area tiles.
+// Whether a staff member can likely be placed on the given tile via
+// "peeppickup". A tile with a walkable footpath element is accepted unless
+// something genuinely blocks the column: a ride entrance/exit element (even
+// from an unrelated ride placed on a bridge/tunnel above or below), an
+// embedded ride track element (e.g. mini golf holes, which are technically
+// "footpath" but belong to the ride), or a large scenery item. Footpath
+// additions (bench, lamp, bin, queue TV, swamp plant) are NOT treated as
+// blockers here - staff walk over them in-game, and excluding them made the
+// teleport search bounce staff to the nearest unadorned path park-wide
+// (clustering them on one far tile). If a place on a genuinely-blocked tile
+// still fails, the async queue simply leaves the staff where they are.
 function isPeepPlaceableTile(x: number, y: number): boolean {
 	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
 		return false;
@@ -538,9 +538,6 @@ function isPeepPlaceableTile(x: number, y: number): boolean {
 		}
 	}
 	if (!footpath) {
-		return false;
-	}
-	if (footpath.addition !== null) {
 		return false;
 	}
 	return true;
@@ -570,6 +567,32 @@ function findNearestPathTile(x: number, y: number): PathTileInfo | null {
 	return best;
 }
 
+// Finds the walkable footpath tile closest to (x, y) among only the given
+// tiles (typically the chunk/area being assigned to the staff member), that
+// is actually clear enough for a staff member to be placed on. Fall back to
+// the global nearest placeable tile if the area has none.
+function findNearestPathInOrderedTiles(tiles: PathTileInfo[], x: number, y: number): PathTileInfo | null {
+	let best: PathTileInfo | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (const tile of tiles) {
+		if (tile.x < 0 || tile.y < 0 || tile.x >= map.size.x || tile.y >= map.size.y) {
+			continue;
+		}
+		if (!isPeepPlaceableTile(tile.x, tile.y)) {
+			continue;
+		}
+		const distance = Math.abs(tile.x - x) + Math.abs(tile.y - y);
+		if (distance < bestDistance) {
+			bestDistance = distance;
+			best = tile;
+		}
+	}
+	if (best) {
+		return best;
+	}
+	return findNearestPathTile(x, y);
+}
+
 // Assigns one consecutive chunk of the given ordered tile list to each hired
 // staff member (only dealing with already-hired staff, per Assign's remit),
 // and teleports each staff member to the first placeable tile of their new
@@ -587,13 +610,7 @@ function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[], 
 	const chunks = chunkTilesForStaffCount(orderedTiles, members.length);
 	const tasks = chunks.slice(0, members.length).map(function (chunk, i) {
 		const member = members[i];
-		let teleportTarget: PathTileInfo = chunk[0];
-		if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
-			const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
-			if (nearestPathTile) {
-				teleportTarget = nearestPathTile;
-			}
-		}
+		const teleportTarget = findNearestPathInOrderedTiles(chunk, chunk[0].x, chunk[0].y) ?? chunk[0];
 		return { member: member, chunk: chunk, teleportTarget: teleportTarget };
 	});
 	applyInBatches(tasks, function (task) {
@@ -772,13 +789,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		const chunks = chunkTilesForStaffCount(components[c], componentMembers.length);
 		for (let i = 0; i < chunks.length && i < componentMembers.length; i++) {
 			const chunk = chunks[i];
-			let teleportTarget: PathTileInfo = chunk[0];
-			if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
-				const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
-				if (nearestPathTile) {
-					teleportTarget = nearestPathTile;
-				}
-			}
+			const teleportTarget = findNearestPathInOrderedTiles(chunk, chunk[0].x, chunk[0].y) ?? chunk[0];
 			tasks.push({ member: componentMembers[i], chunk: chunk, teleportTarget: teleportTarget });
 		}
 	}
@@ -807,13 +818,7 @@ function assignEntertainerAreas(members: Staff[], orderedTiles: PathTileInfo[], 
 	for (let a = 0; a < chunks.length && memberIndex < members.length; a++) {
 		const chunk = chunks[a];
 		const coords = chunk.map(function (t) { return tileToWorldXY(t.x, t.y); });
-		let teleportTarget: PathTileInfo = chunk[0];
-		if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
-			const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
-			if (nearestPathTile) {
-				teleportTarget = nearestPathTile;
-			}
-		}
+		const teleportTarget = findNearestPathInOrderedTiles(chunk, chunk[0].x, chunk[0].y) ?? chunk[0];
 		for (let p = 0; p < perArea && memberIndex < members.length; p++, memberIndex++) {
 			tasks.push({ member: members[memberIndex], coords: coords, teleportTarget: teleportTarget, anchorTile: chunk[0] });
 		}

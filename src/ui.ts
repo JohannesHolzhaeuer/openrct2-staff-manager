@@ -6,7 +6,7 @@ import {
 } from "openrct2-flexui";
 import { t } from "./i18n";
 import {
-	parkEntranceInfoStore, autoEnabledStore,
+	parkEntranceInfoStore, autoEnabledStore, hasRanAdjustAndAssignStore,
 	handymenTilesPerStaffStore, handymenMowerTilesPerStaffStore,
 	guardsTilesPerStaffStore, entertainersTilesPerStaffStore, entertainersPerAreaStore, entertainersIncludeQueueStore,
 	handymenEnabledStore, guardsEnabledStore, entertainersEnabledStore, mechanicsEnabledStore,
@@ -213,32 +213,6 @@ function staffManagerWindowTemplate(): WindowTemplate {
 			position: { x: Math.round((ui.width - windowWidth) / 2), y: Math.round((ui.height - WINDOW_HEIGHT) / 2) },
 			spacing: 4,
 			content: [
-				horizontal({
-					spacing: 4,
-					width: "100%",
-					height: AUTO_ROW_HEIGHT,
-					content: [
-						graphics({
-							width: 16,
-							height: AUTO_ROW_HEIGHT,
-							onDraw: function (g) {
-								const on = autoEnabledStore.get();
-								g.colour = on ? Colour.BrightGreen : Colour.SaturatedRed;
-								g.box(3, 3, 10, 10);
-							}
-						}),
-						toggle({
-							text: compute(autoEnabledStore, function (on) {
-								return on ? t("auto.on") : t("auto.off");
-							}),
-							width: "1w",
-							height: AUTO_ROW_HEIGHT,
-							isPressed: autoEnabledStore,
-							tooltip: t("auto.tooltip"),
-							onChange: function (pressed) { setAutoEnabled(pressed); }
-						})
-					]
-				}),
 				label({ text: parkEntranceInfoStore, width: "100%", height: 14, tooltip: t("parkEntrance.tooltip") }),
 				horizontal({
 					spacing: 6,
@@ -271,8 +245,35 @@ function staffManagerWindowTemplate(): WindowTemplate {
 					height: APPLY_ROW_HEIGHT,
 					content: [
 					button({
-						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), disabled: adjustButtonDisabledStore, onClick: function () { adjustStaffCounts(assignStaff); }
+						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), disabled: adjustButtonDisabledStore, onClick: function () { hasRanAdjustAndAssignStore.set(true); adjustStaffCounts(assignStaff); }
 					})
+					]
+				}),
+				horizontal({
+					spacing: 4,
+					width: "100%",
+					height: AUTO_ROW_HEIGHT,
+					content: [
+						graphics({
+							width: 16,
+							height: AUTO_ROW_HEIGHT,
+							onDraw: function (g) {
+								const on = autoEnabledStore.get();
+								g.colour = on ? Colour.BrightGreen : Colour.SaturatedRed;
+								g.box(3, 3, 10, 10);
+							}
+						}),
+						toggle({
+							text: compute(autoEnabledStore, function (on) {
+								return on ? t("auto.on") : t("auto.off");
+							}),
+							width: "1w",
+							height: AUTO_ROW_HEIGHT,
+							isPressed: autoEnabledStore,
+							tooltip: t("auto.tooltip"),
+							disabled: compute(hasRanAdjustAndAssignStore, function (hasRun) { return !hasRun; }),
+							onChange: function (pressed) { setAutoEnabled(pressed); }
+						})
 					]
 				})
 			]

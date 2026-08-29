@@ -75,6 +75,11 @@ export const parkEntranceInfoStore = flexStore<string>("Path tiles: 0, Queue til
 // being done. Empty when idle.
 export const statusTextStore = flexStore<string>("");
 
+// Whether the "Adjust and assign" button has been executed at least once.
+// The automatic-management toggle is enabled only until this has run, so the
+// player can't start auto mode before they've done an initial manual pass.
+export const hasRanAdjustAndAssignStore = flexStore<boolean>(false);
+
 // Whether automatic adjust+assign is enabled. Persisted in context.sharedStorage
 // (key "staffManager.autoEnabled") via the auto.ts module, so it survives across
 // game/plugin launches. Loaded at startup from the saved value.
