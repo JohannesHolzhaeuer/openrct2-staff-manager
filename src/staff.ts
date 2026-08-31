@@ -722,6 +722,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 
 	const components = lastGardenAreas.filter(function (area) { return area.length > 0; });
 	if (components.length === 0) {
+		onComplete();
 		return;
 	}
 
