@@ -50,6 +50,21 @@ Entertainers have their own controls instead of the generic density spinner:
 - **Busy mechanics are protected.** A mechanic currently servicing a ride is never
   teleported or interrupted; they keep their patrol area but finish their job first.
 
+### 🤖 Automatic management
+- **Optional auto mode.** A toggle at the bottom of the window keeps staffing
+  right-sized as the park changes, without pressing the buttons. New staff are only
+  hired (or an existing area extended) when appropriate — see
+  [Automatic staffing](#automatic-staffing-1) below.
+- **Hovers don't hire.** A freshly placed path only triggers staff once it's a real
+  (non-ghost) footpath; merely hovering the path tool never hires anyone.
+- **Areas grow to their cap before hiring.** Auto mode tracks each type's assigned
+  areas synchronously, so consecutive connected tiles extend one area up to the
+  configured tiles/staff limit before hiring a new member — no more one hire per
+  tile. Gardening handymen are created only for newly bought land with
+  mowable/waterable grass that isn't already assigned.
+- **Gated until first run.** The auto toggle is only usable after "Adjust and
+  assign" has been run once.
+
 ### 👥 Hire / Fire
 - **Adjust staff count** button hires or fires the right number of **every** type
   at once to match the calculated *Needed* counts — hiring when understaffed,
@@ -148,9 +163,12 @@ typecheck → bundle → deploy), or alone via `npm run test`.
 3. Click **Adjust staff count** to hire/fire the right number of each type based
    on your settings (this is what fills the *Needed* column).
 4. Click **Assign** to build patrol areas and move staff into them.
-5. Tune the per‑type spinners (tiles/staff, entertainer staff/area, handyman
+5. Tune the per-type spinners (tiles/staff, entertainer staff/area, handyman
    gardening density, entertainer Queue checkbox) and repeat steps 3–4 as your park
    changes.
+6. Optionally **enable automatic management** (toggle at the bottom of the window) so
+   the plugin keeps hiring/firing and assigning staff as you connect new paths or buy new
+   land — see [Automatic staffing](#automatic-staffing-1).
 
 ---
 
@@ -168,6 +186,30 @@ typecheck → bundle → deploy), or alone via `npm run test`.
    entertainers. Mechanics get the exit tile plus the adjacent path tile.
 
 If the entrance can't be found, it falls back to seeding from owned path tiles.
+
+---
+
+## Automatic staffing
+
+Auto mode (the toggle at the bottom of the window) reacts to two kinds of map edits:
+
+- **New footpath / queue tiles.** When a real (non-ghost) path is created, a
+  cleanup handyman, guard or entertainer is hired only if **no area of that type
+  already covers the tile**; otherwise the adjacent area is **extended** up to its
+  tiles/staff cap. Hover previews (ghost paths) are ignored.
+- **Newly bought land.** A gardening handyman is created only for newly bought land whose
+  tile is actually mowable/waterable grass **and** is not yet assigned to a gardening
+  handyman; adjacent garden areas are extended up to the mower-tiles/staff cap first.
+
+Auto mode bases these decisions on a **synchronous in-memory record** of each staff
+type's assigned areas (independent of the async staff-hire/patrol-area game actions),
+which is why a burst of connected tiles extends one area rather than hiring one member per
+tile. It's disabled until "Adjust and assign" has been run once.
+
+### Notes & limitations (new)
+
+- **Auto mode never performs full map scans.** It makes incremental, minimal changes only
+  for the tiles you actually place or buy, so it stays cheap during long path drags.
 
 ---
 
@@ -232,8 +274,6 @@ directly in the UI, but their initial defaults live in code:
 
 - **Fix patrol‑area edge cases** — continue shaking out issues in area assignment
   (gardening, mechanics, handymen) and the hire/fire flows.
-- **Automatic staffing** — consider optional automatic hire/fire/reassign so staffing
-  stays right‑sized as the park changes without pressing the buttons.
 
 ---
 
