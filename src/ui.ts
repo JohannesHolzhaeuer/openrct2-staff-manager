@@ -255,12 +255,12 @@ function staffManagerWindowTemplate(): WindowTemplate {
 					height: AUTO_ROW_HEIGHT,
 					content: [
 						graphics({
-							width: 16,
+							width: AUTO_ROW_HEIGHT,
 							height: AUTO_ROW_HEIGHT,
 							onDraw: function (g) {
 								const on = autoEnabledStore.get();
 								g.colour = on ? Colour.BrightGreen : Colour.SaturatedRed;
-								g.box(3, 3, 10, 10);
+								g.box(2, 2, AUTO_ROW_HEIGHT - 4, AUTO_ROW_HEIGHT - 4);
 							}
 						}),
 						toggle({

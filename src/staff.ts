@@ -677,7 +677,7 @@ export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize
 			// Is this area adjacent to the new tile?
 			let adjacent = false;
 			for (const tile of area) {
-				if (worldToTileX(tile.x) === newTile.x + worldToTileX(offset.x / 32) && worldToTileX(tile.y) === newTile.y + worldToTileX(offset.y / 32)) {
+				if (worldToTileX(tile.x) === newTile.x + worldToTileX(offset.x) && worldToTileX(tile.y) === newTile.y + worldToTileX(offset.y)) {
 					adjacent = true;
 					break;
 				}
@@ -690,7 +690,6 @@ export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize
 			}
 		}
 	}
-	// 3. No adjacent area at all -> hire.
 	return { action: "hire" };
 }
 
@@ -1254,39 +1253,140 @@ export function assignStaff(): void {
 	});
 }
 
-// --- Incremental automatic helpers (single-tile) -------------------------------
-// These are used by automatic mode to make the minimal change for one freshly
-// placed/bought tile, instead of re-scanning and re-assigning the whole map.
-
-// Adds a single tile (tile coords) to the given staff member's patrol area.
-function addTileToArea(member: Staff, tx: number, ty: number): void {
-	member.patrolArea.add([{ x: tx * 32, y: ty * 32 }]);
+// --- Incremental automatic helpers (single-tile) ---------------------------------
+//
+// Automatic mode must make decisions *synchronously* so that a burst of connected
+// tile placements is handled correctly. If we based the decision on the live staff
+// roster / patrol areas (which only update asynchronously, after the `staffhire`
+// and `patrolArea.add` game actions complete), a freshly hired member would not
+// yet show its (single, empty-looking) patrol area when the next connected tile is
+// decided, so every tile would fall through to "hire" — one staff member per tile
+// and no area ever getting extended to its max. Instead we keep our own in-memory
+// record of each staff type's auto-mode areas, seeded from the roster at the first
+// tile of a batch and updated synchronously as tiles are added. Decisions run
+// against these synchronous areas, and hires are queued one at a time; each newly
+// hired member gets the tiles accumulated for it assigned patched onto its real
+// patrol area once the hire completes.
+interface AutoArea {
+	member: Staff | null;
+	// Tile keys (see tileKey) of tiles assigned to this area, world-coordinate
+	// lists of the patrol area tile targets for TeleportStoredTile are kept in
+	// tileKeys for coverage/adjacency checks.
+	tileKeys: Set<string>;
+	// World coordinates of every tile in this area (for patrolArea.add).
+	coords: CoordsXY[];
 }
 
-// Enlarge the area of `members[areaIndex]` to include the new tile. No
-// teleport happens here - the staff already roam their (now slightly larger) area.
-function enlargeArea(members: Staff[], areaIndex: number, tx: number, ty: number): void {
-	addTileToArea(members[areaIndex], tx, ty);
+interface AutoGroup {
+	staffType: StaffType;
+	staffTypeId: number;
+	orders: number;
+	getMaxSize: () => number;
+	purpose: string;
 }
 
-// Hires a new staff member of the given type (via the async hire action), then
-// assigns the new tile to that member so they patrol it immediately.
-function hireAndAssignTile(staffType: StaffType, staffTypeId: number, orders: number, tx: number, ty: number): void {
-	hireStaff(staffTypeId, orders, 1, function () {
-		const members = getStaffByType(staffType);
-		if (members.length > 0) {
-			// Pick the newly hired member (the last in the roster in creation order).
-			const member = members[members.length - 1];
-			// For gardening handymen, the member list includes cleanup+gardening; set
-			// the purpose before assigning so the tile is patrolled as a garden area.
-			if (staffType === "handyman" && orders === HANDYMAN_ORDERS_GARDENING && (member as Handyman).orders !== orders) {
-				(member as Handyman).orders = orders;
+const AUTO_GROUP_CLEANUP: AutoGroup = {
+	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_CLEANUP,
+	getMaxSize: () => handymenTilesPerStaffStore.get(), purpose: "cleanup"
+};
+const AUTO_GROUP_GARDENING: AutoGroup = {
+	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_GARDENING,
+	getMaxSize: () => handymenMowerTilesPerStaffStore.get(), purpose: "gardening"
+};
+const AUTO_GROUP_GUARD: AutoGroup = {
+	staffType: "security", staffTypeId: STAFF_TYPE_ID_SECURITY, orders: 0,
+	getMaxSize: () => guardsTilesPerStaffStore.get(), purpose: "guard"
+};
+const AUTO_GROUP_ENTERTAINER: AutoGroup = {
+	staffType: "entertainer", staffTypeId: STAFF_TYPE_ID_ENTERTAINER, orders: 0,
+	getMaxSize: () => entertainersTilesPerStaffStore.get(), purpose: "entertainer"
+};
+
+// Synchronous per-purpose area records (see the block comment above the interface).
+const autoAreasByPurpose = new Map<string, AutoArea[]>();
+// Tracks which purpose currently has an outstanding (async) hire so hires within a burst
+// are serialized one at a time instead of one per tile.
+const autoHireForPurpose = new Map<string, boolean>();
+
+function autoAreas(group: AutoGroup): AutoArea[] {
+	let list = autoAreasByPurpose.get(group.purpose);
+	if (!list) {
+		list = [];
+		for (const m of getStaffByType(group.staffType)) {
+			const coords = m.patrolArea.tiles.slice();
+			const keys = new Set<string>();
+			for (const t of coords) {
+				keys.add(tileKey(worldToTileX(t.x), worldToTileX(t.y)));
 			}
-			addTileToArea(member, tx, ty);
+			list.push({ member: m, tileKeys: keys, coords: coords });
+		}
+		autoAreasByPurpose.set(group.purpose, list);
+	}
+	return list;
+}
+
+function autoAddTileToArea(group: AutoGroup, areaIndex: number, tx: number, ty: number): void {
+	const area = autoAreas(group)[areaIndex];
+	if (area.tileKeys.has(tileKey(tx, ty))) {
+		return;
+	}
+	area.tileKeys.add(tileKey(tx, ty));
+	area.coords.push({ x: tx * 32, y: ty * 32 });
+}
+
+function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
+	const areas = autoAreas(group);
+	const list = autoAreasAsCoords(group);
+	const decision = decideAreaAction(list, { x: tx, y: ty }, group.getMaxSize());
+	if (decision.action === "covered") {
+		return false;
+	}
+	if (decision.action === "enlarge") {
+		autoAddTileToArea(group, decision.areaIndex, tx, ty);
+		applyAutoAreasToLive(group);
+		return false;
+	}
+	areas.push({ member: null, tileKeys: new Set([tileKey(tx, ty)]), coords: [{ x: tx * 32, y: ty * 32 }] });
+	queueAutoHire(group, tx, ty);
+	return true;
+}
+
+function autoAreasAsCoords(group: AutoGroup): CoordsXY[][] {
+	return autoAreas(group).map(function (a) { return a.coords; });
+}
+
+function applyAutoAreasToLive(group: AutoGroup): void {
+	for (const area of autoAreas(group)) {
+		if (area.member) {
+			area.member.patrolArea.add(area.coords);
+		}
+	}
+}
+
+function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
+	if (autoHireForPurpose.get(group.purpose)) {
+		return;
+	}
+	autoHireForPurpose.set(group.purpose, true);
+	hireStaff(group.staffTypeId, group.orders, 1, function () {
+		autoHireForPurpose.set(group.purpose, false);
+		const member = getLastStaffOfType(group.staffType);
+		if (member) {
+			const area = autoAreas(group)[autoAreas(group).length - 1];
+			if (group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING && (member as Handyman).orders !== HANDYMAN_ORDERS_GARDENING) {
+				(member as Handyman).orders = HANDYMAN_ORDERS_GARDENING;
+			}
+			area.member = member;
+			member.patrolArea.add(area.coords);
 			teleportStaffToTile(member, tx, ty, footpathBaseZAt(tx, ty));
 		}
 		refreshHiredAndAssignedStaffCounts();
 	});
+}
+
+function getLastStaffOfType(staffType: StaffType): Staff | null {
+	const members = getStaffByType(staffType);
+	return members.length > 0 ? members[members.length - 1] : null;
 }
 
 // The baseZ of the footpath on a tile, if any (used as a teleport height).
@@ -1315,27 +1415,24 @@ function getFootpathBaseZFromTile(tile: Tile): number[] {
 // handymen (cleanup) and entertainers (if the Queue toggle is on).
 function handlePathTileForType(
 	staffType: StaffType,
-	staffTypeId: number,
 	orders: number,
 	tx: number,
-	ty: number,
-	maxSize: number
+	ty: number
 ): void {
-	const areas = getStaffAreas(staffType);
-	const decision = decideAreaAction(areas, { x: tx, y: ty }, maxSize);
-	const action = decision.action;
-
-	if (action === "covered") {
-		return;
-	}
-
-	const members = getStaffByType(staffType);
-	if (action === "enlarge") {
-		enlargeArea(members, decision.areaIndex, tx, ty);
-	} else {
-		hireAndAssignTile(staffType, staffTypeId, orders, tx, ty);
-	}
+	const group = groupForPathTile(staffType, orders);
+	handleTileForGroup(group, tx, ty);
 	refreshHiredAndAssignedStaffCounts();
+}
+
+// Maps a staff type + orders to its persistent auto-mode group.
+function groupForPathTile(staffType: StaffType, orders: number): AutoGroup {
+	if (staffType === "handyman") {
+		return orders === HANDYMAN_ORDERS_GARDENING ? AUTO_GROUP_GARDENING : AUTO_GROUP_CLEANUP;
+	}
+	if (staffType === "security") {
+		return AUTO_GROUP_GUARD;
+	}
+	return AUTO_GROUP_ENTERTAINER;
 }
 
 // Handles a freshly placed path/queue tile for all relevant staff types.
@@ -1347,23 +1444,23 @@ export function handlePlacedPathTile(tx: number, ty: number, isQueue: boolean): 
 		// Queue tiles: only handymen (cleanup) and entertainers (if the Queue
 		// toggle is on).
 		if (handymenEnabledStore.get()) {
-			handlePathTileForType("handyman", STAFF_TYPE_ID_HANDYMAN, HANDYMAN_ORDERS_CLEANUP, tx, ty, handymenTilesPerStaffStore.get());
+			handlePathTileForType("handyman", HANDYMAN_ORDERS_CLEANUP, tx, ty);
 		}
 		if (entertainersEnabledStore.get() && entertainersIncludeQueueStore.get()) {
-			handlePathTileForType("entertainer", STAFF_TYPE_ID_ENTERTAINER, 0, tx, ty, entertainersTilesPerStaffStore.get());
+			handlePathTileForType("entertainer", 0, tx, ty);
 		}
 		return;
 	}
 
 	// Plain path tiles: cleanup handymen, guards and entertainers.
 	if (handymenEnabledStore.get()) {
-		handlePathTileForType("handyman", STAFF_TYPE_ID_HANDYMAN, HANDYMAN_ORDERS_CLEANUP, tx, ty, handymenTilesPerStaffStore.get());
+		handlePathTileForType("handyman", HANDYMAN_ORDERS_CLEANUP, tx, ty);
 	}
 	if (guardsEnabledStore.get()) {
-		handlePathTileForType("security", STAFF_TYPE_ID_SECURITY, 0, tx, ty, guardsTilesPerStaffStore.get());
+		handlePathTileForType("security", 0, tx, ty);
 	}
 	if (entertainersEnabledStore.get()) {
-		handlePathTileForType("entertainer", STAFF_TYPE_ID_ENTERTAINER, 0, tx, ty, entertainersTilesPerStaffStore.get());
+		handlePathTileForType("entertainer", 0, tx, ty);
 	}
 }
 
@@ -1376,18 +1473,7 @@ export function handleBoughtLandTile(tx: number, ty: number): void {
 	if (!isGardenTile(tx, ty)) {
 		return;
 	}
-	const maxSizeToUse = handymenMowerTilesPerStaffStore.get();
-	const gardeningMembers = getHandymenByPurpose("gardening");
-	const areas = gardeningMembers.map(function (m) { return m.patrolArea.tiles.slice(); });
-	const decision = decideAreaAction(areas, { x: tx, y: ty }, maxSizeToUse);
-	if (decision.action === "covered") {
-		return;
-	}
-	if (decision.action === "enlarge") {
-		enlargeArea(gardeningMembers, decision.areaIndex, tx, ty);
-	} else {
-		hireAndAssignTile("handyman", STAFF_TYPE_ID_HANDYMAN, HANDYMAN_ORDERS_GARDENING, tx, ty);
-	}
+	handleTileForGroup(AUTO_GROUP_GARDENING, tx, ty);
 	refreshHiredAndAssignedStaffCounts();
 }
 

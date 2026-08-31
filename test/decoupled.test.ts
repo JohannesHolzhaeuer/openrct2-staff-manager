@@ -185,4 +185,14 @@ describe("decideAreaAction", () => {
 		const areas = [areaTiles([5, 5]), areaTiles([0, 0])];
 		expect(decideAreaAction(areas, { x: 0, y: 0 }, 8)).toEqual({ action: "covered" });
 	});
+	it("enlarges an area that lies to the +x side of the new tile", () => {
+		// area at (1,0); new tile (0,0) is only adjacent through the +x offset,
+		// which the fixed code must detect (previously it hired for this case).
+		const areas = [areaTiles([1, 0])];
+		expect(decideAreaAction(areas, { x: 0, y: 0 }, 8)).toEqual({ action: "enlarge", areaIndex: 0 });
+	});
+	it("enlarges an area that lies to the +y side of the new tile", () => {
+		const areas = [areaTiles([0, 2])];
+		expect(decideAreaAction(areas, { x: 0, y: 1 }, 8)).toEqual({ action: "enlarge", areaIndex: 0 });
+	});
 });

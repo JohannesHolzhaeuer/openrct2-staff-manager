@@ -1,6 +1,6 @@
 /// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { autoEnabledStore } from "./store";
-import { isPlainPathTile, isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
+import { isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
 import { handlePlacedPathTile, handleBoughtLandTile } from "./staff";
 
 // The storage key backing the persisted auto flag. Versioned so an earlier
@@ -78,7 +78,7 @@ function collectFromAction(e: GameActionEventArgs): void {
 		// Removing a path can't change need upward (staff aren't going to need more of
 		// a removed tile), so only handle placements.
 		if (action === "footpathplace") {
-			queueTile(tile.x, tile.y, classifyPathTile(tile.x, tile.y));
+			queueTileIfPlacedPath(tile.x, tile.y);
 		}
 		return;
 	}
@@ -90,7 +90,7 @@ function collectFromAction(e: GameActionEventArgs): void {
 		// adjacent tiles; process the centre plus its cardinal neighbours that got a
 		// footpath. To keep it simple and still robust, queue the touched tiles that
 		// actually now have a path.
-		queueTile(centre.x, centre.y, classifyPathTile(centre.x, centre.y));
+		queueTileIfPlacedPath(centre.x, centre.y);
 		return;
 	}
 
@@ -127,14 +127,17 @@ function collectFromAction(e: GameActionEventArgs): void {
 	}
 }
 
-function classifyPathTile(x: number, y: number): "path" | "queue" | "land" {
+// Queues a freshly placed path/queue tile, but only if it now actually holds a
+// real (non-ghost) footpath. Hovering the path tool fires repeated
+// footpathplace actions that add then remove a ghost preview path; without the
+// non-ghost check, every hover tile would be queued and then classified as
+// "land", hiring a staff member (or reassigning one) for a tile no path was
+// ever built on.
+function queueTileIfPlacedPath(x: number, y: number): void {
 	if (!hasNonGhostFootpathElements(x, y)) {
-		return "land";
+		return;
 	}
-	return isQueueTile(x, y) ? "queue" : (isPlainPathTile(x, y) ? "path" : "land");
-}
-
-function queueTile(x: number, y: number, kind: "path" | "queue" | "land"): void {
+	const kind = isQueueTile(x, y) ? "queue" : "path";
 	pendingTiles.push({ x: x, y: y, kind: kind });
 	schedule();
 }
