@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { computeNeeded } from "../src/store";
-import { tileKey, isValidStationExit } from "../src/scan";
+import { tileKey, isValidStationExit, footpathIsElevated, ELEVATED_FOOTPATH_LEVELS } from "../src/scan";
 import { classifyHandyman, HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING, STAFF_TYPE_ID_ENTERTAINER } from "../src/staff";
 
 // Stub the OpenRCT2 global `map` object so functions that read map.size work.
@@ -31,6 +31,20 @@ describe("tileKey", () => {
 	it("formats coordinates as x,y", () => {
 		expect(tileKey(3, 7)).toBe("3,7");
 		expect(tileKey(-1, 0)).toBe("-1,0");
+	});
+});
+
+describe("footpathIsElevated", () => {
+	it("returns false for a footpath at ground level", () => {
+		expect(footpathIsElevated(0, 0)).toBe(false);
+	});
+	it("returns false for a footpath just above the ground", () => {
+		// one height level (16 Z) above still counts as ground-level path.
+		expect(footpathIsElevated(100 + 16 - 1, 100)).toBe(false);
+	});
+	it("returns true when the footpath clears ELEVATED_FOOTPATH_LEVELS height levels (bridge)", () => {
+		expect(footpathIsElevated(100 + ELEVATED_FOOTPATH_LEVELS * 16, 100)).toBe(true);
+		expect(footpathIsElevated(200, 100)).toBe(true);
 	});
 });
 

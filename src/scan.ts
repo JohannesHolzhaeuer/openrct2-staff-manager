@@ -282,6 +282,32 @@ function isParkOwnedTile(x: number, y: number): boolean {
 	return surface.hasOwnership;
 }
 
+// How many height levels (~16 Z units each) a footpath must clear the ground surface
+// below it to be considered a bridge/overpass rather than a ground-level path.
+export const ELEVATED_FOOTPATH_LEVELS = 2;
+
+// The pure version of the elevated-footpath check: a footpath is considered a bridge
+// or overpass when its baseZ is at least ELEVATED_FOOTPATH_LEVELS height levels
+// (~32 Z units) above the given ground surface baseZ. Extracted from the map-reading
+// isElevatedFootpath so it can be unit-tested without OpenRCT2 access.
+export function footpathIsElevated(footpathBaseZ: number, surfaceBaseZ: number): boolean {
+	return footpathBaseZ >= surfaceBaseZ + ELEVATED_FOOTPATH_LEVELS * 16;
+}
+
+// Whether a footpath is elevated well above the surface below it (a bridge or
+// overpass). In OpenRCT2 the surface's baseZ is the ground level, and a path a
+// couple of height levels or more above it crosses over land beneath — often land the
+// park doesn't own. Such an elevated path is still a real park path staff can patrol,
+// unlike a ground-level public road on unowned land, which the scan only walks *through*
+// without including.
+function isElevatedFootpath(x: number, y: number, footpath: { baseZ: number }): boolean {
+	const surface = findSurfaceElement(map.getTile(x, y));
+	if (!surface) {
+		return false;
+	}
+	return footpathIsElevated(footpath.baseZ, surface.baseZ);
+}
+
 // Starting from the park entrance, walks the connected footpath network in all
 // directions (depth-first, so consecutive tiles in the resulting list stay
 // physically close together) and separately collects plain path tiles and
@@ -343,7 +369,6 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 		// built from them to leave a gap in the middle. Unowned non-path
 		// tiles (e.g. surrounding land/water) are still dead ends, so the
 		// walk doesn't spread across the whole map.
-		const isOwned = isParkOwnedTile(current.x, current.y);
 		const footpaths = findFootpathElements(current.x, current.y);
 
 		for (const footpath of footpaths) {
@@ -360,8 +385,9 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 			visited.add(nodeKey);
 
 			const key = tileKey(current.x, current.y);
+			const ownedOrElevated = isParkOwnedTile(current.x, current.y) || isElevatedFootpath(current.x, current.y, footpath);
 			let info = tilesByKey.get(key);
-			if (isOwned && !info) {
+			if (ownedOrElevated && !info) {
 				info = {
 					x: current.x,
 					y: current.y,
