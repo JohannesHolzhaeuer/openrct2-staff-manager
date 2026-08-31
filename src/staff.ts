@@ -4,13 +4,14 @@ import {
 	guardsNeededStore, entertainersNeededStore, mechanicsNeededStore,
 	handymenEnabledStore, guardsEnabledStore, entertainersEnabledStore, mechanicsEnabledStore,
 	entertainersIncludeQueueStore, entertainersPerAreaStore,
+	handymenTilesPerStaffStore, guardsTilesPerStaffStore, entertainersTilesPerStaffStore,
 	handymenHiredStore, handymenAssignedStore, guardsHiredStore, guardsAssignedStore,
 	entertainersHiredStore, entertainersAssignedStore, mechanicsHiredStore, mechanicsAssignedStore,
 	computeNeeded, statusTextStore
 } from "./store";
 import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
-	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo
+	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo, isGardenTile
 } from "./scan";
 import { t } from "./i18n";
 
@@ -340,7 +341,7 @@ function teleportStaffToTile(member: Staff, x: number, y: number, z: number): vo
 // disconnected pockets (e.g. separate garden areas), a chunk's growth simply
 // stops once its local pocket is exhausted, which can result in more chunks
 // than staffCount; callers should merge/ignore any surplus as appropriate.
-function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): PathTileInfo[][] {
+export function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): PathTileInfo[][] {
 	if (staffCount <= 0 || tiles.length === 0) {
 		return [];
 	}
@@ -511,17 +512,17 @@ function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void
 	step();
 }
 
-// Whether a staff member can actually be placed on the given tile via
-// "peeppickup". A tile can have a walkable footpath element on it and still
-// reject placement because of something else stacked on the same (x, y)
-// column: a ride entrance/exit element (even from an unrelated ride placed
-// on a bridge/tunnel above or below), an embedded ride track element (e.g.
-// mini golf holes, which are technically "footpath" but belong to the
-// ride), a large scenery item, or a footpath "addition" (bench, lamp, bin,
-// queue TV, or decorative items like a swamp plant). All of these produce a
-// "Can't place person here..." error from the game, so they're all treated
-// as unsafe teleport targets, even though they may be perfectly fine as
-// patrol area tiles.
+// Whether a staff member can likely be placed on the given tile via
+// "peeppickup". A tile with a walkable footpath element is accepted unless
+// something genuinely blocks the column: a ride entrance/exit element (even
+// from an unrelated ride placed on a bridge/tunnel above or below), an
+// embedded ride track element (e.g. mini golf holes, which are technically
+// "footpath" but belong to the ride), or a large scenery item. Footpath
+// additions (bench, lamp, bin, queue TV, swamp plant) are NOT treated as
+// blockers here - staff walk over them in-game, and excluding them made the
+// teleport search bounce staff to the nearest unadorned path park-wide
+// (clustering them on one far tile). If a place on a genuinely-blocked tile
+// still fails, the async queue simply leaves the staff where they are.
 function isPeepPlaceableTile(x: number, y: number): boolean {
 	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
 		return false;
@@ -537,9 +538,6 @@ function isPeepPlaceableTile(x: number, y: number): boolean {
 		}
 	}
 	if (!footpath) {
-		return false;
-	}
-	if (footpath.addition !== null) {
 		return false;
 	}
 	return true;
@@ -569,6 +567,32 @@ function findNearestPathTile(x: number, y: number): PathTileInfo | null {
 	return best;
 }
 
+// Finds the walkable footpath tile closest to (x, y) among only the given
+// tiles (typically the chunk/area being assigned to the staff member), that
+// is actually clear enough for a staff member to be placed on. Fall back to
+// the global nearest placeable tile if the area has none.
+function findNearestPathInOrderedTiles(tiles: PathTileInfo[], x: number, y: number): PathTileInfo | null {
+	let best: PathTileInfo | null = null;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (const tile of tiles) {
+		if (tile.x < 0 || tile.y < 0 || tile.x >= map.size.x || tile.y >= map.size.y) {
+			continue;
+		}
+		if (!isPeepPlaceableTile(tile.x, tile.y)) {
+			continue;
+		}
+		const distance = Math.abs(tile.x - x) + Math.abs(tile.y - y);
+		if (distance < bestDistance) {
+			bestDistance = distance;
+			best = tile;
+		}
+	}
+	if (best) {
+		return best;
+	}
+	return findNearestPathTile(x, y);
+}
+
 // Assigns one consecutive chunk of the given ordered tile list to each hired
 // staff member (only dealing with already-hired staff, per Assign's remit),
 // and teleports each staff member to the first placeable tile of their new
@@ -586,19 +610,93 @@ function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[], 
 	const chunks = chunkTilesForStaffCount(orderedTiles, members.length);
 	const tasks = chunks.slice(0, members.length).map(function (chunk, i) {
 		const member = members[i];
-		let teleportTarget: PathTileInfo = chunk[0];
-		if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
-			const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
-			if (nearestPathTile) {
-				teleportTarget = nearestPathTile;
-			}
-		}
+		const teleportTarget = findNearestPathInOrderedTiles(chunk, chunk[0].x, chunk[0].y) ?? chunk[0];
 		return { member: member, chunk: chunk, teleportTarget: teleportTarget };
 	});
 	applyInBatches(tasks, function (task) {
-		task.member.patrolArea.add(task.chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
+		const area = task.chunk.map(function (t) { return tileToWorldXY(t.x, t.y); });
+		task.member.patrolArea.add(area);
+		// If the staff member is already standing on their area's first tile, they
+		// don't need teleporting - this keeps automatic re-assignment from repeatedly
+		// yanking already-correctly-placed staff, while newly-assigned/needed staff
+		// are still moved to the start of their area.
+		if (isStandingOnTile(task.member, task.chunk[0])) {
+			return;
+		}
 		teleportStaffToTile(task.member, task.teleportTarget.x, task.teleportTarget.y, task.teleportTarget.baseZ);
 	}, onComplete);
+}
+
+// Whether the given staff member is currently standing on the given tile.
+export function isStandingOnTile(member: Staff, tile: PathTileInfo): boolean {
+	const tileX = Math.floor(member.x / 32);
+	const tileY = Math.floor(member.y / 32);
+	return tileX === tile.x && tileY === tile.y;
+}
+
+// The outcome of deciding what to do with a freshly placed tile for one staff type.
+export type AreaDecision =
+	| { action: "covered" }
+	| { action: "enlarge"; areaIndex: number }
+	| { action: "hire" };
+
+// Converts a world coordinate to its integer tile coordinate.
+function worldToTileX(v: number): number {
+	return Math.floor(v / 32);
+}
+
+// Cardinal-neighbour world-offsets used to find which areas are adjacent to a tile.
+const ADJACENT_OFFSETS: CoordsXY[] = [
+	{ x: 32, y: 0 },
+	{ x: -32, y: 0 },
+	{ x: 0, y: 32 },
+	{ x: 0, y: -32 }
+];
+
+// Pure decision logic for a freshly placed (or bought) tile against one staff type's
+// already-assigned patrol areas, using that type's configured maximum area size:
+//  - If the tile is already in any area              -> "covered"  (do nothing)
+//  - Else if an adjacent area is under the max size -> "enlarge"  (extend that area)
+//  - Else                                       -> "hire"      (new staff + assign)
+// `areas` is the list of tile-world-coordinate arrays, one per already-hired staff
+// member of the type. `newTile` is the placed tile in tile coordinates.
+export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize: number): AreaDecision {
+	if (newTile.x < 0 || newTile.y < 0) {
+		return { action: "hire" };
+	}
+	// 1. Already covered?
+	for (const areaTile of areas.flat()) {
+		if (worldToTileX(areaTile.x) === newTile.x && worldToTileX(areaTile.y) === newTile.y) {
+			return { action: "covered" };
+		}
+	}
+	// 2. Adjacent to an existing area that's under the cap -> enlarge it.
+	for (const offset of ADJACENT_OFFSETS) {
+		for (let i = 0; i < areas.length; i++) {
+			const area = areas[i];
+			// Is this area adjacent to the new tile?
+			let adjacent = false;
+			for (const tile of area) {
+				if (worldToTileX(tile.x) === newTile.x + worldToTileX(offset.x) && worldToTileX(tile.y) === newTile.y + worldToTileX(offset.y)) {
+					adjacent = true;
+					break;
+				}
+			}
+			if (adjacent) {
+				if (area.length < maxSize) {
+					return { action: "enlarge", areaIndex: i };
+				}
+				return { action: "hire" };
+			}
+		}
+	}
+	return { action: "hire" };
+}
+
+// Returns the patrol-area tile arrays for every currently hired member of the
+// given staff type (in order, one entry per member).
+export function getStaffAreas(staffType: StaffType): CoordsXY[][] {
+	return getStaffByType(staffType).map(function (m) { return m.patrolArea.tiles.slice(); });
 }
 
 // Assigns gardening areas built from the garden tiles' connected components.
@@ -624,6 +722,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 
 	const components = lastGardenAreas.filter(function (area) { return area.length > 0; });
 	if (components.length === 0) {
+		onComplete();
 		return;
 	}
 
@@ -690,18 +789,15 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		const chunks = chunkTilesForStaffCount(components[c], componentMembers.length);
 		for (let i = 0; i < chunks.length && i < componentMembers.length; i++) {
 			const chunk = chunks[i];
-			let teleportTarget: PathTileInfo = chunk[0];
-			if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
-				const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
-				if (nearestPathTile) {
-					teleportTarget = nearestPathTile;
-				}
-			}
+			const teleportTarget = findNearestPathInOrderedTiles(chunk, chunk[0].x, chunk[0].y) ?? chunk[0];
 			tasks.push({ member: componentMembers[i], chunk: chunk, teleportTarget: teleportTarget });
 		}
 	}
 	applyInBatches(tasks, function (task) {
 		task.member.patrolArea.add(task.chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
+		if (isStandingOnTile(task.member, task.chunk[0])) {
+			return;
+		}
 		teleportStaffToTile(task.member, task.teleportTarget.x, task.teleportTarget.y, task.teleportTarget.baseZ);
 	}, onComplete);
 }
@@ -717,24 +813,21 @@ function assignEntertainerAreas(members: Staff[], orderedTiles: PathTileInfo[], 
 	}
 	const areaCount = Math.max(1, Math.ceil(members.length / perArea));
 	const chunks = chunkTilesForStaffCount(orderedTiles, areaCount);
-	const tasks: { member: Staff; coords: CoordsXY[]; teleportTarget: PathTileInfo }[] = [];
+	const tasks: { member: Staff; coords: CoordsXY[]; teleportTarget: PathTileInfo; anchorTile: PathTileInfo }[] = [];
 	let memberIndex = 0;
 	for (let a = 0; a < chunks.length && memberIndex < members.length; a++) {
 		const chunk = chunks[a];
 		const coords = chunk.map(function (t) { return tileToWorldXY(t.x, t.y); });
-		let teleportTarget: PathTileInfo = chunk[0];
-		if (!isPeepPlaceableTile(chunk[0].x, chunk[0].y)) {
-			const nearestPathTile = findNearestPathTile(chunk[0].x, chunk[0].y);
-			if (nearestPathTile) {
-				teleportTarget = nearestPathTile;
-			}
-		}
+		const teleportTarget = findNearestPathInOrderedTiles(chunk, chunk[0].x, chunk[0].y) ?? chunk[0];
 		for (let p = 0; p < perArea && memberIndex < members.length; p++, memberIndex++) {
-			tasks.push({ member: members[memberIndex], coords: coords, teleportTarget: teleportTarget });
+			tasks.push({ member: members[memberIndex], coords: coords, teleportTarget: teleportTarget, anchorTile: chunk[0] });
 		}
 	}
 	applyInBatches(tasks, function (task) {
 		task.member.patrolArea.add(task.coords);
+		if (isStandingOnTile(task.member, task.anchorTile)) {
+			return;
+		}
 		teleportStaffToTile(task.member, task.teleportTarget.x, task.teleportTarget.y, task.teleportTarget.baseZ);
 	}, onComplete);
 }
@@ -904,6 +997,145 @@ function assignMechanics(onComplete: () => void): void {
 	}, onComplete);
 }
 
+// Information about a valid ride exit that has a footpath tile directly in front
+// of it. Mechanics are only needed (and only assigned, in automatic mode) for
+// exits that actually have a path, since an exit with no path yet has nothing to
+// patrol and would leave a mechanic stuck on the exit tile.
+interface StaffedRideExit {
+	exitTileX: number;
+	exitTileY: number;
+	frontTileX: number;
+	frontTileY: number;
+	frontFootpath: FootpathElement;
+}
+
+// Collects every valid ride exit that has a footpath in front of it (see the
+// front-finding logic in assignMechanics for why the facing direction alone isn't
+// reliable - we fall back to any cardinal neighbour with a footpath).
+function getStaffedRideExitFronts(): StaffedRideExit[] {
+	const result: StaffedRideExit[] = [];
+	const rides = map.rides;
+	for (const ride of rides) {
+		if (ride.classification !== "ride") {
+			continue;
+		}
+		const stations = ride.stations;
+		for (const station of stations) {
+			const exit = station.exit;
+			if (!isValidStationExit(exit)) {
+				continue;
+			}
+			const exitTileX = Math.floor(exit.x / 32);
+			const exitTileY = Math.floor(exit.y / 32);
+			const preferredOffset = DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
+			const candidateOffsets = [preferredOffset].concat(
+				CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) { return o.x !== preferredOffset.x || o.y !== preferredOffset.y; })
+			);
+			for (const offset of candidateOffsets) {
+				const candidateX = exitTileX + offset.x;
+				const candidateY = exitTileY + offset.y;
+				const footpath = findFootpathElement(map.getTile(candidateX, candidateY));
+				if (footpath !== null) {
+					result.push({ exitTileX: exitTileX, exitTileY: exitTileY, frontTileX: candidateX, frontTileY: candidateY, frontFootpath: footpath });
+					break;
+				}
+			}
+		}
+	}
+	return result;
+}
+
+// The number of ride exits that actually have a footpath in front of them. Used
+// by automatic mode to decide how many mechanics are needed; exits without a path
+// yet aren't staffed until a path is added at them.
+export function countStaffedRideExitFronts(): number {
+	return getStaffedRideExitFronts().length;
+}
+
+// Whether any already-hired mechanic is assigned to (patrolling) the given exit
+// tile - i.e. their patrol area contains that tile. Used by automatic mode to
+// only hire/assign a mechanic for a newly-path-added exit that doesn't have one
+// yet.
+function isExitAlreadyAssigned(exitTileX: number, exitTileY: number): boolean {
+	const mechanics = getStaffByType("mechanic");
+	for (const member of mechanics) {
+		for (const tile of member.patrolArea.tiles) {
+			if (Math.floor(tile.x / 32) === exitTileX && Math.floor(tile.y / 32) === exitTileY) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Automatic-mode mechanics handling: hires a mechanic + assigns a patrol area for
+// every ride exit that has a footpath in front of it and that doesn't already
+// have a mechanic assigned. Exits without a front path, and exits already
+// covered, are left alone so existing staff aren't disturbed.
+export function adjustAndAssignAutoMechanics(onComplete: () => void): void {
+	if (!mechanicsEnabledStore.get()) {
+		onComplete();
+		return;
+	}
+	const staffedExits = getStaffedRideExitFronts();
+	const exitsNeedingMechanic = staffedExits.filter(function (exit) {
+		return !isExitAlreadyAssigned(exit.exitTileX, exit.exitTileY);
+	});
+	if (exitsNeedingMechanic.length === 0) {
+		onComplete();
+		return;
+	}
+	const currentMechanics = getStaffByType("mechanic");
+	const currentFree = currentMechanics.length - currentMechanics.filter(function (m) {
+		return m.patrolArea.tiles.length > 0;
+	}).length;
+	const shortfall = Math.max(0, exitsNeedingMechanic.length - currentFree);
+	if (shortfall > 0) {
+		let hireDone = false;
+		setStatus(t("status.assigningMechanics"));
+		hireStaff(STAFF_TYPE_ID_MECHANIC, MECHANIC_ORDERS_DEFAULT, shortfall, function () {
+			if (hireDone) {
+				return;
+			}
+			hireDone = true;
+			assignAutoMechanicAreas(exitsNeedingMechanic, onComplete);
+		});
+	} else {
+		assignAutoMechanicAreas(exitsNeedingMechanic, onComplete);
+	}
+}
+
+// Assigns a patrol area (exit tile + front path tile) to a mechanic for each of
+// the given needed exits. Already-assigned mechanics keep their existing areas;
+// only unassigned (free) mechanics are reused, and any shortfall is hired by the
+// caller. Batching the work across ticks avoids a game freeze.
+function assignAutoMechanicAreas(neededExits: StaffedRideExit[], onComplete: () => void): void {
+	const mechanics = getStaffByType("mechanic");
+	const freeMechanics = mechanics.filter(function (m) {
+		return m.patrolArea.tiles.length === 0;
+	});
+	const tasks: { member: Staff; exit: StaffedRideExit }[] = neededExits.map(function (exit, i) {
+		return { member: freeMechanics[i % freeMechanics.length], exit: exit };
+	});
+	applyInBatches(tasks, function (task) {
+		const patrolTiles: CoordsXY[] = [tileToWorldXY(task.exit.exitTileX, task.exit.exitTileY)];
+		patrolTiles.push(tileToWorldXY(task.exit.frontTileX, task.exit.frontTileY));
+		task.member.patrolArea.add(patrolTiles);
+		if (canTeleportMechanic(task.member)) {
+			const id = task.member.id;
+			if (id !== null) {
+				teleportQueue.push({
+					id: id,
+					x: task.exit.frontTileX * 32 + 16,
+					y: task.exit.frontTileY * 32 + 16,
+					z: task.exit.frontFootpath.baseZ
+				});
+				processTeleportQueue();
+			}
+		}
+	}, onComplete);
+}
+
 // Builds the ordered tile list entertainers patrol: path tiles, plus queue
 // tiles too if the "Queue" toggle is on, preserving the original BFS
 // visitation order across both.
@@ -955,11 +1187,17 @@ function reassignHandymenOrders(): void {
 // from the most recently scanned tiles, and teleports one staff member to
 // the start of each new area. Only deals with already-hired staff; use
 // "Adjust staff count" first to hire/fire staff to match the Needed counts.
-export function assignStaff(): void {
+// Assigns patrol areas for handymen, guards and entertainers (not mechanics).
+// Used by both the manual Assign button and automatic mode; mechanics are handled
+// separately (manual: assignMechanics; auto: adjustAndAssignAutoMechanics) so auto
+// mode never clears/re-assigns already-placed mechanics.
+export function assignHandymenGuardsEntertainers(onComplete: () => void): void {
 	function next(): void {
 		stepIndex++;
 		if (stepIndex < steps.length) {
 			steps[stepIndex]();
+		} else {
+			onComplete();
 		}
 	}
 
@@ -996,20 +1234,301 @@ export function assignStaff(): void {
 			} else {
 				next();
 			}
-		},
-		function () {
-			if (mechanicsEnabledStore.get()) {
-				setStatus(t("status.assigningMechanics"));
-				assignMechanics(next);
-			} else {
-				next();
-			}
-		},
-		function () {
-			setStatus("");
 		}
 	];
 
 	let stepIndex = 0;
 	steps[0]();
+}
+
+export function assignStaff(): void {
+	assignHandymenGuardsEntertainers(function () {
+		if (mechanicsEnabledStore.get()) {
+			setStatus(t("status.assigningMechanics"));
+			assignMechanics(function () {
+				setStatus("");
+			});
+		} else {
+			setStatus("");
+		}
+	});
+}
+
+// --- Incremental automatic helpers (single-tile) ---------------------------------
+//
+// Automatic mode must make decisions *synchronously* so that a burst of connected
+// tile placements is handled correctly. If we based the decision on the live staff
+// roster / patrol areas (which only update asynchronously, after the `staffhire`
+// and `patrolArea.add` game actions complete), a freshly hired member would not
+// yet show its (single, empty-looking) patrol area when the next connected tile is
+// decided, so every tile would fall through to "hire" — one staff member per tile
+// and no area ever getting extended to its max. Instead we keep our own in-memory
+// record of each staff type's auto-mode areas, seeded from the roster at the first
+// tile of a batch and updated synchronously as tiles are added. Decisions run
+// against these synchronous areas, and hires are queued one at a time; each newly
+// hired member gets the tiles accumulated for it assigned patched onto its real
+// patrol area once the hire completes.
+interface AutoArea {
+	member: Staff | null;
+	// Tile keys (see tileKey) of tiles assigned to this area, world-coordinate
+	// lists of the patrol area tile targets for TeleportStoredTile are kept in
+	// tileKeys for coverage/adjacency checks.
+	tileKeys: Set<string>;
+	// World coordinates of every tile in this area (for patrolArea.add).
+	coords: CoordsXY[];
+}
+
+interface AutoGroup {
+	staffType: StaffType;
+	staffTypeId: number;
+	orders: number;
+	getMaxSize: () => number;
+	purpose: string;
+}
+
+const AUTO_GROUP_CLEANUP: AutoGroup = {
+	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_CLEANUP,
+	getMaxSize: () => handymenTilesPerStaffStore.get(), purpose: "cleanup"
+};
+const AUTO_GROUP_GARDENING: AutoGroup = {
+	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_GARDENING,
+	getMaxSize: () => handymenMowerTilesPerStaffStore.get(), purpose: "gardening"
+};
+const AUTO_GROUP_GUARD: AutoGroup = {
+	staffType: "security", staffTypeId: STAFF_TYPE_ID_SECURITY, orders: 0,
+	getMaxSize: () => guardsTilesPerStaffStore.get(), purpose: "guard"
+};
+const AUTO_GROUP_ENTERTAINER: AutoGroup = {
+	staffType: "entertainer", staffTypeId: STAFF_TYPE_ID_ENTERTAINER, orders: 0,
+	getMaxSize: () => entertainersTilesPerStaffStore.get(), purpose: "entertainer"
+};
+
+// Synchronous per-purpose area records (see the block comment above the interface).
+const autoAreasByPurpose = new Map<string, AutoArea[]>();
+// Tracks which purpose currently has an outstanding (async) hire so hires within a burst
+// are serialized one at a time instead of one per tile.
+const autoHireForPurpose = new Map<string, boolean>();
+
+function autoAreas(group: AutoGroup): AutoArea[] {
+	let list = autoAreasByPurpose.get(group.purpose);
+	if (!list) {
+		list = [];
+		for (const m of getStaffByType(group.staffType)) {
+			const coords = m.patrolArea.tiles.slice();
+			const keys = new Set<string>();
+			for (const t of coords) {
+				keys.add(tileKey(worldToTileX(t.x), worldToTileX(t.y)));
+			}
+			list.push({ member: m, tileKeys: keys, coords: coords });
+		}
+		autoAreasByPurpose.set(group.purpose, list);
+	}
+	return list;
+}
+
+function autoAddTileToArea(group: AutoGroup, areaIndex: number, tx: number, ty: number): void {
+	const area = autoAreas(group)[areaIndex];
+	if (area.tileKeys.has(tileKey(tx, ty))) {
+		return;
+	}
+	area.tileKeys.add(tileKey(tx, ty));
+	area.coords.push({ x: tx * 32, y: ty * 32 });
+}
+
+function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
+	const areas = autoAreas(group);
+	const list = autoAreasAsCoords(group);
+	const decision = decideAreaAction(list, { x: tx, y: ty }, group.getMaxSize());
+	if (decision.action === "covered") {
+		return false;
+	}
+	if (decision.action === "enlarge") {
+		autoAddTileToArea(group, decision.areaIndex, tx, ty);
+		applyAutoAreasToLive(group);
+		return false;
+	}
+	areas.push({ member: null, tileKeys: new Set([tileKey(tx, ty)]), coords: [{ x: tx * 32, y: ty * 32 }] });
+	queueAutoHire(group, tx, ty);
+	return true;
+}
+
+function autoAreasAsCoords(group: AutoGroup): CoordsXY[][] {
+	return autoAreas(group).map(function (a) { return a.coords; });
+}
+
+function applyAutoAreasToLive(group: AutoGroup): void {
+	for (const area of autoAreas(group)) {
+		if (area.member) {
+			area.member.patrolArea.add(area.coords);
+		}
+	}
+}
+
+function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
+	if (autoHireForPurpose.get(group.purpose)) {
+		return;
+	}
+	autoHireForPurpose.set(group.purpose, true);
+	hireStaff(group.staffTypeId, group.orders, 1, function () {
+		autoHireForPurpose.set(group.purpose, false);
+		const member = getLastStaffOfType(group.staffType);
+		if (member) {
+			const area = autoAreas(group)[autoAreas(group).length - 1];
+			if (group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING && (member as Handyman).orders !== HANDYMAN_ORDERS_GARDENING) {
+				(member as Handyman).orders = HANDYMAN_ORDERS_GARDENING;
+			}
+			area.member = member;
+			member.patrolArea.add(area.coords);
+			teleportStaffToTile(member, tx, ty, footpathBaseZAt(tx, ty));
+		}
+		refreshHiredAndAssignedStaffCounts();
+	});
+}
+
+function getLastStaffOfType(staffType: StaffType): Staff | null {
+	const members = getStaffByType(staffType);
+	return members.length > 0 ? members[members.length - 1] : null;
+}
+
+// The baseZ of the footpath on a tile, if any (used as a teleport height).
+function footpathBaseZAt(tx: number, ty: number): number {
+	const tile = map.getTile(tx, ty);
+	for (const member of getFootpathBaseZFromTile(tile)) {
+		return member;
+	}
+	return 0;
+}
+
+// Returns an array with the baseZ of the first footpath element on the tile.
+function getFootpathBaseZFromTile(tile: Tile): number[] {
+	const result: number[] = [];
+	for (let e = 0; e < tile.numElements; e++) {
+		const element = tile.getElement(e);
+		if (element.type === "footpath") {
+			result.push(element.baseZ);
+		}
+	}
+	return result;
+}
+
+// Handles one freshly placed path/queue tile for the given staff type's patroling.
+// `isQueue` boolean determines path vs queue handling; queue tiles are only handled by
+// handymen (cleanup) and entertainers (if the Queue toggle is on).
+function handlePathTileForType(
+	staffType: StaffType,
+	orders: number,
+	tx: number,
+	ty: number
+): void {
+	const group = groupForPathTile(staffType, orders);
+	handleTileForGroup(group, tx, ty);
+	refreshHiredAndAssignedStaffCounts();
+}
+
+// Maps a staff type + orders to its persistent auto-mode group.
+function groupForPathTile(staffType: StaffType, orders: number): AutoGroup {
+	if (staffType === "handyman") {
+		return orders === HANDYMAN_ORDERS_GARDENING ? AUTO_GROUP_GARDENING : AUTO_GROUP_CLEANUP;
+	}
+	if (staffType === "security") {
+		return AUTO_GROUP_GUARD;
+	}
+	return AUTO_GROUP_ENTERTAINER;
+}
+
+// Handles a freshly placed path/queue tile for all relevant staff types.
+export function handlePlacedPathTile(tx: number, ty: number, isQueue: boolean): void {
+	// Mechanics: if a ride exit is on an adjacent tile, assign a mechanic.
+	handleMechanicForAdjacentExit(tx, ty);
+
+	if (isQueue) {
+		// Queue tiles: only handymen (cleanup) and entertainers (if the Queue
+		// toggle is on).
+		if (handymenEnabledStore.get()) {
+			handlePathTileForType("handyman", HANDYMAN_ORDERS_CLEANUP, tx, ty);
+		}
+		if (entertainersEnabledStore.get() && entertainersIncludeQueueStore.get()) {
+			handlePathTileForType("entertainer", 0, tx, ty);
+		}
+		return;
+	}
+
+	// Plain path tiles: cleanup handymen, guards and entertainers.
+	if (handymenEnabledStore.get()) {
+		handlePathTileForType("handyman", HANDYMAN_ORDERS_CLEANUP, tx, ty);
+	}
+	if (guardsEnabledStore.get()) {
+		handlePathTileForType("security", 0, tx, ty);
+	}
+	if (entertainersEnabledStore.get()) {
+		handlePathTileForType("entertainer", 0, tx, ty);
+	}
+}
+
+// Handles a newly bought land tile: if it becomes a garden tile, apply the
+// gardening-handyman enlarge-vs-hire rule.
+export function handleBoughtLandTile(tx: number, ty: number): void {
+	if (!handymenEnabledStore.get()) {
+		return;
+	}
+	if (!isGardenTile(tx, ty)) {
+		return;
+	}
+	handleTileForGroup(AUTO_GROUP_GARDENING, tx, ty);
+	refreshHiredAndAssignedStaffCounts();
+}
+
+// If a ride exit sits on a tile adjacent to the given path tile and no mechanic is
+// assigned there yet, hire+assign a mechanic covering (exit tile + this tile).
+function handleMechanicForAdjacentExit(tx: number, ty: number): void {
+	if (!mechanicsEnabledStore.get()) {
+		return;
+	}
+	for (const offset of ADJACENT_OFFSETS) {
+		const ex = tx + worldToTileX(offset.x);
+		const ey = ty + worldToTileX(offset.y);
+		if (!isRideExitOnTile(ex, ey)) {
+			continue;
+		}
+		if (isExitAlreadyAssigned(ex, ey)) {
+			return;
+		}
+		// Hire one mechanic and assign (exit + this path tile).
+		hireAndAssignMechanicForExit(ex, ey, tx, ty);
+		return;
+	}
+}
+
+// Whether a ride exit element sits on the given tile.
+function isRideExitOnTile(tx: number, ty: number): boolean {
+	const rides = map.rides;
+	for (const ride of rides) {
+		const stations = ride.stations;
+		for (const station of stations) {
+			const exit = station.exit;
+			if (isValidStationExit(exit)) {
+				if (Math.floor(exit.x / 32) === tx && Math.floor(exit.y / 32) === ty) {
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
+// Hires one mechanic and assigns a patrol area covering the exit tile and the given
+// path tile in front of it.
+function hireAndAssignMechanicForExit(ex: number, ey: number, fx: number, fy: number): void {
+	hireStaff(STAFF_TYPE_ID_MECHANIC, MECHANIC_ORDERS_DEFAULT, 1, function () {
+		const mechanics = getStaffByType("mechanic");
+		if (mechanics.length === 0) {
+			return;
+		}
+		const member = mechanics[mechanics.length - 1];
+		member.patrolArea.add([{ x: ex * 32, y: ey * 32 }, { x: fx * 32, y: fy * 32 }]);
+		if (canTeleportMechanic(member)) {
+			teleportStaffToTile(member, fx, fy, footpathBaseZAt(fx, fy));
+		}
+		refreshHiredAndAssignedStaffCounts();
+	});
 }

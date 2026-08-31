@@ -1,12 +1,12 @@
 /// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import {
-	window as flexWindow, box, horizontal, vertical, label, button, spinner, checkbox,
-	store as flexStore, compute, isStore, WindowTemplate, WidgetCreator, FlexiblePosition, Store, WritableStore, Bindable,
-	Scale
+	window as flexWindow, box, horizontal, vertical, label, button, spinner, checkbox, toggle, graphics, compute, isStore,
+	store as flexStore,
+	WindowTemplate, WidgetCreator, FlexiblePosition, Store, WritableStore, Bindable, Scale, Colour
 } from "openrct2-flexui";
 import { t } from "./i18n";
 import {
-	parkEntranceInfoStore,
+	parkEntranceInfoStore, autoEnabledStore, hasRanAdjustAndAssignStore,
 	handymenTilesPerStaffStore, handymenMowerTilesPerStaffStore,
 	guardsTilesPerStaffStore, entertainersTilesPerStaffStore, entertainersPerAreaStore, entertainersIncludeQueueStore,
 	handymenEnabledStore, guardsEnabledStore, entertainersEnabledStore, mechanicsEnabledStore,
@@ -17,7 +17,9 @@ import {
 	handymenControlsDisabledStore, guardsControlsDisabledStore, entertainersControlsDisabledStore, mechanicsControlsDisabledStore,
 	staffControlsDisabledStore, adjustButtonDisabledStore, statusTextStore
 } from "./store";
-import { scanFootpathNetwork, findAndReportParkEntrance } from "./scan";import { adjustStaffCounts, assignStaff, refreshHiredAndAssignedStaffCounts } from "./staff";
+import { scanFootpathNetwork, findAndReportParkEntrance } from "./scan";
+import { adjustStaffCounts, assignStaff, refreshHiredAndAssignedStaffCounts } from "./staff";
+import { setAutoEnabled } from "./auto";
 
 // --- Staff stat table ---------------------------------------------------------
 // A single row of the per-staff-type table: a left-aligned name and a
@@ -195,11 +197,12 @@ const MECHANICS_ENTERTAINERS_STACK_HEIGHT = MECHANICS_HEIGHT + ENTERTAINERS_HEIG
 const COLUMN_ROW_HEIGHT = Math.max(STACK_HEIGHT, MECHANICS_ENTERTAINERS_STACK_HEIGHT);
 
 const TOP_ROW_HEIGHT = 14;
+const AUTO_ROW_HEIGHT = 20;
 const APPLY_MESSAGE_ROW_HEIGHT = 14;
 const APPLY_ROW_HEIGHT = 20;
 const CONTENT_SPACING = 4; // spacing between the window's top-level content rows
 const WINDOW_CHROME_HEIGHT = 29; // title bar + top/bottom window padding
-const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
+const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + AUTO_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
 
 function staffManagerWindowTemplate(): WindowTemplate {
 	const windowWidth = 400;
@@ -242,8 +245,35 @@ function staffManagerWindowTemplate(): WindowTemplate {
 					height: APPLY_ROW_HEIGHT,
 					content: [
 					button({
-						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), disabled: adjustButtonDisabledStore, onClick: function () { adjustStaffCounts(assignStaff); }
+						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), disabled: adjustButtonDisabledStore, onClick: function () { hasRanAdjustAndAssignStore.set(true); adjustStaffCounts(assignStaff); }
 					})
+					]
+				}),
+				horizontal({
+					spacing: 4,
+					width: "100%",
+					height: AUTO_ROW_HEIGHT,
+					content: [
+						graphics({
+							width: AUTO_ROW_HEIGHT,
+							height: AUTO_ROW_HEIGHT,
+							onDraw: function (g) {
+								const on = autoEnabledStore.get();
+								g.colour = on ? Colour.BrightGreen : Colour.SaturatedRed;
+								g.box(2, 2, AUTO_ROW_HEIGHT - 4, AUTO_ROW_HEIGHT - 4);
+							}
+						}),
+						toggle({
+							text: compute(autoEnabledStore, function (on) {
+								return on ? t("auto.on") : t("auto.off");
+							}),
+							width: "1w",
+							height: AUTO_ROW_HEIGHT,
+							isPressed: autoEnabledStore,
+							tooltip: t("auto.tooltip"),
+							disabled: compute(hasRanAdjustAndAssignStore, function (hasRun) { return !hasRun; }),
+							onChange: function (pressed) { setAutoEnabled(pressed); }
+						})
 					]
 				})
 			]

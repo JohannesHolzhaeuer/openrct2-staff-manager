@@ -86,6 +86,14 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
   across ticks with `forEachAsync`/`context.setTimeout`). Staff teleports ARE serialised through a
   single queue (`teleportQueue`/`processTeleportQueue`) because OpenRCT2 only supports one peep
   being picked up at a time — preserve this when adding any teleport logic.
+- Automatic mode (`src/auto.ts` + the "Incremental automatic helpers" in `src/staff.ts`) decides
+  **synchronously** against an in-memory record of each purpose's assigned areas
+  (`autoAreasByPurpose` / `AutoArea`), *not* against the live staff roster/`patrolArea`s — those
+  only update after async `staffhire`/`patrolArea.add` calls complete, so reading them mid-drag would
+  hire one member per tile. Consecutive connected tiles extend one area up to its tiles/staff cap, hiring
+  a new member only when nothing adjacent is under the cap; hires are serialised one per purpose via
+  `queueAutoHire`. Ghost (hover) footpath tiles are filtered out in `queueTileIfPlacedPath` in
+  `src/auto.ts` so hovering never hires staff. Preserve this synchronous tracking when touching auto mode.
 - Plugin metadata (name, version, author) is set in the `registerPlugin(...)` call at the bottom
   of `src/main.ts`; keep `package.json`'s `version` field in sync when bumping versions for a
   release.

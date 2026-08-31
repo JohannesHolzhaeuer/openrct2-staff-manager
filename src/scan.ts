@@ -127,12 +127,21 @@ interface FootpathInfo {
 	baseZ: number;
 	isQueue: boolean;
 	slopeDirection: number | null;
+	isGhost: boolean;
 }
 
 // The vertical size (in baseZ units) a sloped footpath spans: a footpath
 // slope always climbs exactly one height level, which is two baseHeight
 // steps, i.e. 16 baseZ units.
 const FOOTPATH_SLOPE_HEIGHT = 16;
+
+// Lightweight, map-independent description of a footpath element used by the pure
+// connectivity helpers below (footpathEdgeZ/footpathsConnect). Extracted from the
+// full FootpathInfo so it can be unit-tested without any OpenRCT2 map access.
+interface FootpathGeometry {
+	baseZ: number;
+	slopeDirection: number | null;
+}
 
 // Collects every footpath element on a tile. A tile can carry more than one
 // (e.g. a path on a bridge above another path), and they are at different
@@ -151,7 +160,8 @@ function findFootpathElements(x: number, y: number): FootpathInfo[] {
 				baseHeight: footpathElement.baseHeight,
 				baseZ: footpathElement.baseZ,
 				isQueue: footpathElement.isQueue,
-				slopeDirection: footpathElement.slopeDirection
+				slopeDirection: footpathElement.slopeDirection,
+				isGhost: footpathElement.isGhost
 			});
 		}
 	}
@@ -162,11 +172,11 @@ function findFootpathElements(x: number, y: number): FootpathInfo[] {
 // (using OpenRCT2's 0=-X, 1=+Y, 2=+X, 3=-Y direction convention). A flat
 // path is at baseZ all around; a sloped path is at baseZ on three edges and
 // one level higher on the edge it slopes up towards.
-function footpathEdgeZ(footpath: FootpathInfo, direction: number): number {
-	return footpath.slopeDirection === direction ? footpath.baseZ + FOOTPATH_SLOPE_HEIGHT : footpath.baseZ;
+export function footpathEdgeZ(footpath: FootpathGeometry, direction: number, slopeHeight: number = FOOTPATH_SLOPE_HEIGHT): number {
+	return footpath.slopeDirection === direction ? footpath.baseZ + slopeHeight : footpath.baseZ;
 }
 
-function oppositeDirection(direction: number): number {
+export function oppositeDirection(direction: number): number {
 	return (direction + 2) % 4;
 }
 
@@ -175,7 +185,7 @@ function oppositeDirection(direction: number): number {
 // same height on their shared edge. This is what makes a patrol area
 // genuinely walkable - x/y adjacency alone would happily join a path on a
 // bridge to the path passing underneath it.
-function footpathsConnect(from: FootpathInfo, to: FootpathInfo, direction: number): boolean {
+export function footpathsConnect(from: FootpathGeometry, to: FootpathGeometry, direction: number): boolean {
 	return footpathEdgeZ(from, direction) === footpathEdgeZ(to, oppositeDirection(direction));
 }
 
@@ -197,11 +207,11 @@ const MAX_WALKABLE_HEIGHT_DIFFERENCE = 2;
 
 // Whether staff can walk between two neighbouring land tiles, i.e. whether
 // their terrain heights are close enough not to form an unclimbable step.
-function surfacesConnect(from: SurfaceElement | null, to: SurfaceElement | null): boolean {
-	if (!from || !to || !isLandSurface(from) || !isLandSurface(to)) {
+export function surfacesConnect(from: { baseHeight: number; waterHeight: number } | null, to: { baseHeight: number; waterHeight: number } | null, maxDifference: number = MAX_WALKABLE_HEIGHT_DIFFERENCE): boolean {
+	if (!from || !to || from.waterHeight !== 0 || to.waterHeight !== 0) {
 		return false;
 	}
-	return Math.abs(from.baseHeight - to.baseHeight) <= MAX_WALKABLE_HEIGHT_DIFFERENCE;
+	return Math.abs(from.baseHeight - to.baseHeight) <= maxDifference;
 }
 
 // Whether a surface tile is dry land rather than water. In OpenRCT2, water is
@@ -557,6 +567,59 @@ export function countRideExits(): number {
 // patrol areas without re-scanning the map.
 export let lastAllPathTiles: PathTileInfo[] = [];
 export let lastGardenAreas: PathTileInfo[][] = [];
+
+// --- Per-tile classification helpers (for incremental auto mode) ---------------------
+// A single tile can carry a footpath (plain or queue) and garden/owned state.
+// These helpers inspect just one tile so automatic mode can decide what to do with a
+// freshly placed path/queue tile or a newly bought land tile, without a full scan.
+
+// Whether the given tile has at least one footpath element that is not a ghost
+// (hover/preview) placement. OpenRCT2 fires `action.execute` for ghost paths
+// too (the tile is briefly added then removed as the cursor hovers), so a check
+// that only filters on footpath presence would treat the hover preview as a real
+// placement and needlessly hire/assign staff before the path is actually built.
+export function hasNonGhostFootpathElements(x: number, y: number): boolean {
+	return findFootpathElements(x, y).some(function (fp) { return !fp.isGhost; });
+}
+
+// Whether the given tile has a plain (non-queue) footpath.
+export function isPlainPathTile(x: number, y: number): boolean {
+	return findFootpathElements(x, y).some(function (fp) { return !fp.isQueue; });
+}
+
+// Whether the given tile has a queue footpath.
+export function isQueueTile(x: number, y: number): boolean {
+	return findFootpathElements(x, y).some(function (fp) { return fp.isQueue; });
+}
+
+// Whether the given tile is a garden tile (mowable grass or waterable scenery on
+// dry, owned land with no footpath covering it). Mirrors the logic of
+// scanGardeningTiles for a single tile.
+export function isGardenTile(x: number, y: number): boolean {
+	if (!isParkOwnedTile(x, y)) {
+		return false;
+	}
+	const tile = map.getTile(x, y);
+	if (hasFootpathElement(tile)) {
+		return false;
+	}
+	const surface = findSurfaceElement(tile);
+	const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices().has(surface.surfaceStyle);
+	const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
+	return isMowable || isWaterable;
+}
+
+let cachedGrassSurfaceStyleIndices: Set<number> | null = null;
+
+function grassSurfaceStyleIndices(): Set<number> {
+	cachedGrassSurfaceStyleIndices ??= findGrassSurfaceStyleIndices();
+	return cachedGrassSurfaceStyleIndices;
+}
+
+// The world-to-tile coordinate of the tile containing the given world coordinate.
+export function worldToTile(x: number, y: number): CoordsXY {
+	return { x: Math.floor(x / 32), y: Math.floor(y / 32) };
+}
 
 // Finds the park entrance, then walks the footpath network from it, and scans
 // the park's owned tiles for gardening tiles. Logs and stores the resulting

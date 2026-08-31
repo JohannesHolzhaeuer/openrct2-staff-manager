@@ -13,6 +13,10 @@ export interface Translations {
 
 	"applyMessage.tooltip": string;
 
+	"auto.on": string;
+	"auto.off": string;
+	"auto.tooltip": string;
+
 	"status.assigningHandymen": string;
 	"status.assigningGuards": string;
 	"status.assigningEntertainers": string;

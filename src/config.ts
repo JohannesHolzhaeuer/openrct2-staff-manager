@@ -15,3 +15,7 @@ export const DEFAULT_HANDYMEN_ENABLED = true;
 export const DEFAULT_GUARDS_ENABLED = true;
 export const DEFAULT_ENTERTAINERS_ENABLED = true;
 export const DEFAULT_MECHANICS_ENABLED = true;
+
+// Whether automatic adjust+assign is enabled by default (can be persisted in
+// context.sharedStorage).
+export const DEFAULT_AUTO_ENABLED = false;
