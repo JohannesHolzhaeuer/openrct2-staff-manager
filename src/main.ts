@@ -9,7 +9,7 @@ function main(): void {
 
 registerPlugin({
 	name: "Staff Manager",
-	version: "0.9.2",
+	version: "0.9.3",
 	authors: ["Johannes Holzhäuer"],
 	type: "local",
 	licence: "MIT",

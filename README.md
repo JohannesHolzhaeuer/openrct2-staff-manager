@@ -8,7 +8,7 @@ entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
 (re)assign** staff so the right number always patrol the right places — sending
 each staff member to their **nearest** free zone.
 
-- **Version:** 0.9.2
+- **Version:** 0.9.3
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
@@ -210,6 +210,11 @@ directly in the UI, but their initial defaults live in code:
 
 ## Changelog
 
+- **0.9.3** – Combined "Adjust staff count" and "Assign" into a single
+  "Adjust and assign" button that runs only after the async hire/fire actions
+  complete; split the previously-synchronous per-staff patrol-area assignment
+  across ticks so the game no longer freezes; added a live status line
+  showing which step is running. All new strings localized.
 - **0.9.2** – Made patrol and gardening areas height‑ and water‑aware: paths
   and land tiles are now only linked when actually walkable (matching slope
   heights, no cliffs, no water), so patrol areas are always one contiguous,
