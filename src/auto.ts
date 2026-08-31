@@ -1,6 +1,6 @@
 /// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { autoEnabledStore } from "./store";
-import { isPlainPathTile, isQueueTile, worldToTile } from "./scan";
+import { isPlainPathTile, isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
 import { handlePlacedPathTile, handleBoughtLandTile } from "./staff";
 
 // The storage key backing the persisted auto flag. Versioned so an earlier
@@ -16,6 +16,31 @@ let actionSubscription: IDisposable | null = null;
 let pendingTimer: number | null = null;
 let pendingTiles: { x: number; y: number; kind: "path" | "queue" | "land" }[] = [];
 let isWorking = false;
+
+// Deduplicates a list of pending tiles by (x, y, kind), preserving order. Dragging
+// the path tool fires a burst of actions that can place the same tile more than
+// once (e.g. over a drag, or a preview plus the actual placement); without this, each
+// duplicate would be handled separately (and, worse, could hire a fresh staff
+// member each time). Keeping the first occurrence per tile means each distinct
+// tile is handled exactly once per batch.
+function dedupeTiles(tiles: { x: number; y: number; kind: "path" | "queue" | "land" }[]): { x: number; y: number; kind: "path" | "queue" | "land" }[] {
+	const seen = new Set<string>();
+	const result: { x: number; y: number; kind: "path" | "queue" | "land" }[] = [];
+	for (const tile of tiles) {
+		const key = String(tile.x) + ":" + String(tile.y) + ":" + tile.kind;
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.add(key);
+		result.push(tile);
+	}
+	return result;
+}
+
+// How many pending tiles to handle per game tick. Processing is chunked and
+// re-scheduled with context.setTimeout so a large burst of queued tiles (e.g. a
+// long path drag) never blocks the game loop in one tick (which froze the game).
+const TILES_PER_TICK = 16;
 
 export function setAutoEnabled(enabled: boolean): void {
 	autoEnabledStore.set(enabled);
@@ -103,6 +128,9 @@ function collectFromAction(e: GameActionEventArgs): void {
 }
 
 function classifyPathTile(x: number, y: number): "path" | "queue" | "land" {
+	if (!hasNonGhostFootpathElements(x, y)) {
+		return "land";
+	}
 	return isQueueTile(x, y) ? "queue" : (isPlainPathTile(x, y) ? "path" : "land");
 }
 
@@ -122,10 +150,11 @@ function schedule(): void {
 	}, DEBOUNCE_MS);
 }
 
-// Processes all queued tiles in one batch (still only touching affected tiles, no
-// full map scan).
+// Processes all queued tiles in one batch per tick (still only touching affected
+// tiles, no full map scan), chunking the work across ticks so a large burst
+// (e.g. a long path drag) doesn't block the game loop.
 function processPending(): void {
-	const tiles = pendingTiles;
+	const tiles = dedupeTiles(pendingTiles);
 	pendingTiles = [];
 	if (tiles.length === 0) {
 		return;
@@ -134,19 +163,28 @@ function processPending(): void {
 		return;
 	}
 	isWorking = true;
-	try {
-		for (const t of tiles) {
-			if (t.kind === "land") {
-				handleBoughtLandTile(t.x, t.y);
-			} else {
-				handlePlacedPathTile(t.x, t.y, t.kind === "queue");
+	let index = 0;
+	function step(): void {
+		const end = Math.min(tiles.length, index + TILES_PER_TICK);
+		try {
+			for (; index < end; index++) {
+				const t = tiles[index];
+				if (t.kind === "land") {
+					handleBoughtLandTile(t.x, t.y);
+				} else {
+					handlePlacedPathTile(t.x, t.y, t.kind === "queue");
+				}
 			}
+		} catch {
+			// ignore errors from individual tile handling
 		}
-	} catch {
-		// ignore errors from individual tile handling
-	} finally {
-		isWorking = false;
+		if (index < tiles.length) {
+			context.setTimeout(step, 0);
+		} else {
+			isWorking = false;
+		}
 	}
+	step();
 }
 
 // Initialises automatic mode from the persisted setting. Safe to call more than once

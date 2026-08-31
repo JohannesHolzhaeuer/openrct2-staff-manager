@@ -127,6 +127,7 @@ interface FootpathInfo {
 	baseZ: number;
 	isQueue: boolean;
 	slopeDirection: number | null;
+	isGhost: boolean;
 }
 
 // The vertical size (in baseZ units) a sloped footpath spans: a footpath
@@ -159,7 +160,8 @@ function findFootpathElements(x: number, y: number): FootpathInfo[] {
 				baseHeight: footpathElement.baseHeight,
 				baseZ: footpathElement.baseZ,
 				isQueue: footpathElement.isQueue,
-				slopeDirection: footpathElement.slopeDirection
+				slopeDirection: footpathElement.slopeDirection,
+				isGhost: footpathElement.isGhost
 			});
 		}
 	}
@@ -570,6 +572,15 @@ export let lastGardenAreas: PathTileInfo[][] = [];
 // A single tile can carry a footpath (plain or queue) and garden/owned state.
 // These helpers inspect just one tile so automatic mode can decide what to do with a
 // freshly placed path/queue tile or a newly bought land tile, without a full scan.
+
+// Whether the given tile has at least one footpath element that is not a ghost
+// (hover/preview) placement. OpenRCT2 fires `action.execute` for ghost paths
+// too (the tile is briefly added then removed as the cursor hovers), so a check
+// that only filters on footpath presence would treat the hover preview as a real
+// placement and needlessly hire/assign staff before the path is actually built.
+export function hasNonGhostFootpathElements(x: number, y: number): boolean {
+	return findFootpathElements(x, y).some(function (fp) { return !fp.isGhost; });
+}
 
 // Whether the given tile has a plain (non-queue) footpath.
 export function isPlainPathTile(x: number, y: number): boolean {
