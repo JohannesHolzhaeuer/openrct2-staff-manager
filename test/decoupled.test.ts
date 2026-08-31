@@ -195,4 +195,28 @@ describe("decideAreaAction", () => {
 		const areas = [areaTiles([0, 2])];
 		expect(decideAreaAction(areas, { x: 0, y: 1 }, 8)).toEqual({ action: "enlarge", areaIndex: 0 });
 	});
+	it("enlarges only a genuinely-connected (walkable) adjacent area when a connect predicate is supplied", () => {
+		const areas = [areaTiles([1, 0])];
+		// new tile (0,0) is cardinal-adjacent to area tile (1,0), and the predicate
+		// confirms they are walkable -> enlarge.
+		const decision = decideAreaAction(areas, { x: 0, y: 0 }, 8,
+			function () { return true; });
+		expect(decision).toEqual({ action: "enlarge", areaIndex: 0 });
+	});
+	it("does not enlarge an unreachable (e.g. bridge) adjacent tile when the predicate returns false", () => {
+		const areas = [areaTiles([1, 0])];
+		// area tile at (1,0) is cardinal-adjacent to new tile (0,0), but the
+		// predicate says they are not walkable (e.g. a bridge over a path) -> hire,
+		// giving the unreachable tile its own staff member instead of merging areas.
+		const decision = decideAreaAction(areas, { x: 0, y: 0 }, 8,
+			function () { return false; });
+		expect(decision.action).toBe("hire");
+	});
+	it("the connect predicate only gates adjacency, not coverage", () => {
+		const areas = [areaTiles([0, 0])];
+		// new tile is already in the area -> covered regardless of the predicate.
+		const decision = decideAreaAction(areas, { x: 0, y: 0 }, 8,
+			function () { return false; });
+		expect(decision).toEqual({ action: "covered" });
+	});
 });

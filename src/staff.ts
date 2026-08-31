@@ -11,7 +11,8 @@ import {
 } from "./store";
 import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
-	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo, isGardenTile
+	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo, isGardenTile,
+	footpathsConnectTiles, surfaceTilesConnect
 } from "./scan";
 import { t } from "./i18n";
 
@@ -659,8 +660,12 @@ const ADJACENT_OFFSETS: CoordsXY[] = [
 //  - Else if an adjacent area is under the max size -> "enlarge"  (extend that area)
 //  - Else                                       -> "hire"      (new staff + assign)
 // `areas` is the list of tile-world-coordinate arrays, one per already-hired staff
-// member of the type. `newTile` is the placed tile in tile coordinates.
-export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize: number): AreaDecision {
+// member of the type. `newTile` is the placed tile in tile coordinates. The optional
+// `connect` predicate decides whether the new tile is genuinely walkable to an
+// existing area tile: when supplied, only actually-connected cardinal neighbours count as
+// adjacent (so bridges/inclined ways are never merged); when omitted (tests), plain
+// cardinal adjacency is used.
+export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize: number, connect?: (areaTileX: number, areaTileY: number, newTileX: number, newTileY: number, areaIndex: number) => boolean): AreaDecision {
 	if (newTile.x < 0 || newTile.y < 0) {
 		return { action: "hire" };
 	}
@@ -674,10 +679,14 @@ export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize
 	for (const offset of ADJACENT_OFFSETS) {
 		for (let i = 0; i < areas.length; i++) {
 			const area = areas[i];
-			// Is this area adjacent to the new tile?
+			// Is this area adjacent (and, if `connect` given, actually reachable) to the new tile?
 			let adjacent = false;
 			for (const tile of area) {
-				if (worldToTileX(tile.x) === newTile.x + worldToTileX(offset.x) && worldToTileX(tile.y) === newTile.y + worldToTileX(offset.y)) {
+				const atx = worldToTileX(tile.x);
+				const aty = worldToTileX(tile.y);
+				const expectedX = newTile.x + worldToTileX(offset.x);
+				const expectedY = newTile.y + worldToTileX(offset.y);
+				if (atx === expectedX && aty === expectedY && (!connect || connect(atx, aty, newTile.x, newTile.y, i))) {
 					adjacent = true;
 					break;
 				}
@@ -1284,23 +1293,30 @@ interface AutoGroup {
 	orders: number;
 	getMaxSize: () => number;
 	purpose: string;
+	// Connectivity predicate (shared with the manual scan) used to decide whether a
+	// freshly placed tile is genuinely walkable into an area before enlarging it.
+	connect: (areaTileX: number, areaTileY: number, newTileX: number, newTileY: number, areaIndex: number) => boolean;
 }
 
 const AUTO_GROUP_CLEANUP: AutoGroup = {
 	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_CLEANUP,
-	getMaxSize: () => handymenTilesPerStaffStore.get(), purpose: "cleanup"
+	getMaxSize: () => handymenTilesPerStaffStore.get(), purpose: "cleanup",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
 };
 const AUTO_GROUP_GARDENING: AutoGroup = {
 	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_GARDENING,
-	getMaxSize: () => handymenMowerTilesPerStaffStore.get(), purpose: "gardening"
+	getMaxSize: () => handymenMowerTilesPerStaffStore.get(), purpose: "gardening",
+	connect: (ax, ay, nx, ny) => surfaceTilesConnect(ax, ay, nx, ny)
 };
 const AUTO_GROUP_GUARD: AutoGroup = {
 	staffType: "security", staffTypeId: STAFF_TYPE_ID_SECURITY, orders: 0,
-	getMaxSize: () => guardsTilesPerStaffStore.get(), purpose: "guard"
+	getMaxSize: () => guardsTilesPerStaffStore.get(), purpose: "guard",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
 };
 const AUTO_GROUP_ENTERTAINER: AutoGroup = {
 	staffType: "entertainer", staffTypeId: STAFF_TYPE_ID_ENTERTAINER, orders: 0,
-	getMaxSize: () => entertainersTilesPerStaffStore.get(), purpose: "entertainer"
+	getMaxSize: () => entertainersTilesPerStaffStore.get(), purpose: "entertainer",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
 };
 
 // Synchronous per-purpose area records (see the block comment above the interface).
@@ -1338,7 +1354,7 @@ function autoAddTileToArea(group: AutoGroup, areaIndex: number, tx: number, ty: 
 function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
 	const areas = autoAreas(group);
 	const list = autoAreasAsCoords(group);
-	const decision = decideAreaAction(list, { x: tx, y: ty }, group.getMaxSize());
+	const decision = decideAreaAction(list, { x: tx, y: ty }, group.getMaxSize(), group.connect);
 	if (decision.action === "covered") {
 		return false;
 	}

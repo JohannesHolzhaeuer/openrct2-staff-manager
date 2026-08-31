@@ -189,6 +189,52 @@ export function footpathsConnect(from: FootpathGeometry, to: FootpathGeometry, d
 	return footpathEdgeZ(from, direction) === footpathEdgeZ(to, oppositeDirection(direction));
 }
 
+// Whether staff can walk between two neighbouring tiles' *footpath* elements. Unlike
+// plain x/y adjacency, this resolves height: a path on a bridge and a path passing
+// beneath it at a different height are NOT considered connected, and two inclined ways
+// meet only if their shared edge is at the same height. This is the shared
+// connectivity primitive used by both the manual scan (to build patrol areas) and
+// auto mode (to decide enlarge-vs-hire), so the two never disagree about whether two
+// tiles belong in one reachable area.
+export function footpathsConnectTiles(tx: number, ty: number, nx: number, ny: number): boolean {
+	if (tx === nx && ty === ny) {
+		return false;
+	}
+	const dx = nx - tx;
+	const dy = ny - ty;
+	let direction = -1;
+	for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
+		if (DIRECTION_OFFSETS[d].x === dx && DIRECTION_OFFSETS[d].y === dy) {
+			direction = d;
+			break;
+		}
+	}
+	if (direction < 0) {
+		// Not a cardinal neighbour: never directly walkable between the two tiles.
+		return false;
+	}
+	const froms = findFootpathElements(tx, ty);
+	const tos = findFootpathElements(nx, ny);
+	for (const from of froms) {
+		for (const to of tos) {
+			if (footpathsConnect(from, to, direction)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Whether staff can walk between two neighbouring *land* tiles (used for gardening
+// areas): their terrain heights must be close enough not to form an unclimbable step,
+// and neither may be water. Shared by the manual garden-area scan and auto mode.
+export function surfaceTilesConnect(tx: number, ty: number, nx: number, ny: number): boolean {
+	return surfacesConnect(
+		findSurfaceElement(map.getTile(tx, ty)),
+		findSurfaceElement(map.getTile(nx, ny))
+	);
+}
+
 // Finds the surface element on a tile, if any.
 function findSurfaceElement(tile: Tile): SurfaceElement | null {
 	for (let e = 0; e < tile.numElements; e++) {
