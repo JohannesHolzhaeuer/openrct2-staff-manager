@@ -560,9 +560,16 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][]; w
 				continue;
 			}
 			if (hasFootpathElement(tile)) {
-				// An owned footpath tile is a walkable connector: it is not mowed itself,
-				// but it lets a gardener walk across it and join garden areas that a path
-				// would otherwise split. It is added to areas but not counted as work.
+				// An owned plain (non-queue) footpath tile is a walkable connector: it
+				// is not mowed itself, but it lets a gardener walk across it and join
+				// garden areas that a path would otherwise split. Queue tiles are NOT
+				// connectors - a queue has railing/fencing the gardener cannot step off
+				// onto the adjacent grass, so they are excluded here (and being footpaths
+				// they were never counted as garden work anyway).
+				const hasPlainPath = findFootpathElements(x, y).some(function (fp) { return !fp.isQueue; });
+				if (!hasPlainPath) {
+					continue;
+				}
 				connectorKeys.add(tileKeyStr);
 				continue;
 			}

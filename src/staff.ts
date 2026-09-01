@@ -11,7 +11,7 @@ import {
 } from "./store";
 import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
-	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo, isGardenTile,
+	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo, isGardenTile, isQueueTile,
 	footpathsConnectTiles, surfaceTilesConnect, surfaceBaseZAt
 } from "./scan";
 import { t } from "./i18n";
@@ -1415,7 +1415,23 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			const z = group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING
 				? surfaceBaseZAt(tx, ty)
 				: footpathBaseZAt(tx, ty);
-			teleportStaffToTile(member, tx, ty, z);
+			// For a gardening area, avoid dropping the handyman onto a queue/fenced
+			// footpath (which now only occurs as a possible teleport tile when the tile
+			// itself is a path), so they can actually step onto the grass they are to mow.
+			if (group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING && isQueueTile(tx, ty)) {
+				const workTile = area.coords.find(function (c) {
+					const wx = Math.floor(c.x / 32);
+					const wy = Math.floor(c.y / 32);
+					return wx === tx && wy === ty ? false : !isQueueTile(wx, wy);
+				});
+				if (workTile) {
+					teleportStaffToTile(member, Math.floor(workTile.x / 32), Math.floor(workTile.y / 32), surfaceBaseZAt(Math.floor(workTile.x / 32), Math.floor(workTile.y / 32)));
+				} else {
+					teleportStaffToTile(member, tx, ty, z);
+				}
+			} else {
+				teleportStaffToTile(member, tx, ty, z);
+			}
 		}
 		refreshHiredAndAssignedStaffCounts();
 	});
