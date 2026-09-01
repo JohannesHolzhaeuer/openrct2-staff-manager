@@ -9,12 +9,13 @@ staff management (handymen, security guards, entertainers, mechanics) by splitti
 paths and queues into patrol areas and assigning staff accordingly. Handymen are split between
 **cleanup** (paths + queues) and **gardening** (mow/water); mechanics patrol ride exits.
 
-Patrol/gardening area construction is height‑ and water‑aware: tiles are only linked into the
-same area when actually walkable between each other (matching footpath/slope heights, no
-unclimbable terrain steps, never across water), so every assigned patrol area is guaranteed to be
-one contiguous, fully reachable region rather than accidentally including unreachable tiles at a
-different height. Entertainers have dedicated controls (Tiles/Staff, Staff/Area, and a Queue
-checkbox) instead of the generic density spinner used by handymen/guards.
+Patrol/gardening area construction is height‑, water‑ and fence‑aware: tiles are only linked
+into the same area when actually walkable between each other (matching footpath/slope heights, no
+unclimbable terrain steps, never across water, never across a park fence), so every assigned
+patrol area is guaranteed to be one contiguous, fully reachable region rather than accidentally
+including unreachable tiles at a different height or across a fence. Entertainers have dedicated
+controls (Tiles/Staff, Staff/Area, and a Queue checkbox) instead of the generic density spinner
+used by handymen/guards.
 
 - Plugin project: all runtime logic lives in the `src/` subdirectory as several TypeScript modules,
   bundled into a single compiled JavaScript file. `src/main.ts` is the entry point.
@@ -28,7 +29,10 @@ checkbox) instead of the generic density spinner used by handymen/guards.
   derived Needed computations and disabled stores).
 - `src/config.ts` — default values for the user-facing settings (tiles per staff, enabled flags, etc.).
 - `src/scan.ts` — the map scans: park-entrance detection, height-aware footpath network walk,
-  gardening-tile scan, ride-exit counting.
+  gardening-tile scan, ride-exit counting. Contains the shared connectivity primitives
+  (`footpathsConnect`/`footpathsConnectTiles` for paths, `surfacesConnect`/`surfaceTilesConnect`
+  for land, `surfaceFenceBlocksWalking` for fences) and the pure `footpathIsElevated`/`footpathEdgeZ`
+  helpers.
 - `src/staff.ts` — staff roster logic: hire/fire, classification (cleanup vs gardening), patrol-area
   assignment and teleporting (single serialised queue), the Hired/Assigned refresh.
 - `src/i18n/` — translation dictionaries (en-GB, de-DE) and the `t()` helper.
@@ -85,7 +89,10 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
 - Note that map scans and bulk assignments currently run synchronously (they are not chunked
   across ticks with `forEachAsync`/`context.setTimeout`). Staff teleports ARE serialised through a
   single queue (`teleportQueue`/`processTeleportQueue`) because OpenRCT2 only supports one peep
-  being picked up at a time — preserve this when adding any teleport logic.
+  being picked up at a time — preserve this when adding any teleport logic. `processTeleportQueue`
+  continues on the next tick via `context.setTimeout` rather than recursing, so a large queue
+  never blows the call stack. Never teleport a **gardening** handyman onto a queue/fenced tile —
+  pick a non-queue work tile from the same area so they can reach the grass.
 - Automatic mode (`src/auto.ts` + the "Incremental automatic helpers" in `src/staff.ts`) decides
   **synchronously** against an in-memory record of each purpose's assigned areas
   (`autoAreasByPurpose` / `AutoArea`), *not* against the live staff roster/`patrolArea`s — those
@@ -101,6 +108,16 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
   entrances from ride entrances/exits, since a park entrance can share the same ride id as an
   unrelated ride. Instead, build the set of real ride entrance/exit tiles from
   `map.rides[*].stations[*].entrance/exit` (dividing by 32 to convert to tile coords).
+- Gardening patrol areas may include **plain (non-queue) footpath tiles** as walkable
+  connectors so a handyman can reach/cross a lawn split by a path (these are marked
+  `PathTileInfo.isConnector` and do NOT count toward gardener staffing — use the work-tile count,
+  not the full area length, wherever staffing/needed is computed). Queue tiles are NEVER garden
+  connectors because their railing blocks stepping onto grass. Park fences block walking:** don't link
+  two tiles across a fence (`surfaceFenceBlocksWalking`), so fenced grass stays in separate areas.
+- `surfaceFenceBlocksWalking` uses the surface's `parkFences` bitmask (bit set means the
+  neighbour in that cardinal direction is in the park, per OpenRCT2's `Park.cpp` `UpdateFences`:
+  north=0x4, east=0x2, south=0x1, west=0x8). When splitting areas on fences, check the bit on
+  **both** tiles (each carries the shared-edge fence for its inward direction).
 
 ## Releasing
 
