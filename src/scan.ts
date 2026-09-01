@@ -265,6 +265,41 @@ export function surfacesConnect(from: { baseHeight: number; waterHeight: number 
 	return Math.abs(from.baseHeight - to.baseHeight) <= maxDifference;
 }
 
+// Fence bit for each cardinal direction, matching OpenRCT2's parkFences layout
+// (bit set means the neighbour in that cardinal direction is in the park, so a fence
+// on the shared edge blocks walking). Indexed to CARDINAL_NEIGHBOUR_OFFSETS order:
+// [north(0,-1), east(1,0), south(0,1), west(-1,0)] -> [0x4, 0x2, 0x1, 0x8].
+const FENCE_BIT_BY_DIRECTION = [0x4, 0x2, 0x1, 0x8];
+
+// Whether a park fence or a footpath railing blocks a person from stepping between two
+// neighbouring tiles across their shared edge. A park fence on a surface (parkFences),
+// or a path edge/railing (FootpathElement.edges), physically bars walking, so fenced
+// tiles must not be merged into the same patrol area.
+export function surfaceFenceBlocksWalking(x1: number, y1: number, x2: number, y2: number): boolean {
+	const dx = x2 - x1;
+	const dy = y2 - y1;
+	let direction = -1;
+	for (let d = 0; d < CARDINAL_NEIGHBOUR_OFFSETS.length; d++) {
+		if (CARDINAL_NEIGHBOUR_OFFSETS[d].x === dx && CARDINAL_NEIGHBOUR_OFFSETS[d].y === dy) {
+			direction = d;
+			break;
+		}
+	}
+	if (direction < 0) {
+		return false;
+	}
+	const inverse = oppositeDirection(direction);
+	const surfaceA = findSurfaceElement(map.getTile(x1, y1));
+	const surfaceB = findSurfaceElement(map.getTile(x2, y2));
+	if (surfaceA && (surfaceA.parkFences & FENCE_BIT_BY_DIRECTION[direction]) !== 0) {
+		return true;
+	}
+	if (surfaceB && (surfaceB.parkFences & FENCE_BIT_BY_DIRECTION[inverse]) !== 0) {
+		return true;
+	}
+	return false;
+}
+
 // Whether a surface tile is dry land rather than water. In OpenRCT2, water is
 // not a separate tile/element type: it's stored as a waterHeight on the
 // surface element itself, so a perfectly "grass"-styled surface can still be
@@ -643,6 +678,11 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][]; w
 				// areas rather than in one patrol area a handyman gets stuck
 				// in.
 				if (!surfacesConnect(surface, findSurfaceElement(map.getTile(neighbour.x, neighbour.y)))) {
+					continue;
+				}
+				// A park fence or path railing on either side of the shared edge blocks
+				// walking between the two tiles, so they must remain separate areas.
+				if (surfaceFenceBlocksWalking(current.x, current.y, neighbour.x, neighbour.y)) {
 					continue;
 				}
 				info.neighbourKeys.push(neighbourKey);
