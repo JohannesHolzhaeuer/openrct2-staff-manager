@@ -310,15 +310,20 @@ function processTeleportQueue(): void {
 		return;
 	}
 	teleportInProgress = true;
+	// Continue on the next tick rather than recursing, so a large queue is
+	// processed iteratively across ticks instead of growing the call stack one frame
+	// per teleport (which overflowed it).
+	function scheduleNext(): void {
+		teleportInProgress = false;
+		context.setTimeout(processTeleportQueue, 0);
+	}
 	context.executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function (pickupResult) {
 		if (pickupResult.error) {
-			teleportInProgress = false;
-			processTeleportQueue();
+			scheduleNext();
 			return;
 		}
 		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function () {
-			teleportInProgress = false;
-			processTeleportQueue();
+			scheduleNext();
 		});
 	});
 }
