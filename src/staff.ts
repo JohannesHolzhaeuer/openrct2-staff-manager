@@ -12,7 +12,7 @@ import {
 import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
 	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo, isGardenTile,
-	footpathsConnectTiles, surfaceTilesConnect
+	footpathsConnectTiles, surfaceTilesConnect, surfaceBaseZAt
 } from "./scan";
 import { t } from "./i18n";
 
@@ -1400,7 +1400,10 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			}
 			area.member = member;
 			member.patrolArea.add(area.coords);
-			teleportStaffToTile(member, tx, ty, footpathBaseZAt(tx, ty));
+			const z = group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING
+				? surfaceBaseZAt(tx, ty)
+				: footpathBaseZAt(tx, ty);
+			teleportStaffToTile(member, tx, ty, z);
 		}
 		refreshHiredAndAssignedStaffCounts();
 	});

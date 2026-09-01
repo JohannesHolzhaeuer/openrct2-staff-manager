@@ -447,18 +447,26 @@ function hasFootpathElement(tile: Tile): boolean {
 	return false;
 }
 
-// Whether a tile carries one or more elements that physically block a walking person,
-// so staff can't stand on the tile to mow/water it. A shop/facility (large
-// scenery), ride entrance/exit (entrance), or embedded ride track would occupy the
-// tile column; grass under such an object is not reachable by a gardener. Small
-// scenery (flowers/gardens) and walls/banners are deliberately not treated as
-// blockers - flowers are the very thing being watered, and walls/banners don't
-// prevent standing on the tile.
-function hasBlockingElement(tile: Tile): boolean {
+// Whether a tile carries an element that physically blocks a walking person at
+// the surface's standing height, so staff can't stand on the tile to mow/water
+// it. A shop/facility (large scenery), ride entrance/exit (entrance), or
+// embedded ride track blocks only when it is actually *on* the ground the
+// gardener stands on (its baseZ is at or just above the surface baseZ) - an
+// element clearly elevated above the grass (e.g. a track on a bridge/crest or a
+// raised shop on columns) leaves the grass underneath reachable and must NOT be
+// treated as a blocker. Small scenery (flowers/gardens) and walls/banners are
+// never blockers - flowers are the very thing being watered, and walls/banners
+// don't prevent standing on the tile.
+function hasBlockingElement(tile: Tile, surfaceBaseZ: number): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
-		const type = tile.getElement(e).type;
+		const element = tile.getElement(e);
+		const type = element.type;
 		if (type === "large_scenery" || type === "entrance" || type === "track") {
-			return true;
+			// Only block when the element occupies the gardener's standing column:
+			// its base is no higher than one height level (~16 Z) above the surface.
+			if (element.baseZ <= surfaceBaseZ + 16) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -526,11 +534,11 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			}
 
 			const tile = map.getTile(x, y);
-			if (hasFootpathElement(tile) || hasBlockingElement(tile)) {
+			const surface = findSurfaceElement(tile);
+			if (hasFootpathElement(tile) || hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
 				continue;
 			}
 
-			const surface = findSurfaceElement(tile);
 			// A tile is mowable only if its surface is a grass-family style
 			// and isn't submerged under water (waterHeight === 0): a tile
 			// can be "grass" styled and still have water on top of it, but
@@ -689,13 +697,21 @@ export function isGardenTile(x: number, y: number): boolean {
 		return false;
 	}
 	const tile = map.getTile(x, y);
-	if (hasFootpathElement(tile) || hasBlockingElement(tile)) {
+	const surface = findSurfaceElement(tile);
+	if (hasFootpathElement(tile) || hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
 		return false;
 	}
-	const surface = findSurfaceElement(tile);
 	const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices().has(surface.surfaceStyle);
 	const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
 	return isMowable || isWaterable;
+}
+
+// The baseZ of the surface on a tile (the height a gardener stands on to mow/
+// water), or 0 if there is no surface element. Used as a teleport height for
+// gardening handymen (unlike footpathBaseZAt, which is 0 on grass-only tiles).
+export function surfaceBaseZAt(x: number, y: number): number {
+	const surface = findSurfaceElement(map.getTile(x, y));
+	return surface ? surface.baseZ : 0;
 }
 
 let cachedGrassSurfaceStyleIndices: Set<number> | null = null;
