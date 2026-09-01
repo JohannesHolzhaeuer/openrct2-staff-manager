@@ -734,20 +734,32 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		return;
 	}
 
-	const components = lastGardenAreas.filter(function (area) { return area.length > 0; });
+	const components = lastGardenAreas.filter(function (area) { return area.some(function (t) { return !t.isConnector; }); });
 	if (components.length === 0) {
 		onComplete();
 		return;
 	}
 
-	const totalTiles = components.reduce(function (sum, area) { return sum + area.length; }, 0);
+	// Only mowable/waterable tiles (work tiles) count toward staffing; footpath
+	// connector tiles in an area are reachability only and don't add staffing.
+	function workSize(area: PathTileInfo[]): number {
+		let count = 0;
+		for (const t of area) {
+			if (!t.isConnector) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	const totalTiles = components.reduce(function (sum, area) { return sum + workSize(area); }, 0);
 
 	// Each component's own needed count (same "max tiles per staff" rule
 	// used for the needed-gardener total), guaranteeing every disconnected
 	// area gets at least one gardener regardless of its size relative to
 	// the others.
 	const tilesPerStaff = handymenMowerTilesPerStaffStore.get();
-	const desiredCounts = components.map(function (area) { return computeNeeded(area.length, tilesPerStaff); });
+	const desiredCounts = components.map(function (area) { return computeNeeded(workSize(area), tilesPerStaff); });
 	const desiredTotal = desiredCounts.reduce(function (sum, c) { return sum + c; }, 0);
 
 	let counts: number[];
@@ -760,7 +772,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// caught up yet); fall back to a largest-remainder allocation of
 		// the actually-available gardeners, proportional to tile count.
 		const allocations = components.map(function (area) {
-			return (area.length / totalTiles) * members.length;
+			return (workSize(area) / totalTiles) * members.length;
 		});
 		counts = allocations.map(Math.floor);
 		const assignedTotal = counts.reduce(function (sum, c) { return sum + c; }, 0);
@@ -781,7 +793,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// multiply-allocated component, largest first.
 		if (members.length < components.length) {
 			const bySizeDesc = components.map(function (_, i) { return i; })
-				.sort(function (a, b) { return components[b].length - components[a].length; });
+				.sort(function (a, b) { return workSize(components[b]) - workSize(components[a]); });
 			const newCounts = components.map(function () { return 0; });
 			for (let i = 0; i < members.length; i++) {
 				newCounts[bySizeDesc[i]] = 1;

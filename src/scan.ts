@@ -13,6 +13,11 @@ export interface PathTileInfo {
 	baseHeight: number;
 	baseZ: number;
 	isQueue: boolean;
+	// True only for footpath (connector) tiles added to a gardening area so a
+	// handyman can walk across them between grass work tiles. Connector tiles are
+	// part of the patrol area but are NOT mowed/watered and do NOT count toward
+	// gardener staffing. Undefined for cleanup/queue/regular garden work tiles.
+	isConnector?: boolean;
 	// Keys (see tileKey) of the tiles this tile is actually walkable to.
 	// Plain x/y adjacency is NOT enough to decide this: two neighbouring
 	// tiles can sit at completely different heights (e.g. a path on a
@@ -416,14 +421,23 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 				}
 				// Record the walkable link between the two tiles (both ends,
 				// once both tiles are known to be part of the park's network).
-				if (info) {
-					const neighbourKey = tileKey(neighbour.x, neighbour.y);
-					if (!info.neighbourKeys.includes(neighbourKey)) {
-						info.neighbourKeys.push(neighbourKey);
-					}
-					const neighbourInfo = tilesByKey.get(neighbourKey);
-					if (neighbourInfo && !neighbourInfo.neighbourKeys.includes(key)) {
-						neighbourInfo.neighbourKeys.push(key);
+				// Guard by height: a tile can carry stacked footpaths at different
+				// heights (e.g. underground and overground crossing), which are separate
+				// walkable nodes. Only the node matching this tile's recorded baseZ may
+				// contribute links - otherwise a single tile whose two stacked paths belong to
+				// different networks would bridge them, merging into one unreachable area.
+				if (info != null) {
+					if (info.baseZ === footpath.baseZ) {
+						const neighbourKey = tileKey(neighbour.x, neighbour.y);
+						if (!info.neighbourKeys.includes(neighbourKey)) {
+							info.neighbourKeys.push(neighbourKey);
+						}
+						const neighbourInfo = tilesByKey.get(neighbourKey);
+						if (neighbourInfo != null) {
+							if (neighbourInfo.baseZ === footpath.baseZ && !neighbourInfo.neighbourKeys.includes(key)) {
+								neighbourInfo.neighbourKeys.push(key);
+							}
+						}
 					}
 				}
 				stack.push({ x: neighbour.x, y: neighbour.y, z: edgeZ, fromDirection: oppositeDirection(d) });
@@ -521,10 +535,16 @@ function findGrassSurfaceStyleIndices(): Set<number> {
 // components (4-directionally adjacent tiles), each in BFS visitation order,
 // so groups of tiles that are physically next to each other stay together;
 // this is used by Assign to build spatially local gardening patrol areas.
-function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } {
+function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][]; workCounts: number[] } {
 	const mapSize = map.size;
 	let gardenTiles = 0;
 	const isGardenTile = new Set<string>();
+	// Owned footpath tiles that act as walkable connectors between garden work tiles,
+	// so a gardener can reach (and join) grass areas split by a path.
+	const connectorKeys = new Set<string>();
+	// workCounts[i] = number of mowable/waterable tiles in areas[i]; path connectors
+	// in an area don't count toward gardener staffing.
+	const workCounts: number[] = [];
 	const grassSurfaceStyleIndices = findGrassSurfaceStyleIndices();
 
 	for (let x = 0; x < mapSize.x; x++) {
@@ -535,7 +555,15 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 
 			const tile = map.getTile(x, y);
 			const surface = findSurfaceElement(tile);
-			if (hasFootpathElement(tile) || hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
+			const tileKeyStr = tileKey(x, y);
+			if (hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
+				continue;
+			}
+			if (hasFootpathElement(tile)) {
+				// An owned footpath tile is a walkable connector: it is not mowed itself,
+				// but it lets a gardener walk across it and join garden areas that a path
+				// would otherwise split. It is added to areas but not counted as work.
+				connectorKeys.add(tileKeyStr);
 				continue;
 			}
 
@@ -550,7 +578,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
 			if (isMowable || isWaterable) {
 				gardenTiles++;
-				isGardenTile.add(tileKey(x, y));
+				isGardenTile.add(tileKeyStr);
 			}
 		}
 	}
@@ -566,8 +594,12 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 		const startY = parseInt(parts[1], 10);
 		const component: PathTileInfo[] = [];
 		const componentByKey = new Map<string, PathTileInfo>();
+		// A walkable node is either a garden work tile or a footpath connector tile.
+		const walkKeys = new Set<string>(connectorKeys);
+		isGardenTile.forEach(function (k) { walkKeys.add(k); });
 		const stack: CoordsXY[] = [{ x: startX, y: startY }];
 		visited.add(key);
+		let workTileCount = 0;
 	while (stack.length > 0) {
 		const current = stack.pop();
 		if (!current) {
@@ -581,14 +613,19 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 				baseHeight: surface ? surface.baseHeight : 0,
 				baseZ: surface ? surface.baseZ : 0,
 				isQueue: false,
+				isConnector: connectorKeys.has(currentKey),
 				neighbourKeys: []
 			};
 			component.push(info);
 			componentByKey.set(currentKey, info);
+			if (!info.isConnector) {
+				workTileCount++;
+			}
 			for (const offset of CARDINAL_NEIGHBOUR_OFFSETS) {
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
 				const neighbourKey = tileKey(neighbour.x, neighbour.y);
-				if (!isGardenTile.has(neighbourKey)) {
+				// Walk on to any walkable node (garden work or connector footpath tile).
+				if (!walkKeys.has(neighbourKey)) {
 					continue;
 				}
 				// Two neighbouring land tiles only belong to the same area if
@@ -613,9 +650,10 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			}
 		}
 		areas.push(component);
+		workCounts.push(workTileCount);
 	});
 
-	return { gardenTiles: gardenTiles, areas: areas };
+	return { gardenTiles: gardenTiles, areas: areas, workCounts: workCounts };
 }
 
 // --- Ride exit counting -------------------------------------------------------
@@ -744,7 +782,7 @@ export function scanFootpathNetwork(): void {
 	pathTilesCountStore.set(result.pathTiles.length);
 	queueTilesCountStore.set(result.queueTiles.length);
 	gardenTilesCountStore.set(gardeningResult.gardenTiles);
-	gardenAreaSizesStore.set(gardeningResult.areas.map(function (area) { return area.length; }));
+	gardenAreaSizesStore.set(gardeningResult.workCounts);
 	rideExitCountStore.set(rideExitCount);
 
 	lastAllPathTiles = result.allTiles;
