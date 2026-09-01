@@ -447,6 +447,23 @@ function hasFootpathElement(tile: Tile): boolean {
 	return false;
 }
 
+// Whether a tile carries one or more elements that physically block a walking person,
+// so staff can't stand on the tile to mow/water it. A shop/facility (large
+// scenery), ride entrance/exit (entrance), or embedded ride track would occupy the
+// tile column; grass under such an object is not reachable by a gardener. Small
+// scenery (flowers/gardens) and walls/banners are deliberately not treated as
+// blockers - flowers are the very thing being watered, and walls/banners don't
+// prevent standing on the tile.
+function hasBlockingElement(tile: Tile): boolean {
+	for (let e = 0; e < tile.numElements; e++) {
+		const type = tile.getElement(e).type;
+		if (type === "large_scenery" || type === "entrance" || type === "track") {
+			return true;
+		}
+	}
+	return false;
+}
+
 // The small scenery object flag bit that marks an item as "can be watered"
 // (SMALL_SCENERY_FLAG_CAN_BE_WATERED in the OpenRCT2 source, SmallSceneryEntry.h).
 // Only scenery objects with this flag set (e.g. flowers/gardens) need
@@ -509,7 +526,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			}
 
 			const tile = map.getTile(x, y);
-			if (hasFootpathElement(tile)) {
+			if (hasFootpathElement(tile) || hasBlockingElement(tile)) {
 				continue;
 			}
 
@@ -672,7 +689,7 @@ export function isGardenTile(x: number, y: number): boolean {
 		return false;
 	}
 	const tile = map.getTile(x, y);
-	if (hasFootpathElement(tile)) {
+	if (hasFootpathElement(tile) || hasBlockingElement(tile)) {
 		return false;
 	}
 	const surface = findSurfaceElement(tile);
