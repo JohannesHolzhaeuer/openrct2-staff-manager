@@ -8,7 +8,7 @@ entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
 (re)assign** staff so the right number always patrol the right places — sending
 each staff member to their **nearest** free zone.
 
-- **Version:** 0.9.4
+- **Version:** 0.9.5
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
@@ -252,6 +252,13 @@ directly in the UI, but their initial defaults live in code:
 
 ## Changelog
 
+- **0.9.5** – Fixed the game freezing for several seconds after "Adjust and
+  assign": hire/fire and patrol-area work is now spread over real game ticks
+  (timers scheduled with delay 0 were re-entered within the same tick), and the
+  expensive chunk-merging and nearest-placeable-tile searches were replaced with
+  much cheaper algorithms. Added a segmented progress bar above the status row,
+  the status now ends with "Done"/"Fertig", and the "Adjust and assign" button is
+  always enabled.
 - **0.9.4** – Made auto-mode's enlarge-vs-hire decision respect genuine walkable
   connectivity (bridges over paths, and inclined ways at different heights, are
   no longer merged into one patrol area). Included elevated footpaths over
