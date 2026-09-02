@@ -152,6 +152,90 @@ describe("chunkTilesForStaffCount", () => {
 		expect(chunks.length).toBe(1);
 		expect(chunks[0].length).toBe(2);
 	});
+	it("does not split a parallel path+queue connected at one end when staff count is 1", () => {
+		// Two parallel strips that join at the left into one connected network,
+		// like a path and a queue connected at one end on a bridge: every chunk
+		// must remain one contiguous piece (the merge step must not drop it).
+		const tiles: PathTileInfo[] = [];
+		const mk = (x: number, y: number) => ({ x, y, baseHeight: 0, baseZ: 0, isQueue: x >= 3, neighbourKeys: [] as string[] });
+		for (let x = 0; x <= 4; x++) {
+			tiles.push(mk(x, 0));
+		}
+		for (let x = 0; x <= 4; x++) {
+			tiles.push(mk(x, 2));
+		}
+		// mid connector at x=0..2 joins both rows at each x
+		for (let x = 0; x <= 2; x++) {
+			tiles.push(mk(x, 1));
+		}
+		const key = (x: number, y: number) => `${x},${y}`;
+		const t = {} as Record<string, PathTileInfo>;
+		for (const tile of tiles) { t[key(tile.x, tile.y)] = tile; }
+		const link = (x1: number, y1: number, x2: number, y2: number) => {
+			t[key(x1, y1)].neighbourKeys.push(key(x2, y2));
+		};
+		// horizontal links row 0
+		for (let x = 0; x < 4; x++) { link(x, 0, x + 1, 0); }
+		// horizontal links row 2
+		for (let x = 0; x < 4; x++) { link(x, 2, x + 1, 2); }
+		// vertical connectors
+		for (let x = 0; x <= 2; x++) { link(x, 0, x, 1); link(x, 1, x, 0); link(x, 1, x, 2); link(x, 2, x, 1); }
+		const chunks = chunkTilesForStaffCount(tiles, 1);
+		expect(chunks.length).toBe(1);
+		expect(chunks[0].length).toBe(tiles.length);
+		// And the single area must touch the connector (row 1) AND both rows: it
+		// spans across the whole connected component.
+		const keys = new Set(chunks[0].map(til => key(til.x, til.y)));
+		expect(keys.has(key(0, 1))).toBe(true);
+		expect(keys.has(key(4, 0))).toBe(true);
+		expect(keys.has(key(4, 2))).toBe(true);
+	});
+	it("every chunk stays contiguous for multiple staff on a connected network", () => {
+		// Same connected U-network, but enough staff that the network is split into
+		// several areas. Every chunk must remain one contiguous piece, and together
+		// they must cover every tile exactly once (no orphan/connection loss).
+		const tiles: PathTileInfo[] = [];
+		const mk = (x: number, y: number) => ({ x, y, baseHeight: 0, baseZ: 0, isQueue: false, neighbourKeys: [] as string[] });
+		for (let y = 0; y <= 4; y++) {
+			for (let x = 0; x <= 4; x++) {
+				tiles.push(mk(x, y));
+			}
+		}
+		const key = (x: number, y: number) => `${x},${y}`;
+		const t = {} as Record<string, PathTileInfo>;
+		for (const tile of tiles) { t[key(tile.x, tile.y)] = tile; }
+		for (const tile of tiles) {
+			const { x, y } = tile;
+			for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+				const nx = x + dx, ny = y + dy;
+				const nk = key(nx, ny);
+				if (nk in t) {
+					tile.neighbourKeys.push(nk);
+				}
+			}
+		}
+		const chunks = chunkTilesForStaffCount(tiles, 5);
+		const total = chunks.reduce((sum, c) => sum + c.length, 0);
+		expect(total).toBe(tiles.length); // no tile lost
+		for (const chunk of chunks) {
+			const keys = new Set(chunk.map(til => key(til.x, til.y)));
+			const seen = new Set<string>([key(chunk[0].x, chunk[0].y)]);
+			const queue: string[] = [key(chunk[0].x, chunk[0].y)];
+			let qi = 0;
+			while (qi < queue.length) {
+				const ck = queue[qi];
+				qi++;
+				const cur = t[ck];
+				for (const nk of cur.neighbourKeys) {
+					if (keys.has(nk) && !seen.has(nk)) {
+						seen.add(nk);
+						queue.push(nk);
+					}
+				}
+			}
+			expect(seen.size).toBe(chunk.length); // every chunk is one piece
+		}
+	});
 });
 
 // Helper: convert a list of tile-coordinate pairs into world-coordinate areas (the
@@ -194,5 +278,29 @@ describe("decideAreaAction", () => {
 	it("enlarges an area that lies to the +y side of the new tile", () => {
 		const areas = [areaTiles([0, 2])];
 		expect(decideAreaAction(areas, { x: 0, y: 1 }, 8)).toEqual({ action: "enlarge", areaIndex: 0 });
+	});
+	it("enlarges only a genuinely-connected (walkable) adjacent area when a connect predicate is supplied", () => {
+		const areas = [areaTiles([1, 0])];
+		// new tile (0,0) is cardinal-adjacent to area tile (1,0), and the predicate
+		// confirms they are walkable -> enlarge.
+		const decision = decideAreaAction(areas, { x: 0, y: 0 }, 8,
+			function () { return true; });
+		expect(decision).toEqual({ action: "enlarge", areaIndex: 0 });
+	});
+	it("does not enlarge an unreachable (e.g. bridge) adjacent tile when the predicate returns false", () => {
+		const areas = [areaTiles([1, 0])];
+		// area tile at (1,0) is cardinal-adjacent to new tile (0,0), but the
+		// predicate says they are not walkable (e.g. a bridge over a path) -> hire,
+		// giving the unreachable tile its own staff member instead of merging areas.
+		const decision = decideAreaAction(areas, { x: 0, y: 0 }, 8,
+			function () { return false; });
+		expect(decision.action).toBe("hire");
+	});
+	it("the connect predicate only gates adjacency, not coverage", () => {
+		const areas = [areaTiles([0, 0])];
+		// new tile is already in the area -> covered regardless of the predicate.
+		const decision = decideAreaAction(areas, { x: 0, y: 0 }, 8,
+			function () { return false; });
+		expect(decision).toEqual({ action: "covered" });
 	});
 });

@@ -13,6 +13,11 @@ export interface PathTileInfo {
 	baseHeight: number;
 	baseZ: number;
 	isQueue: boolean;
+	// True only for footpath (connector) tiles added to a gardening area so a
+	// handyman can walk across them between grass work tiles. Connector tiles are
+	// part of the patrol area but are NOT mowed/watered and do NOT count toward
+	// gardener staffing. Undefined for cleanup/queue/regular garden work tiles.
+	isConnector?: boolean;
 	// Keys (see tileKey) of the tiles this tile is actually walkable to.
 	// Plain x/y adjacency is NOT enough to decide this: two neighbouring
 	// tiles can sit at completely different heights (e.g. a path on a
@@ -189,6 +194,52 @@ export function footpathsConnect(from: FootpathGeometry, to: FootpathGeometry, d
 	return footpathEdgeZ(from, direction) === footpathEdgeZ(to, oppositeDirection(direction));
 }
 
+// Whether staff can walk between two neighbouring tiles' *footpath* elements. Unlike
+// plain x/y adjacency, this resolves height: a path on a bridge and a path passing
+// beneath it at a different height are NOT considered connected, and two inclined ways
+// meet only if their shared edge is at the same height. This is the shared
+// connectivity primitive used by both the manual scan (to build patrol areas) and
+// auto mode (to decide enlarge-vs-hire), so the two never disagree about whether two
+// tiles belong in one reachable area.
+export function footpathsConnectTiles(tx: number, ty: number, nx: number, ny: number): boolean {
+	if (tx === nx && ty === ny) {
+		return false;
+	}
+	const dx = nx - tx;
+	const dy = ny - ty;
+	let direction = -1;
+	for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
+		if (DIRECTION_OFFSETS[d].x === dx && DIRECTION_OFFSETS[d].y === dy) {
+			direction = d;
+			break;
+		}
+	}
+	if (direction < 0) {
+		// Not a cardinal neighbour: never directly walkable between the two tiles.
+		return false;
+	}
+	const froms = findFootpathElements(tx, ty);
+	const tos = findFootpathElements(nx, ny);
+	for (const from of froms) {
+		for (const to of tos) {
+			if (footpathsConnect(from, to, direction)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+// Whether staff can walk between two neighbouring *land* tiles (used for gardening
+// areas): their terrain heights must be close enough not to form an unclimbable step,
+// and neither may be water. Shared by the manual garden-area scan and auto mode.
+export function surfaceTilesConnect(tx: number, ty: number, nx: number, ny: number): boolean {
+	return surfacesConnect(
+		findSurfaceElement(map.getTile(tx, ty)),
+		findSurfaceElement(map.getTile(nx, ny))
+	);
+}
+
 // Finds the surface element on a tile, if any.
 function findSurfaceElement(tile: Tile): SurfaceElement | null {
 	for (let e = 0; e < tile.numElements; e++) {
@@ -214,6 +265,41 @@ export function surfacesConnect(from: { baseHeight: number; waterHeight: number 
 	return Math.abs(from.baseHeight - to.baseHeight) <= maxDifference;
 }
 
+// Fence bit for each cardinal direction, matching OpenRCT2's parkFences layout
+// (bit set means the neighbour in that cardinal direction is in the park, so a fence
+// on the shared edge blocks walking). Indexed to CARDINAL_NEIGHBOUR_OFFSETS order:
+// [north(0,-1), east(1,0), south(0,1), west(-1,0)] -> [0x4, 0x2, 0x1, 0x8].
+const FENCE_BIT_BY_DIRECTION = [0x4, 0x2, 0x1, 0x8];
+
+// Whether a park fence or a footpath railing blocks a person from stepping between two
+// neighbouring tiles across their shared edge. A park fence on a surface (parkFences),
+// or a path edge/railing (FootpathElement.edges), physically bars walking, so fenced
+// tiles must not be merged into the same patrol area.
+export function surfaceFenceBlocksWalking(x1: number, y1: number, x2: number, y2: number): boolean {
+	const dx = x2 - x1;
+	const dy = y2 - y1;
+	let direction = -1;
+	for (let d = 0; d < CARDINAL_NEIGHBOUR_OFFSETS.length; d++) {
+		if (CARDINAL_NEIGHBOUR_OFFSETS[d].x === dx && CARDINAL_NEIGHBOUR_OFFSETS[d].y === dy) {
+			direction = d;
+			break;
+		}
+	}
+	if (direction < 0) {
+		return false;
+	}
+	const inverse = oppositeDirection(direction);
+	const surfaceA = findSurfaceElement(map.getTile(x1, y1));
+	const surfaceB = findSurfaceElement(map.getTile(x2, y2));
+	if (surfaceA && (surfaceA.parkFences & FENCE_BIT_BY_DIRECTION[direction]) !== 0) {
+		return true;
+	}
+	if (surfaceB && (surfaceB.parkFences & FENCE_BIT_BY_DIRECTION[inverse]) !== 0) {
+		return true;
+	}
+	return false;
+}
+
 // Whether a surface tile is dry land rather than water. In OpenRCT2, water is
 // not a separate tile/element type: it's stored as a waterHeight on the
 // surface element itself, so a perfectly "grass"-styled surface can still be
@@ -234,6 +320,32 @@ function isParkOwnedTile(x: number, y: number): boolean {
 		return false;
 	}
 	return surface.hasOwnership;
+}
+
+// How many height levels (~16 Z units each) a footpath must clear the ground surface
+// below it to be considered a bridge/overpass rather than a ground-level path.
+export const ELEVATED_FOOTPATH_LEVELS = 2;
+
+// The pure version of the elevated-footpath check: a footpath is considered a bridge
+// or overpass when its baseZ is at least ELEVATED_FOOTPATH_LEVELS height levels
+// (~32 Z units) above the given ground surface baseZ. Extracted from the map-reading
+// isElevatedFootpath so it can be unit-tested without OpenRCT2 access.
+export function footpathIsElevated(footpathBaseZ: number, surfaceBaseZ: number): boolean {
+	return footpathBaseZ >= surfaceBaseZ + ELEVATED_FOOTPATH_LEVELS * 16;
+}
+
+// Whether a footpath is elevated well above the surface below it (a bridge or
+// overpass). In OpenRCT2 the surface's baseZ is the ground level, and a path a
+// couple of height levels or more above it crosses over land beneath — often land the
+// park doesn't own. Such an elevated path is still a real park path staff can patrol,
+// unlike a ground-level public road on unowned land, which the scan only walks *through*
+// without including.
+function isElevatedFootpath(x: number, y: number, footpath: { baseZ: number }): boolean {
+	const surface = findSurfaceElement(map.getTile(x, y));
+	if (!surface) {
+		return false;
+	}
+	return footpathIsElevated(footpath.baseZ, surface.baseZ);
 }
 
 // Starting from the park entrance, walks the connected footpath network in all
@@ -297,7 +409,6 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 		// built from them to leave a gap in the middle. Unowned non-path
 		// tiles (e.g. surrounding land/water) are still dead ends, so the
 		// walk doesn't spread across the whole map.
-		const isOwned = isParkOwnedTile(current.x, current.y);
 		const footpaths = findFootpathElements(current.x, current.y);
 
 		for (const footpath of footpaths) {
@@ -314,8 +425,9 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 			visited.add(nodeKey);
 
 			const key = tileKey(current.x, current.y);
+			const ownedOrElevated = isParkOwnedTile(current.x, current.y) || isElevatedFootpath(current.x, current.y, footpath);
 			let info = tilesByKey.get(key);
-			if (isOwned && !info) {
+			if (ownedOrElevated && !info) {
 				info = {
 					x: current.x,
 					y: current.y,
@@ -344,14 +456,23 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 				}
 				// Record the walkable link between the two tiles (both ends,
 				// once both tiles are known to be part of the park's network).
-				if (info) {
-					const neighbourKey = tileKey(neighbour.x, neighbour.y);
-					if (!info.neighbourKeys.includes(neighbourKey)) {
-						info.neighbourKeys.push(neighbourKey);
-					}
-					const neighbourInfo = tilesByKey.get(neighbourKey);
-					if (neighbourInfo && !neighbourInfo.neighbourKeys.includes(key)) {
-						neighbourInfo.neighbourKeys.push(key);
+				// Guard by height: a tile can carry stacked footpaths at different
+				// heights (e.g. underground and overground crossing), which are separate
+				// walkable nodes. Only the node matching this tile's recorded baseZ may
+				// contribute links - otherwise a single tile whose two stacked paths belong to
+				// different networks would bridge them, merging into one unreachable area.
+				if (info != null) {
+					if (info.baseZ === footpath.baseZ) {
+						const neighbourKey = tileKey(neighbour.x, neighbour.y);
+						if (!info.neighbourKeys.includes(neighbourKey)) {
+							info.neighbourKeys.push(neighbourKey);
+						}
+						const neighbourInfo = tilesByKey.get(neighbourKey);
+						if (neighbourInfo != null) {
+							if (neighbourInfo.baseZ === footpath.baseZ && !neighbourInfo.neighbourKeys.includes(key)) {
+								neighbourInfo.neighbourKeys.push(key);
+							}
+						}
 					}
 				}
 				stack.push({ x: neighbour.x, y: neighbour.y, z: edgeZ, fromDirection: oppositeDirection(d) });
@@ -370,6 +491,31 @@ function hasFootpathElement(tile: Tile): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
 		if (tile.getElement(e).type === "footpath") {
 			return true;
+		}
+	}
+	return false;
+}
+
+// Whether a tile carries an element that physically blocks a walking person at
+// the surface's standing height, so staff can't stand on the tile to mow/water
+// it. A shop/facility (large scenery), ride entrance/exit (entrance), or
+// embedded ride track blocks only when it is actually *on* the ground the
+// gardener stands on (its baseZ is at or just above the surface baseZ) - an
+// element clearly elevated above the grass (e.g. a track on a bridge/crest or a
+// raised shop on columns) leaves the grass underneath reachable and must NOT be
+// treated as a blocker. Small scenery (flowers/gardens) and walls/banners are
+// never blockers - flowers are the very thing being watered, and walls/banners
+// don't prevent standing on the tile.
+function hasBlockingElement(tile: Tile, surfaceBaseZ: number): boolean {
+	for (let e = 0; e < tile.numElements; e++) {
+		const element = tile.getElement(e);
+		const type = element.type;
+		if (type === "large_scenery" || type === "entrance" || type === "track") {
+			// Only block when the element occupies the gardener's standing column:
+			// its base is no higher than one height level (~16 Z) above the surface.
+			if (element.baseZ <= surfaceBaseZ + 16) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -424,10 +570,16 @@ function findGrassSurfaceStyleIndices(): Set<number> {
 // components (4-directionally adjacent tiles), each in BFS visitation order,
 // so groups of tiles that are physically next to each other stay together;
 // this is used by Assign to build spatially local gardening patrol areas.
-function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } {
+function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][]; workCounts: number[] } {
 	const mapSize = map.size;
 	let gardenTiles = 0;
 	const isGardenTile = new Set<string>();
+	// Owned footpath tiles that act as walkable connectors between garden work tiles,
+	// so a gardener can reach (and join) grass areas split by a path.
+	const connectorKeys = new Set<string>();
+	// workCounts[i] = number of mowable/waterable tiles in areas[i]; path connectors
+	// in an area don't count toward gardener staffing.
+	const workCounts: number[] = [];
 	const grassSurfaceStyleIndices = findGrassSurfaceStyleIndices();
 
 	for (let x = 0; x < mapSize.x; x++) {
@@ -437,11 +589,26 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			}
 
 			const tile = map.getTile(x, y);
+			const surface = findSurfaceElement(tile);
+			const tileKeyStr = tileKey(x, y);
+			if (hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
+				continue;
+			}
 			if (hasFootpathElement(tile)) {
+				// An owned plain (non-queue) footpath tile is a walkable connector: it
+				// is not mowed itself, but it lets a gardener walk across it and join
+				// garden areas that a path would otherwise split. Queue tiles are NOT
+				// connectors - a queue has railing/fencing the gardener cannot step off
+				// onto the adjacent grass, so they are excluded here (and being footpaths
+				// they were never counted as garden work anyway).
+				const hasPlainPath = findFootpathElements(x, y).some(function (fp) { return !fp.isQueue; });
+				if (!hasPlainPath) {
+					continue;
+				}
+				connectorKeys.add(tileKeyStr);
 				continue;
 			}
 
-			const surface = findSurfaceElement(tile);
 			// A tile is mowable only if its surface is a grass-family style
 			// and isn't submerged under water (waterHeight === 0): a tile
 			// can be "grass" styled and still have water on top of it, but
@@ -453,7 +620,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
 			if (isMowable || isWaterable) {
 				gardenTiles++;
-				isGardenTile.add(tileKey(x, y));
+				isGardenTile.add(tileKeyStr);
 			}
 		}
 	}
@@ -469,8 +636,12 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 		const startY = parseInt(parts[1], 10);
 		const component: PathTileInfo[] = [];
 		const componentByKey = new Map<string, PathTileInfo>();
+		// A walkable node is either a garden work tile or a footpath connector tile.
+		const walkKeys = new Set<string>(connectorKeys);
+		isGardenTile.forEach(function (k) { walkKeys.add(k); });
 		const stack: CoordsXY[] = [{ x: startX, y: startY }];
 		visited.add(key);
+		let workTileCount = 0;
 	while (stack.length > 0) {
 		const current = stack.pop();
 		if (!current) {
@@ -484,14 +655,19 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 				baseHeight: surface ? surface.baseHeight : 0,
 				baseZ: surface ? surface.baseZ : 0,
 				isQueue: false,
+				isConnector: connectorKeys.has(currentKey),
 				neighbourKeys: []
 			};
 			component.push(info);
 			componentByKey.set(currentKey, info);
+			if (!info.isConnector) {
+				workTileCount++;
+			}
 			for (const offset of CARDINAL_NEIGHBOUR_OFFSETS) {
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
 				const neighbourKey = tileKey(neighbour.x, neighbour.y);
-				if (!isGardenTile.has(neighbourKey)) {
+				// Walk on to any walkable node (garden work or connector footpath tile).
+				if (!walkKeys.has(neighbourKey)) {
 					continue;
 				}
 				// Two neighbouring land tiles only belong to the same area if
@@ -502,6 +678,11 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 				// areas rather than in one patrol area a handyman gets stuck
 				// in.
 				if (!surfacesConnect(surface, findSurfaceElement(map.getTile(neighbour.x, neighbour.y)))) {
+					continue;
+				}
+				// A park fence or path railing on either side of the shared edge blocks
+				// walking between the two tiles, so they must remain separate areas.
+				if (surfaceFenceBlocksWalking(current.x, current.y, neighbour.x, neighbour.y)) {
 					continue;
 				}
 				info.neighbourKeys.push(neighbourKey);
@@ -516,9 +697,10 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][] } 
 			}
 		}
 		areas.push(component);
+		workCounts.push(workTileCount);
 	});
 
-	return { gardenTiles: gardenTiles, areas: areas };
+	return { gardenTiles: gardenTiles, areas: areas, workCounts: workCounts };
 }
 
 // --- Ride exit counting -------------------------------------------------------
@@ -600,13 +782,21 @@ export function isGardenTile(x: number, y: number): boolean {
 		return false;
 	}
 	const tile = map.getTile(x, y);
-	if (hasFootpathElement(tile)) {
+	const surface = findSurfaceElement(tile);
+	if (hasFootpathElement(tile) || hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
 		return false;
 	}
-	const surface = findSurfaceElement(tile);
 	const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices().has(surface.surfaceStyle);
 	const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
 	return isMowable || isWaterable;
+}
+
+// The baseZ of the surface on a tile (the height a gardener stands on to mow/
+// water), or 0 if there is no surface element. Used as a teleport height for
+// gardening handymen (unlike footpathBaseZAt, which is 0 on grass-only tiles).
+export function surfaceBaseZAt(x: number, y: number): number {
+	const surface = findSurfaceElement(map.getTile(x, y));
+	return surface ? surface.baseZ : 0;
 }
 
 let cachedGrassSurfaceStyleIndices: Set<number> | null = null;
@@ -639,7 +829,7 @@ export function scanFootpathNetwork(): void {
 	pathTilesCountStore.set(result.pathTiles.length);
 	queueTilesCountStore.set(result.queueTiles.length);
 	gardenTilesCountStore.set(gardeningResult.gardenTiles);
-	gardenAreaSizesStore.set(gardeningResult.areas.map(function (area) { return area.length; }));
+	gardenAreaSizesStore.set(gardeningResult.workCounts);
 	rideExitCountStore.set(rideExitCount);
 
 	lastAllPathTiles = result.allTiles;

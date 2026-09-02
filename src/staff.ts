@@ -11,7 +11,8 @@ import {
 } from "./store";
 import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
-	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo, isGardenTile
+	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo, isGardenTile, isQueueTile,
+	footpathsConnectTiles, surfaceTilesConnect, surfaceBaseZAt
 } from "./scan";
 import { t } from "./i18n";
 
@@ -309,15 +310,20 @@ function processTeleportQueue(): void {
 		return;
 	}
 	teleportInProgress = true;
+	// Continue on the next tick rather than recursing, so a large queue is
+	// processed iteratively across ticks instead of growing the call stack one frame
+	// per teleport (which overflowed it).
+	function scheduleNext(): void {
+		teleportInProgress = false;
+		context.setTimeout(processTeleportQueue, 0);
+	}
 	context.executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function (pickupResult) {
 		if (pickupResult.error) {
-			teleportInProgress = false;
-			processTeleportQueue();
+			scheduleNext();
 			return;
 		}
 		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function () {
-			teleportInProgress = false;
-			processTeleportQueue();
+			scheduleNext();
 		});
 	});
 }
@@ -659,8 +665,12 @@ const ADJACENT_OFFSETS: CoordsXY[] = [
 //  - Else if an adjacent area is under the max size -> "enlarge"  (extend that area)
 //  - Else                                       -> "hire"      (new staff + assign)
 // `areas` is the list of tile-world-coordinate arrays, one per already-hired staff
-// member of the type. `newTile` is the placed tile in tile coordinates.
-export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize: number): AreaDecision {
+// member of the type. `newTile` is the placed tile in tile coordinates. The optional
+// `connect` predicate decides whether the new tile is genuinely walkable to an
+// existing area tile: when supplied, only actually-connected cardinal neighbours count as
+// adjacent (so bridges/inclined ways are never merged); when omitted (tests), plain
+// cardinal adjacency is used.
+export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize: number, connect?: (areaTileX: number, areaTileY: number, newTileX: number, newTileY: number, areaIndex: number) => boolean): AreaDecision {
 	if (newTile.x < 0 || newTile.y < 0) {
 		return { action: "hire" };
 	}
@@ -674,10 +684,14 @@ export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize
 	for (const offset of ADJACENT_OFFSETS) {
 		for (let i = 0; i < areas.length; i++) {
 			const area = areas[i];
-			// Is this area adjacent to the new tile?
+			// Is this area adjacent (and, if `connect` given, actually reachable) to the new tile?
 			let adjacent = false;
 			for (const tile of area) {
-				if (worldToTileX(tile.x) === newTile.x + worldToTileX(offset.x) && worldToTileX(tile.y) === newTile.y + worldToTileX(offset.y)) {
+				const atx = worldToTileX(tile.x);
+				const aty = worldToTileX(tile.y);
+				const expectedX = newTile.x + worldToTileX(offset.x);
+				const expectedY = newTile.y + worldToTileX(offset.y);
+				if (atx === expectedX && aty === expectedY && (!connect || connect(atx, aty, newTile.x, newTile.y, i))) {
 					adjacent = true;
 					break;
 				}
@@ -720,20 +734,32 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		return;
 	}
 
-	const components = lastGardenAreas.filter(function (area) { return area.length > 0; });
+	const components = lastGardenAreas.filter(function (area) { return area.some(function (t) { return !t.isConnector; }); });
 	if (components.length === 0) {
 		onComplete();
 		return;
 	}
 
-	const totalTiles = components.reduce(function (sum, area) { return sum + area.length; }, 0);
+	// Only mowable/waterable tiles (work tiles) count toward staffing; footpath
+	// connector tiles in an area are reachability only and don't add staffing.
+	function workSize(area: PathTileInfo[]): number {
+		let count = 0;
+		for (const t of area) {
+			if (!t.isConnector) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	const totalTiles = components.reduce(function (sum, area) { return sum + workSize(area); }, 0);
 
 	// Each component's own needed count (same "max tiles per staff" rule
 	// used for the needed-gardener total), guaranteeing every disconnected
 	// area gets at least one gardener regardless of its size relative to
 	// the others.
 	const tilesPerStaff = handymenMowerTilesPerStaffStore.get();
-	const desiredCounts = components.map(function (area) { return computeNeeded(area.length, tilesPerStaff); });
+	const desiredCounts = components.map(function (area) { return computeNeeded(workSize(area), tilesPerStaff); });
 	const desiredTotal = desiredCounts.reduce(function (sum, c) { return sum + c; }, 0);
 
 	let counts: number[];
@@ -746,7 +772,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// caught up yet); fall back to a largest-remainder allocation of
 		// the actually-available gardeners, proportional to tile count.
 		const allocations = components.map(function (area) {
-			return (area.length / totalTiles) * members.length;
+			return (workSize(area) / totalTiles) * members.length;
 		});
 		counts = allocations.map(Math.floor);
 		const assignedTotal = counts.reduce(function (sum, c) { return sum + c; }, 0);
@@ -767,7 +793,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// multiply-allocated component, largest first.
 		if (members.length < components.length) {
 			const bySizeDesc = components.map(function (_, i) { return i; })
-				.sort(function (a, b) { return components[b].length - components[a].length; });
+				.sort(function (a, b) { return workSize(components[b]) - workSize(components[a]); });
 			const newCounts = components.map(function () { return 0; });
 			for (let i = 0; i < members.length; i++) {
 				newCounts[bySizeDesc[i]] = 1;
@@ -1284,23 +1310,30 @@ interface AutoGroup {
 	orders: number;
 	getMaxSize: () => number;
 	purpose: string;
+	// Connectivity predicate (shared with the manual scan) used to decide whether a
+	// freshly placed tile is genuinely walkable into an area before enlarging it.
+	connect: (areaTileX: number, areaTileY: number, newTileX: number, newTileY: number, areaIndex: number) => boolean;
 }
 
 const AUTO_GROUP_CLEANUP: AutoGroup = {
 	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_CLEANUP,
-	getMaxSize: () => handymenTilesPerStaffStore.get(), purpose: "cleanup"
+	getMaxSize: () => handymenTilesPerStaffStore.get(), purpose: "cleanup",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
 };
 const AUTO_GROUP_GARDENING: AutoGroup = {
 	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_GARDENING,
-	getMaxSize: () => handymenMowerTilesPerStaffStore.get(), purpose: "gardening"
+	getMaxSize: () => handymenMowerTilesPerStaffStore.get(), purpose: "gardening",
+	connect: (ax, ay, nx, ny) => surfaceTilesConnect(ax, ay, nx, ny)
 };
 const AUTO_GROUP_GUARD: AutoGroup = {
 	staffType: "security", staffTypeId: STAFF_TYPE_ID_SECURITY, orders: 0,
-	getMaxSize: () => guardsTilesPerStaffStore.get(), purpose: "guard"
+	getMaxSize: () => guardsTilesPerStaffStore.get(), purpose: "guard",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
 };
 const AUTO_GROUP_ENTERTAINER: AutoGroup = {
 	staffType: "entertainer", staffTypeId: STAFF_TYPE_ID_ENTERTAINER, orders: 0,
-	getMaxSize: () => entertainersTilesPerStaffStore.get(), purpose: "entertainer"
+	getMaxSize: () => entertainersTilesPerStaffStore.get(), purpose: "entertainer",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
 };
 
 // Synchronous per-purpose area records (see the block comment above the interface).
@@ -1338,7 +1371,7 @@ function autoAddTileToArea(group: AutoGroup, areaIndex: number, tx: number, ty: 
 function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
 	const areas = autoAreas(group);
 	const list = autoAreasAsCoords(group);
-	const decision = decideAreaAction(list, { x: tx, y: ty }, group.getMaxSize());
+	const decision = decideAreaAction(list, { x: tx, y: ty }, group.getMaxSize(), group.connect);
 	if (decision.action === "covered") {
 		return false;
 	}
@@ -1379,7 +1412,26 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			}
 			area.member = member;
 			member.patrolArea.add(area.coords);
-			teleportStaffToTile(member, tx, ty, footpathBaseZAt(tx, ty));
+			const z = group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING
+				? surfaceBaseZAt(tx, ty)
+				: footpathBaseZAt(tx, ty);
+			// For a gardening area, avoid dropping the handyman onto a queue/fenced
+			// footpath (which now only occurs as a possible teleport tile when the tile
+			// itself is a path), so they can actually step onto the grass they are to mow.
+			if (group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING && isQueueTile(tx, ty)) {
+				const workTile = area.coords.find(function (c) {
+					const wx = Math.floor(c.x / 32);
+					const wy = Math.floor(c.y / 32);
+					return wx === tx && wy === ty ? false : !isQueueTile(wx, wy);
+				});
+				if (workTile) {
+					teleportStaffToTile(member, Math.floor(workTile.x / 32), Math.floor(workTile.y / 32), surfaceBaseZAt(Math.floor(workTile.x / 32), Math.floor(workTile.y / 32)));
+				} else {
+					teleportStaffToTile(member, tx, ty, z);
+				}
+			} else {
+				teleportStaffToTile(member, tx, ty, z);
+			}
 		}
 		refreshHiredAndAssignedStaffCounts();
 	});
