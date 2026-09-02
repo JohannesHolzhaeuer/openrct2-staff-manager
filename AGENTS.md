@@ -60,8 +60,6 @@ used by handymen/guards.
   `.tmp\obj\` so VS build artefacts don't pollute the repo root.
 - `.github/workflows/release.yml` — CI pipeline that builds the plugin, runs the tests, and publishes
   a GitHub Release with `dist/staff-manager.js` attached whenever a tag matching `v*` is pushed.
-- `.github/workflows/develop-prerelease.yml` — CI pipeline that builds the plugin, runs the tests, and
-  publishes a `develop` prerelease tracking the tip of `main`.
 - `test/` — Vitest unit tests for the pure, testable logic in `src/`.
 
 ## Build & run
