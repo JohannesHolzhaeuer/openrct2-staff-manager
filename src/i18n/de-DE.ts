@@ -11,6 +11,7 @@ export const deDE: Translations = {
 	"parkEntrance.tooltip": "Zusammenfassung der letzten Kartenabtastung: erreichbare Weg-, Warteschlangen- und Gartenfliesenanzahl, aktualisiert durch Personalanzahl anpassen/Zuweisen.",
 
 	"applyMessage.tooltip": "Reserviert für Statusmeldungen nach Personalanzahl anpassen/Zuweisen.",
+	"progress.tooltip": "Fortschritt des laufenden Vorgangs Personalanzahl anpassen/Zuweisen.",
 
 	"auto.on": "Automatische Zuweisung ist AN",
 	"auto.off": "Automatische Zuweisung ist AUS",
@@ -21,6 +22,7 @@ export const deDE: Translations = {
 	"status.assigningEntertainers": "Entertainer werden zugewiesen...",
 	"status.assigningMechanics": "Mechaniker werden zugewiesen...",
 	"status.adjusting": "Personalanzahl wird angepasst...",
+	"status.done": "Fertig",
 
 	"button.adjustAndAssign": "Anpassen und zuweisen",
 	"button.adjustAndAssign.tooltip": "Stellt Personal jedes aktivierten Typs ein oder entlässt es, um die berechnete Bedarfsanzahl zu erreichen (Einstellung bei Unterbesetzung, Entlassung der ältesten zuerst bei Überbesetzung) und baut anschließend die Patrouillenbereiche anhand der zuletzt gescannten Fliesen neu auf und teleportiert jedes Personalmitglied an den Anfang seines neuen Bereichs.",

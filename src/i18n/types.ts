@@ -12,6 +12,7 @@ export interface Translations {
 	"parkEntrance.tooltip": string;
 
 	"applyMessage.tooltip": string;
+	"progress.tooltip": string;
 
 	"auto.on": string;
 	"auto.off": string;
@@ -22,6 +23,7 @@ export interface Translations {
 	"status.assigningEntertainers": string;
 	"status.assigningMechanics": string;
 	"status.adjusting": string;
+	"status.done": string;
 
 	"button.adjustAndAssign": string;
 	"button.adjustAndAssign.tooltip": string;

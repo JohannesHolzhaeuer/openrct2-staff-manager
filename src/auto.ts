@@ -1,7 +1,7 @@
 /// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { autoEnabledStore } from "./store";
 import { isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
-import { handlePlacedPathTile, handleBoughtLandTile } from "./staff";
+import { handlePlacedPathTile, handleBoughtLandTile, BATCH_TICK_DELAY } from "./staff";
 
 // The storage key backing the persisted auto flag. Versioned so an earlier
 // persisted "on" value isn't carried over (the default is off).
@@ -182,7 +182,7 @@ function processPending(): void {
 			// ignore errors from individual tile handling
 		}
 		if (index < tiles.length) {
-			context.setTimeout(step, 0);
+			context.setTimeout(step, BATCH_TICK_DELAY);
 		} else {
 			isWorking = false;
 		}

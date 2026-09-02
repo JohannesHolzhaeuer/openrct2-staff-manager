@@ -15,7 +15,7 @@ import {
 	entertainersNeededStore, entertainersHiredStore,
 	mechanicsNeededStore, mechanicsHiredStore,
 	handymenControlsDisabledStore, guardsControlsDisabledStore, entertainersControlsDisabledStore, mechanicsControlsDisabledStore,
-	staffControlsDisabledStore, adjustButtonDisabledStore, statusTextStore
+	staffControlsDisabledStore, statusTextStore, progressStore
 } from "./store";
 import { scanFootpathNetwork, findAndReportParkEntrance } from "./scan";
 import { adjustStaffCounts, assignStaff, refreshHiredAndAssignedStaffCounts } from "./staff";
@@ -198,11 +198,30 @@ const COLUMN_ROW_HEIGHT = Math.max(STACK_HEIGHT, MECHANICS_ENTERTAINERS_STACK_HE
 
 const TOP_ROW_HEIGHT = 14;
 const AUTO_ROW_HEIGHT = 20;
+const PROGRESS_ROW_HEIGHT = 10;
 const APPLY_MESSAGE_ROW_HEIGHT = 14;
 const APPLY_ROW_HEIGHT = 20;
 const CONTENT_SPACING = 4; // spacing between the window's top-level content rows
 const WINDOW_CHROME_HEIGHT = 29; // title bar + top/bottom window padding
-const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + AUTO_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
+const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + AUTO_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + PROGRESS_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
+
+// Tooltip shared by both halves of the progress bar, so hovering anywhere over
+// the bar shows the same percentage.
+const progressTooltipStore = compute(progressStore, function (fraction: number) {
+	return `${t("progress.tooltip")} (${Math.round(Math.max(0, Math.min(1, fraction)) * 100).toString()}%)`;
+});
+
+// The progress bar is drawn as a row of equally sized segments. Each segment
+// has its own store telling it whether it is part of the completed portion, so
+// segments never resize - they only switch between "filled" and "empty".
+const PROGRESS_SEGMENT_COUNT = 40;
+const progressSegmentStores: Store<boolean>[] = [];
+for (let i = 0; i < PROGRESS_SEGMENT_COUNT; i++) {
+	const threshold = (i + 1) / PROGRESS_SEGMENT_COUNT;
+	progressSegmentStores.push(compute(progressStore, function (fraction: number) {
+		return fraction >= threshold;
+	}));
+}
 
 function staffManagerWindowTemplate(): WindowTemplate {
 	const windowWidth = 400;
@@ -238,6 +257,39 @@ function staffManagerWindowTemplate(): WindowTemplate {
 						})
 					]
 				}),
+				// Progress bar. Variable-width widgets did not work: neither a single
+				// custom-drawn widget nor two weight-bound halves were reliably
+				// re-laid out / repainted when the progress store changed, so the
+				// bar kept showing a stale width. Instead the bar is a fixed grid of
+				// equally sized segments; each segment never changes size and is
+				// either completely filled or completely empty, driven by its own
+				// bound store. That keeps every repaint correct regardless of how
+				// the engine batches invalidations.
+				horizontal({
+					spacing: 0,
+					width: "100%",
+					height: PROGRESS_ROW_HEIGHT,
+					content: progressSegmentStores.map(function (segmentFilledStore) {
+						// The tooltip is bound per segment on purpose: it is what makes
+						// flexui refresh this widget (and therefore call onDraw) when
+						// the segment flips between filled and empty.
+						return graphics({
+							width: "1w",
+							height: PROGRESS_ROW_HEIGHT,
+							tooltip: compute(progressTooltipStore, segmentFilledStore, function (tooltip: string) {
+								return tooltip;
+							}),
+							onDraw: function (g) {
+								if (segmentFilledStore.get()) {
+									g.colour = Colour.BrightGreen;
+									g.box(0, 0, g.width, g.height);
+								} else {
+									g.well(0, 0, g.width, g.height);
+								}
+							}
+						});
+					})
+				}),
 				label({ text: statusTextStore, width: "100%", height: APPLY_MESSAGE_ROW_HEIGHT, alignment: "centred", tooltip: t("applyMessage.tooltip") }),
 				horizontal({
 					spacing: 4,
@@ -245,7 +297,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 					height: APPLY_ROW_HEIGHT,
 					content: [
 					button({
-						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), disabled: adjustButtonDisabledStore, onClick: function () { hasRanAdjustAndAssignStore.set(true); adjustStaffCounts(assignStaff); }
+						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), onClick: function () { hasRanAdjustAndAssignStore.set(true); progressStore.set(0); statusTextStore.set(""); adjustStaffCounts(assignStaff); }
 					})
 					]
 				}),
