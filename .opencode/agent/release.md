@@ -11,8 +11,8 @@ and only when the user asks for a new version.
 ## Procedure
 
 1. **Find where the current version is set.** Read `package.json` (the
-   `"version"` field) and `src/main.ts` (the `version:` field in the
-   `registerPlugin({ ... })` call at the bottom). These two must always be kept
+   `"version"` field) and `package-lock.json` and `src/main.ts` (the `version:` field in the
+   `registerPlugin({ ... })` call at the bottom). These three must always be kept
    in sync. Also read `README.md` to check the displayed version and the
    existing changelog format.
 2. **Determine the target version.** If the user gave an explicit version (e.g.

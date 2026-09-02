@@ -8,7 +8,7 @@ entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
 (re)assign** staff so the right number always patrol the right places — sending
 each staff member to their **nearest** free zone.
 
-- **Version:** 0.9.3
+- **Version:** 0.9.4
 - **Type:** local (single‑player / client‑side)
 - **Licence:** MIT
 - **Min API:** 34 · **Target API:** 77
@@ -252,6 +252,15 @@ directly in the UI, but their initial defaults live in code:
 
 ## Changelog
 
+- **0.9.4** – Made auto-mode's enlarge-vs-hire decision respect genuine walkable
+  connectivity (bridges over paths, and inclined ways at different heights, are
+  no longer merged into one patrol area). Included elevated footpaths over
+  unowned land (bridges/overpasses) in patrol areas. Fixed a teleport-queue
+  stack overflow for large queues. Excluded tiles with shops/rides/tracks from
+  garden tiles unless the element is clearly elevated above the grass. Fixed
+  gardening handymen being teleported off their patrol area onto the wrong
+  height. Let gardening patrol areas span paths for reachability, so a handyman
+  can walk across a path to reach mowed grass on the other side.
 - **0.9.3** – Combined "Adjust staff count" and "Assign" into a single
   "Adjust and assign" button that runs only after the async hire/fire actions
   complete; split the previously-synchronous per-staff patrol-area assignment
