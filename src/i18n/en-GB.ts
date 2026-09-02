@@ -11,6 +11,7 @@ export const enGB: Translations = {
 	"parkEntrance.tooltip": "Summary of the most recent map scan: reachable pathway, queue and garden tile counts, refreshed by Adjust staff count/Assign.",
 
 	"applyMessage.tooltip": "Reserved for status messages after Adjust staff count/Assign.",
+	"progress.tooltip": "Progress of the running Adjust staff count/Assign pass.",
 
 	"auto.on": "Automatic assignment is ON",
 	"auto.off": "Automatic assignment is OFF",
@@ -21,6 +22,7 @@ export const enGB: Translations = {
 	"status.assigningEntertainers": "Assigning entertainers...",
 	"status.assigningMechanics": "Assigning mechanics...",
 	"status.adjusting": "Adjusting staff count...",
+	"status.done": "Done",
 
 	"button.adjustAndAssign": "Adjust and assign",
 	"button.adjustAndAssign.tooltip": "Hire or fire staff of every enabled type to match the calculated Needed counts (hires when understaffed, fires oldest-first when overstaffed), then rebuild patrol areas from the most recently scanned tiles and teleport each staff member to the start of their new area.",

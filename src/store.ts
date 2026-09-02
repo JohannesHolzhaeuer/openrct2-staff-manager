@@ -75,6 +75,11 @@ export const parkEntranceInfoStore = flexStore<string>("Path tiles: 0, Queue til
 // being done. Empty when idle.
 export const statusTextStore = flexStore<string>("");
 
+// Progress of the running "Adjust and assign" pass, as a fraction between 0
+// and 1. Drives the progress bar drawn above the status row. Reset to 0 when
+// a new pass starts and set to 1 once everything is done.
+export const progressStore = flexStore<number>(0);
+
 // Whether the "Adjust and assign" button has been executed at least once.
 // The automatic-management toggle is enabled only until this has run, so the
 // player can't start auto mode before they've done an initial manual pass.
@@ -152,22 +157,7 @@ export const entertainersNeededStore = compute(entertainersNeededBaseStore, ente
 export const mechanicsNeededStore = compute(rideExitCountStore, mechanicsEnabledStore,
 	function (rideExits: number, enabled: boolean) { return enabled ? rideExits : 0; });
 
-// Whether every staff type's Needed count matches its Hired count, i.e.
-// there is nothing left to adjust. `compute` only supports up to 5 stores at
-// once, so the staff types are combined in two steps.
-const noHandymenOrGuardsDifferenceStore = compute(
-	handymenNeededStore, handymenHiredStore, guardsNeededStore, guardsHiredStore,
-	function (handymenNeeded: number, handymenHired: number, guardsNeeded: number, guardsHired: number) {
-		return handymenNeeded === handymenHired && guardsNeeded === guardsHired;
-	});
-const noStaffDifferenceStore = compute(
-	noHandymenOrGuardsDifferenceStore, entertainersNeededStore, entertainersHiredStore, mechanicsNeededStore, mechanicsHiredStore,
-	function (noHandymenOrGuardsDifference: boolean, entertainersNeeded: number, entertainersHired: number,
-		mechanicsNeeded: number, mechanicsHired: number) {
-		return noHandymenOrGuardsDifference && entertainersNeeded === entertainersHired && mechanicsNeeded === mechanicsHired;
-	});
-export const adjustButtonDisabledStore = compute(
-	staffControlsDisabledStore, noStaffDifferenceStore,
-	function (controlsDisabled: boolean, noStaffDifference: boolean) {
-		return controlsDisabled || noStaffDifference;
-	});
+// The "Adjust and assign" button is intentionally never disabled: even when
+// every Needed count already matches its Hired count, the player may still
+// want to rebuild the patrol areas, so the action stays available at all times.
+

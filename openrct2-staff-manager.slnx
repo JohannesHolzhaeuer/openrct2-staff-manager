@@ -1,4 +1,7 @@
 <Solution>
+  <Configurations>
+    <BuildType Name="Release" />
+  </Configurations>
   <Project Path="openrct2-staff-manager.esproj">
     <Build />
   </Project>
