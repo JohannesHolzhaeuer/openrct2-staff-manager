@@ -12,6 +12,7 @@ import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
 	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo
 } from "./scan";
+import { gameMap } from "./game";
 import { t } from "./i18n";
 
 // --- Handyman orders bitmasks ------------------------------------------------
@@ -45,7 +46,7 @@ export function classifyHandyman(member: Handyman): HandymanPurpose {
 }
 
 export function getHandymenByPurpose(purpose: HandymanPurpose): Handyman[] {
-	const staff = map.getAllEntities("staff");
+	const staff = gameMap().getAllEntities("staff");
 	const result: Handyman[] = [];
 	for (const member of staff) {
 		if (member.staffType === "handyman" && classifyHandyman(member) === purpose) {
@@ -56,7 +57,7 @@ export function getHandymenByPurpose(purpose: HandymanPurpose): Handyman[] {
 }
 
 export function getStaffByType(staffType: StaffType): Staff[] {
-	const staff = map.getAllEntities("staff");
+	const staff = gameMap().getAllEntities("staff");
 	const result: Staff[] = [];
 	for (const member of staff) {
 		if (member.staffType === staffType) {
@@ -278,7 +279,7 @@ export function adjustStaffCounts(onComplete?: () => void): void {
 // security), and how many of those already have a non-empty patrol area
 // (i.e. are already "assigned" to patrol a section of the park).
 function countHiredStaff(staffType: StaffType): number {
-	const staff = map.getAllEntities("staff");
+	const staff = gameMap().getAllEntities("staff");
 	let count = 0;
 	for (const member of staff) {
 		if (member.staffType === staffType) {
@@ -289,7 +290,7 @@ function countHiredStaff(staffType: StaffType): number {
 }
 
 function countAssignedStaff(staffType: StaffType): number {
-	const staff = map.getAllEntities("staff");
+	const staff = gameMap().getAllEntities("staff");
 	let count = 0;
 	for (const member of staff) {
 		if (member.staffType === staffType && member.patrolArea.tiles.length > 0) {
@@ -680,10 +681,10 @@ function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void
 // must never be chosen as a teleport target even though a handyman can
 // still walk across/around it once already patrolling the area normally.
 export function isPeepPlaceableTile(x: number, y: number): boolean {
-	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
+	if (x < 0 || y < 0 || x >= gameMap().size.x || y >= gameMap().size.y) {
 		return false;
 	}
-	const tile = map.getTile(x, y);
+	const tile = gameMap().getTile(x, y);
 	let footpath: FootpathElement | null = null;
 	let hasSurface = false;
 	for (let e = 0; e < tile.numElements; e++) {
@@ -737,7 +738,7 @@ function findNearestPathTile(x: number, y: number): PathTileInfo | null {
 // the global nearest placeable tile if the area has none.
 export function findNearestPathInOrderedTiles(tiles: PathTileInfo[], x: number, y: number): PathTileInfo | null {
 	const inBounds = tiles.filter(function (tile) {
-		return tile.x >= 0 && tile.y >= 0 && tile.x < map.size.x && tile.y < map.size.y;
+		return tile.x >= 0 && tile.y >= 0 && tile.x < gameMap().size.x && tile.y < gameMap().size.y;
 	});
 	for (const tile of tilesByDistance(inBounds, x, y)) {
 		if (isPeepPlaceableTile(tile.x, tile.y)) {
@@ -1042,7 +1043,7 @@ function findFootpathElement(tile: Tile): FootpathElement | null {
 export function canTeleportMechanic(member: Staff): boolean {
 	const tileX = Math.floor(member.x / 32);
 	const tileY = Math.floor(member.y / 32);
-	return findFootpathElement(map.getTile(tileX, tileY)) !== null;
+	return findFootpathElement(gameMap().getTile(tileX, tileY)) !== null;
 }
 
 // Assigns mechanics to ride exits: each patrol area consists of just the
@@ -1075,7 +1076,7 @@ function assignMechanics(onComplete: () => void): void {
 	// mechanic is busy.
 	clearPatrolAreas(mechanics);
 
-	const rides = map.rides;
+	const rides = gameMap().rides;
 	const tasks: { member: Staff; patrolTiles: CoordsXY[]; teleportTarget: { x: number; y: number; z: number } | null }[] = [];
 	let mechanicIndex = 0;
 	for (let i = 0; i < rides.length && mechanicIndex < mechanics.length; i++) {
@@ -1115,7 +1116,7 @@ function assignMechanics(onComplete: () => void): void {
 			for (const offset of candidateOffsets) {
 				const candidateX = exitTileX + offset.x;
 				const candidateY = exitTileY + offset.y;
-				const footpath = findFootpathElement(map.getTile(candidateX, candidateY));
+				const footpath = findFootpathElement(gameMap().getTile(candidateX, candidateY));
 				if (footpath !== null) {
 					frontTileX = candidateX;
 					frontTileY = candidateY;
@@ -1161,7 +1162,7 @@ function assignMechanics(onComplete: () => void): void {
 					if (nearestPathTile) {
 						teleportTileX = nearestPathTile.x;
 						teleportTileY = nearestPathTile.y;
-						teleportFootpath = findFootpathElement(map.getTile(nearestPathTile.x, nearestPathTile.y));
+						teleportFootpath = findFootpathElement(gameMap().getTile(nearestPathTile.x, nearestPathTile.y));
 					}
 				}
 				if (teleportTileX !== null && teleportTileY !== null) {
@@ -1205,7 +1206,7 @@ interface StaffedRideExit {
 // reliable - we fall back to any cardinal neighbour with a footpath).
 function getStaffedRideExitFronts(): StaffedRideExit[] {
 	const result: StaffedRideExit[] = [];
-	const rides = map.rides;
+	const rides = gameMap().rides;
 	for (const ride of rides) {
 		if (ride.classification !== "ride") {
 			continue;
@@ -1225,7 +1226,7 @@ function getStaffedRideExitFronts(): StaffedRideExit[] {
 			for (const offset of candidateOffsets) {
 				const candidateX = exitTileX + offset.x;
 				const candidateY = exitTileY + offset.y;
-				const footpath = findFootpathElement(map.getTile(candidateX, candidateY));
+				const footpath = findFootpathElement(gameMap().getTile(candidateX, candidateY));
 				if (footpath !== null) {
 					result.push({ exitTileX: exitTileX, exitTileY: exitTileY, frontTileX: candidateX, frontTileY: candidateY, frontFootpath: footpath });
 					break;

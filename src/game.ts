@@ -8,6 +8,7 @@ export interface GameMap {
     readonly size: CoordsXY;
     readonly rides: Ride[];
     getTile(x: number, y: number): Tile;
+    getAllEntities(type: "staff"): Staff[];
 }
 
 // Delegates to the real global. Kept lazy: the global does not exist while the
@@ -21,6 +22,9 @@ const realGameMap: GameMap = {
     },
     getTile(x: number, y: number): Tile {
         return map.getTile(x, y);
+    },
+    getAllEntities(type: "staff"): Staff[] {
+        return map.getAllEntities(type);
     }
 };
 
