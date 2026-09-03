@@ -1619,14 +1619,11 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 					teleportX, teleportY
 				);
 				if (fallback) {
-					console.log("[staff-manager] queueAutoHire: (" + String(teleportX) + "," + String(teleportY) + ") not placeable, using fallback (" + String(fallback.x) + "," + String(fallback.y) + ")");
 					teleportX = fallback.x;
 					teleportY = fallback.y;
 					teleportZ = group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING
 						? surfaceBaseZAt(teleportX, teleportY)
 						: footpathBaseZAt(teleportX, teleportY);
-				} else {
-					console.log("[staff-manager] queueAutoHire: (" + String(teleportX) + "," + String(teleportY) + ") not placeable and no fallback tile found");
 				}
 			}
 			teleportStaffToTile(member, teleportX, teleportY, teleportZ);
