@@ -28,6 +28,8 @@
     <Content Include="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".github\workflows\ci.yml" />
     <None Include=".github\workflows\release.yml" />
+    <None Include=".husky\commit-msg" />
   </ItemGroup>
 </Project>
