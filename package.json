@@ -1,6 +1,6 @@
 {
   "name": "staff-manager",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "An OpenRCT2 plugin that automates park staff management (handymen, security, entertainers, mechanics).",
   "main": "dist/staff-manager.js",
   "type": "module",
