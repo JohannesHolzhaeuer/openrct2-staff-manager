@@ -31,10 +31,17 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
     steps:
-      - name: Checkout released tag
+      # release-please is configured with "draft": true, so the GitHub
+      # Release it creates is a draft - and GitHub does not create the
+      # underlying git tag ref for a draft release until it's published.
+      # Checking out "$TAG_NAME" here would therefore fail (the ref doesn't
+      # exist yet). This workflow only runs on push to main though, and the
+      # release-please PR has already been merged to main by that point, so
+      # the release commit is simply the current HEAD.
+      - name: Checkout release commit
         uses: actions/checkout@v5
         with:
-          ref: ${{ env.TAG_NAME }}
+          ref: ${{ github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
