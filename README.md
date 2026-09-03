@@ -1,5 +1,8 @@
 # Staff Manager
 
+[![CI](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/actions/workflows/ci.yml)
+[![Release](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/actions/workflows/release.yml/badge.svg)](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/actions/workflows/release.yml)
+
 ![Staff Manager screenshot](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/raw/main/screenshot.png)
 
 An [OpenRCT2](https://openrct2.org/) plugin that automates park staff management:
@@ -318,6 +321,17 @@ exposed to plugins, so this layer replaces it entirely.
   never read from disk while the game is running — esbuild inlines every
   language file into the single bundled `dist/staff-manager.js` at build
   time.
+
+---
+
+## Contributing & Releases
+
+Contributions go through pull requests only (no direct pushes to `main`), commit
+messages follow [Conventional Commits](https://www.conventionalcommits.org/) and
+are enforced via commitlint/husky, and releases (versioning, changelog, GitHub
+Releases) are fully automated with [release-please](https://github.com/googleapis/release-please) —
+no `npm publish` step involved. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+full workflow.
 
 ---
 
