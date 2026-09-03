@@ -579,64 +579,86 @@ function findGrassSurfaceStyleIndices(): Set<number> {
 // components (4-directionally adjacent tiles), each in BFS visitation order,
 // so groups of tiles that are physically next to each other stay together;
 // this is used by Assign to build spatially local gardening patrol areas.
-function scanGardeningTiles(): { gardenTiles: number; ownedTiles: number; areas: PathTileInfo[][]; workCounts: number[] } {
+// Mutable state carried across the chunked gardening sweep (see
+// scanGardeningColumn). Kept in one object so the sweep can be paused between
+// game ticks and resumed exactly where it left off.
+interface GardeningSweepState {
+	gardenTiles: number;
+	ownedTiles: number;
+	isGardenTile: Set<string>;
+	connectorKeys: Set<string>;
+	grassStyleIndices: Set<number>;
+}
+
+function newGardeningSweepState(): GardeningSweepState {
+	return {
+		gardenTiles: 0,
+		ownedTiles: 0,
+		isGardenTile: new Set<string>(),
+		// Owned footpath tiles that act as walkable connectors between garden work
+		// tiles, so a gardener can reach (and join) grass areas split by a path.
+		connectorKeys: new Set<string>(),
+		grassStyleIndices: grassSurfaceStyleIndices()
+	};
+}
+
+// Classifies every owned tile in a single map column. Extracted from the old
+// nested x/y loop so the sweep can be spread over several game ticks instead of
+// scanning the whole map in one blocking pass.
+function scanGardeningColumn(x: number, state: GardeningSweepState): void {
 	const mapSize = map.size;
-	let gardenTiles = 0;
-	let ownedTiles = 0;
-	const isGardenTile = new Set<string>();
-	// Owned footpath tiles that act as walkable connectors between garden work tiles,
-	// so a gardener can reach (and join) grass areas split by a path.
-	const connectorKeys = new Set<string>();
+	for (let y = 0; y < mapSize.y; y++) {
+		if (!isParkOwnedTile(x, y)) {
+			continue;
+		}
+		state.ownedTiles++;
+
+		const tile = map.getTile(x, y);
+		const surface = findSurfaceElement(tile);
+		const tileKeyStr = tileKey(x, y);
+		if (hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
+			continue;
+		}
+		const footpaths = findFootpathElementsOnTile(tile);
+		if (footpaths.length > 0) {
+			// An owned plain (non-queue) footpath tile is a walkable connector: it
+			// is not mowed itself, but it lets a gardener walk across it and join
+			// garden areas that a path would otherwise split. Queue tiles are NOT
+			// connectors - a queue has railing/fencing the gardener cannot step off
+			// onto the adjacent grass, so they are excluded here (and being footpaths
+			// they were never counted as garden work anyway).
+			const hasPlainPath = footpaths.some(function (fp) { return !fp.isQueue; });
+			if (!hasPlainPath) {
+				continue;
+			}
+			state.connectorKeys.add(tileKeyStr);
+			continue;
+		}
+
+		// A tile is mowable only if its surface is a grass-family style
+		// and isn't submerged under water (waterHeight === 0): a tile
+		// can be "grass" styled and still have water on top of it, but
+		// staff can't stand on water to mow/water it.
+		// grassLength itself is not tested: it is always a valid number
+		// for any surface, so the old ">= 0" check filtered nothing, and
+		// only grass surfaces actually grow long grass that needs mowing.
+		const isMowable = isLandSurface(surface) && state.grassStyleIndices.has(surface.surfaceStyle);
+		const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
+		if (isMowable || isWaterable) {
+			state.gardenTiles++;
+			state.isGardenTile.add(tileKeyStr);
+		}
+	}
+}
+
+// Groups the classified garden tiles into connected components. Runs once, after
+// the column sweep above has visited every owned tile.
+function groupGardeningTiles(state: GardeningSweepState): { gardenTiles: number; ownedTiles: number; areas: PathTileInfo[][]; workCounts: number[] } {
+	const isGardenTile = state.isGardenTile;
+	const connectorKeys = state.connectorKeys;
 	// workCounts[i] = number of mowable/waterable tiles in areas[i]; path connectors
 	// in an area don't count toward gardener staffing.
 	const workCounts: number[] = [];
-	const grassStyleIndices = grassSurfaceStyleIndices();
-
-	for (let x = 0; x < mapSize.x; x++) {
-		for (let y = 0; y < mapSize.y; y++) {
-			if (!isParkOwnedTile(x, y)) {
-				continue;
-			}
-			ownedTiles++;
-
-			const tile = map.getTile(x, y);
-			const surface = findSurfaceElement(tile);
-			const tileKeyStr = tileKey(x, y);
-			if (hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
-				continue;
-			}
-			const footpaths = findFootpathElementsOnTile(tile);
-			if (footpaths.length > 0) {
-				// An owned plain (non-queue) footpath tile is a walkable connector: it
-				// is not mowed itself, but it lets a gardener walk across it and join
-				// garden areas that a path would otherwise split. Queue tiles are NOT
-				// connectors - a queue has railing/fencing the gardener cannot step off
-				// onto the adjacent grass, so they are excluded here (and being footpaths
-				// they were never counted as garden work anyway).
-				const hasPlainPath = footpaths.some(function (fp) { return !fp.isQueue; });
-				if (!hasPlainPath) {
-					continue;
-				}
-				connectorKeys.add(tileKeyStr);
-				continue;
-			}
-
-			// A tile is mowable only if its surface is a grass-family style
-			// and isn't submerged under water (waterHeight === 0): a tile
-			// can be "grass" styled and still have water on top of it, but
-			// staff can't stand on water to mow/water it.
-			// grassLength itself is not tested: it is always a valid number
-			// for any surface, so the old ">= 0" check filtered nothing, and
-			// only grass surfaces actually grow long grass that needs mowing.
-			const isMowable = isLandSurface(surface) && grassStyleIndices.has(surface.surfaceStyle);
-			const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
-			if (isMowable || isWaterable) {
-				gardenTiles++;
-				isGardenTile.add(tileKeyStr);
-			}
-		}
-	}
-
 	const areas: PathTileInfo[][] = [];
 	const visited = new Set<string>();
 	// A walkable node is either a garden work tile or a footpath connector tile.
@@ -714,7 +736,7 @@ function scanGardeningTiles(): { gardenTiles: number; ownedTiles: number; areas:
 		workCounts.push(workTileCount);
 	});
 
-	return { gardenTiles: gardenTiles, ownedTiles: ownedTiles, areas: areas, workCounts: workCounts };
+	return { gardenTiles: state.gardenTiles, ownedTiles: state.ownedTiles, areas: areas, workCounts: workCounts };
 }
 
 // --- Ride exit counting -------------------------------------------------------
@@ -833,29 +855,26 @@ export function worldToTile(x: number, y: number): CoordsXY {
 	return { x: Math.floor(x / 32), y: Math.floor(y / 32) };
 }
 
-// Finds the park entrance, then walks the footpath network from it, and scans
-// the park's owned tiles for gardening tiles. Logs and stores the resulting
-// path/queue/mowable/waterable tile counts.
-export function scanFootpathNetwork(): void {
-	// A full rescan is the point at which the park's installed surface objects
-	// may have changed, so drop the memoised grass-style set first.
-	invalidateGrassSurfaceStyleCache();
-	const parkEntranceTiles = findParkEntranceTiles();
-	if (parkEntranceTiles.length === 0) {
-		return;
-	}
+// How many map columns of the gardening sweep to classify per game tick. The
+// sweep touches every owned tile, so on a large map doing it in one pass
+// visibly froze the game while the window opened. Matches the chunking approach
+// automatic mode already uses for bursts of placed tiles.
+const COLUMNS_PER_TICK = 16;
 
-	const result = scanFootpathNetworkFromEntrance(parkEntranceTiles[0]);
+// Delay between chunks, in ms. Zero still yields to the game loop (the callback
+// runs on a later tick), which is all that's needed to keep the game responsive.
+const SCAN_TICK_DELAY = 0;
 
-	const gardeningResult = scanGardeningTiles();
-
-	const rideExitCount = countRideExits();
-
+// Publishes a completed scan's results to the stores.
+function publishScanResults(
+	result: { pathTiles: PathTileInfo[]; queueTiles: PathTileInfo[]; allTiles: PathTileInfo[] },
+	gardeningResult: { gardenTiles: number; ownedTiles: number; areas: PathTileInfo[][]; workCounts: number[] }
+): void {
 	pathTilesCountStore.set(result.pathTiles.length);
 	queueTilesCountStore.set(result.queueTiles.length);
 	gardenTilesCountStore.set(gardeningResult.gardenTiles);
 	gardenAreaSizesStore.set(gardeningResult.workCounts);
-	rideExitCountStore.set(rideExitCount);
+	rideExitCountStore.set(countRideExits());
 	ownedTilesCountStore.set(gardeningResult.ownedTiles);
 
 	lastAllPathTiles = result.allTiles;
@@ -864,4 +883,46 @@ export function scanFootpathNetwork(): void {
 	tilesCalculatedStore.set(true);
 
 	parkEntranceInfoStore.set("");
+}
+
+// Finds the park entrance, then walks the footpath network from it, and scans
+// the park's owned tiles for gardening tiles. Stores the resulting
+// path/queue/mowable/waterable tile counts.
+//
+// The gardening sweep is spread across game ticks so a large map doesn't block
+// the game loop; `onComplete` (if given) fires once the results are published.
+export function scanFootpathNetwork(onComplete?: () => void): void {
+	// A full rescan is the point at which the park's installed surface objects
+	// may have changed, so drop the memoised grass-style set first.
+	invalidateGrassSurfaceStyleCache();
+	const parkEntranceTiles = findParkEntranceTiles();
+	if (parkEntranceTiles.length === 0) {
+		if (onComplete) {
+			onComplete();
+		}
+		return;
+	}
+
+	const result = scanFootpathNetworkFromEntrance(parkEntranceTiles[0]);
+
+	const state = newGardeningSweepState();
+	const mapSize = map.size;
+	let x = 0;
+
+	function step(): void {
+		const end = Math.min(mapSize.x, x + COLUMNS_PER_TICK);
+		for (; x < end; x++) {
+			scanGardeningColumn(x, state);
+		}
+		if (x < mapSize.x) {
+			context.setTimeout(step, SCAN_TICK_DELAY);
+			return;
+		}
+		publishScanResults(result, groupGardeningTiles(state));
+		if (onComplete) {
+			onComplete();
+		}
+	}
+
+	step();
 }
