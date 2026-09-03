@@ -66,7 +66,9 @@ used by handymen/guards.
 
 ```powershell
 npm install        # first time only
-npm run build      # lint + test + tsc typecheck + esbuild bundle + deploy to local OpenRCT2 plugin folder
+npm run build      # verify + esbuild bundle + deploy to local OpenRCT2 plugin folder
+npm run verify     # lint + test + tsc typecheck (no bundle/deploy)
+npm run dev        # bundle + deploy only, skipping verify - fast inner dev loop
 npm run watch       # esbuild --watch, for iterative development (does not auto-deploy)
 npm test           # run the unit tests alone (vitest run)
 npm run typecheck  # run the TypeScript compiler alone (src + tsconfig.node.json)

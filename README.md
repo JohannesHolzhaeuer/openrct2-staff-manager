@@ -125,6 +125,9 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 3. Use `npm run watch` while developing to recompile on save (note: this only
    recompiles; run `npm run build` again, or press the game's plugin
    hot-reload, after a `watch` recompile to redeploy the file).
+4. For a fast inner loop, `npm run dev` bundles and deploys without the
+   lint/test/typecheck pass, and `npm run verify` runs those checks on their
+   own. `npm run build` is still the full `verify` + bundle + deploy pipeline.
 
 ### Code quality
 
