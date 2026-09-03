@@ -826,35 +826,41 @@ export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize
 	if (newTile.x < 0 || newTile.y < 0) {
 		return { action: "hire" };
 	}
-	// 1. Already covered?
-	for (const areaTile of areas.flat()) {
-		if (worldToTileX(areaTile.x) === newTile.x && worldToTileX(areaTile.y) === newTile.y) {
-			return { action: "covered" };
+	// Index every area tile once by "x,y" tile key, mapping to the index of the
+	// area it belongs to. The coverage and adjacency checks below then become
+	// O(1) lookups instead of rescanning every tile of every area (the coverage
+	// pass alone used to flatten and walk all areas on each placed tile).
+	const areaIndexByTileKey = new Map<string, number>();
+	for (let i = 0; i < areas.length; i++) {
+		const area = areas[i];
+		for (const tile of area) {
+			const key = String(worldToTileX(tile.x)) + "," + String(worldToTileX(tile.y));
+			// Keep the first area that claims a tile, matching the previous
+			// first-match-wins iteration order.
+			if (!areaIndexByTileKey.has(key)) {
+				areaIndexByTileKey.set(key, i);
+			}
 		}
+	}
+	// 1. Already covered?
+	if (areaIndexByTileKey.has(String(newTile.x) + "," + String(newTile.y))) {
+		return { action: "covered" };
 	}
 	// 2. Adjacent to an existing area that's under the cap -> enlarge it.
 	for (const offset of ADJACENT_OFFSETS) {
-		for (let i = 0; i < areas.length; i++) {
-			const area = areas[i];
-			// Is this area adjacent (and, if `connect` given, actually reachable) to the new tile?
-			let adjacent = false;
-			for (const tile of area) {
-				const atx = worldToTileX(tile.x);
-				const aty = worldToTileX(tile.y);
-				const expectedX = newTile.x + worldToTileX(offset.x);
-				const expectedY = newTile.y + worldToTileX(offset.y);
-				if (atx === expectedX && aty === expectedY && (!connect || connect(atx, aty, newTile.x, newTile.y, i))) {
-					adjacent = true;
-					break;
-				}
-			}
-			if (adjacent) {
-				if (area.length < maxSize) {
-					return { action: "enlarge", areaIndex: i };
-				}
-				return { action: "hire" };
-			}
+		const neighbourX = newTile.x + worldToTileX(offset.x);
+		const neighbourY = newTile.y + worldToTileX(offset.y);
+		const areaIndex = areaIndexByTileKey.get(String(neighbourX) + "," + String(neighbourY));
+		if (areaIndex === undefined) {
+			continue;
 		}
+		if (connect && !connect(neighbourX, neighbourY, newTile.x, newTile.y, areaIndex)) {
+			continue;
+		}
+		if (areas[areaIndex].length < maxSize) {
+			return { action: "enlarge", areaIndex: areaIndex };
+		}
+		return { action: "hire" };
 	}
 	return { action: "hire" };
 }
