@@ -303,4 +303,38 @@ describe("decideAreaAction", () => {
 			function () { return false; });
 		expect(decision).toEqual({ action: "covered" });
 	});
+	it("hires for a negative tile coordinate", () => {
+		expect(decideAreaAction([areaTiles([0, 0])], { x: -1, y: 0 }, 8)).toEqual({ action: "hire" });
+		expect(decideAreaAction([areaTiles([0, 0])], { x: 0, y: -1 }, 8)).toEqual({ action: "hire" });
+	});
+	it("hires when no areas exist at all", () => {
+		expect(decideAreaAction([], { x: 3, y: 3 }, 8)).toEqual({ action: "hire" });
+	});
+	it("ignores empty areas when looking for an adjacent one", () => {
+		// The first area has no tiles; the second is the genuinely adjacent one,
+		// so its index (not the empty one's) must be reported.
+		const areas = [areaTiles(), areaTiles([1, 0])];
+		expect(decideAreaAction(areas, { x: 0, y: 0 }, 8)).toEqual({ action: "enlarge", areaIndex: 1 });
+	});
+	it("passes the matched area tile and index to the connect predicate", () => {
+		const areas = [areaTiles([5, 5]), areaTiles([1, 0])];
+		const calls: number[][] = [];
+		decideAreaAction(areas, { x: 0, y: 0 }, 8, function (ax, ay, nx, ny, index) {
+			calls.push([ax, ay, nx, ny, index]);
+			return true;
+		});
+		// Only the actually-adjacent tile (1,0) of area 1 is offered to the predicate,
+		// with the new tile's coordinates and that area's index.
+		expect(calls).toEqual([[1, 0, 0, 0, 1]]);
+	});
+	it("diagonal-only neighbours are not adjacent", () => {
+		// (1,1) touches (0,0) only at a corner, which is not walkable.
+		expect(decideAreaAction([areaTiles([1, 1])], { x: 0, y: 0 }, 8)).toEqual({ action: "hire" });
+	});
+	it("checks the cap of the adjacent area, not of the first area", () => {
+		// Area 0 is far away and full; area 1 is the adjacent one and under the cap.
+		const areas = [areaTiles([9, 9], [9, 8]), areaTiles([1, 0])];
+		expect(decideAreaAction(areas, { x: 0, y: 0 }, 2)).toEqual({ action: "enlarge", areaIndex: 1 });
+	});
 });
+
