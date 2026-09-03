@@ -7,8 +7,8 @@ export const enGB: Translations = {
 	"menu.title": "Staff Manager",
 
 	"parkEntrance.notFound": "Park entrance: not found.",
-	"parkEntrance.summary": "Path tiles: {0}, Queue tiles: {1}, Garden tiles: {2}",
-	"parkEntrance.tooltip": "Summary of the most recent map scan: reachable pathway, queue and garden tile counts, refreshed by Adjust staff count/Assign.",
+	"parkEntrance.summary": "{RED}P{BLACK} {0}  {RED}Q{BLACK} {1}  {RED}G{BLACK} {2}  {RED}E{BLACK} {3}  {RED}O{BLACK} {4}",
+	"parkEntrance.tooltip": "Summary of the most recent map scan: P = path tiles, Q = queue tiles, G = garden tiles, E = ride exits, O = total owned tiles. Refreshed by Adjust staff count/Assign.",
 
 	"applyMessage.tooltip": "Reserved for status messages after Adjust staff count/Assign.",
 	"progress.tooltip": "Progress of the running Adjust staff count/Assign pass.",
