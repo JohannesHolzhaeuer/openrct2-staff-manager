@@ -12,7 +12,7 @@ import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
 	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo
 } from "./scan";
-import { gameMap } from "./game";
+import { gameMap, gameContext, gameObjects } from "./game";
 import { t } from "./i18n";
 
 // --- Handyman orders bitmasks ------------------------------------------------
@@ -103,7 +103,7 @@ const ENTERTAINER_COSTUME_IDENTIFIER_PARTS = [
 // Finds all loaded peep_animations object indices that are valid entertainer
 // costumes (mirrors the non-staff entries of the StaffCostume type).
 function findEntertainerCostumeIndices(): number[] {
-	const peepAnimationObjects = objectManager.getAllObjects("peep_animations");
+	const peepAnimationObjects = gameObjects().getAllObjects("peep_animations");
 	const result: number[] = [];
 	for (const peepAnimationObject of peepAnimationObjects) {
 		const identifier = peepAnimationObject.identifier.toLowerCase();
@@ -154,7 +154,7 @@ function collectHireStaffTasks(staffTypeId: number, orders: number, countToHire:
 // action's callback has fired (regardless of success/failure).
 function runStaffAdjustTask(task: StaffAdjustTask, onActionComplete: () => void): void {
 	if (task.kind === "fire") {
-		context.executeAction("stafffire", { id: task.id }, function () { onActionComplete(); });
+		gameContext().executeAction("stafffire", { id: task.id }, function () { onActionComplete(); });
 		return;
 	}
 
@@ -168,7 +168,7 @@ function runStaffAdjustTask(task: StaffAdjustTask, onActionComplete: () => void)
 		return;
 	}
 
-	context.executeAction("staffhire", {
+	gameContext().executeAction("staffhire", {
 		autoPosition: true,
 		staffType: task.staffTypeId,
 		costumeIndex: costumeIndex,
@@ -356,14 +356,14 @@ function processTeleportQueue(): void {
 	// per teleport (which overflowed it).
 	function scheduleNext(): void {
 		teleportInProgress = false;
-		context.setTimeout(processTeleportQueue, BATCH_TICK_DELAY);
+		gameContext().setTimeout(processTeleportQueue, BATCH_TICK_DELAY);
 	}
-	context.executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function (pickupResult) {
+	gameContext().executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function (pickupResult) {
 		if (pickupResult.error) {
 			scheduleNext();
 			return;
 		}
-		context.executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function () {
+		gameContext().executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function () {
 			scheduleNext();
 		});
 	});
@@ -651,7 +651,7 @@ function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void
 			perTask(tasks[index], index);
 		}
 		if (index < tasks.length) {
-			context.setTimeout(step, BATCH_TICK_DELAY);
+			gameContext().setTimeout(step, BATCH_TICK_DELAY);
 		} else {
 			onComplete();
 		}

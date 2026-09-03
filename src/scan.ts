@@ -1,6 +1,6 @@
 /// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { t } from "./i18n";
-import { gameMap } from "./game";
+import { gameMap, gameContext } from "./game";
 import {
 	pathTilesCountStore, queueTilesCountStore, gardenTilesCountStore, gardenAreaSizesStore,
 	rideExitCountStore, ownedTilesCountStore, tilesCalculatedStore, parkEntranceInfoStore
@@ -916,7 +916,7 @@ export function scanFootpathNetwork(onComplete?: () => void): void {
 			scanGardeningColumn(x, state);
 		}
 		if (x < mapSize.x) {
-			context.setTimeout(step, SCAN_TICK_DELAY);
+			gameContext().setTimeout(step, SCAN_TICK_DELAY);
 			return;
 		}
 		publishScanResults(result, groupGardeningTiles(state));
