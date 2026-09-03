@@ -106,6 +106,9 @@ export function findParkEntranceTiles(): CoordsXY[] {
 				// the park, so only that tile is reported/used as the entrance.
 				if (element.type === "entrance" && (element).sequence === 0) {
 					parkEntranceTiles.push({ x: x, y: y });
+					// At most one park entrance element with sequence 0 can sit on a
+					// tile, so the remaining elements cannot add anything.
+					break;
 				}
 			}
 		}
@@ -148,15 +151,11 @@ interface FootpathGeometry {
 	slopeDirection: number | null;
 }
 
-// Collects every footpath element on a tile. A tile can carry more than one
-// (e.g. a path on a bridge above another path), and they are at different
-// heights, so they must be treated as separate walkable nodes.
-function findFootpathElements(x: number, y: number): FootpathInfo[] {
+// Collects every footpath element on a tile that has already been fetched.
+// Split out from findFootpathElements so callers that already hold a Tile
+// don't pay for a second map.getTile plus a second pass over its elements.
+function findFootpathElementsOnTile(tile: Tile): FootpathInfo[] {
 	const result: FootpathInfo[] = [];
-	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
-		return result;
-	}
-	const tile = map.getTile(x, y);
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if (element.type === "footpath") {
@@ -171,6 +170,16 @@ function findFootpathElements(x: number, y: number): FootpathInfo[] {
 		}
 	}
 	return result;
+}
+
+// Collects every footpath element on a tile. A tile can carry more than one
+// (e.g. a path on a bridge above another path), and they are at different
+// heights, so they must be treated as separate walkable nodes.
+function findFootpathElements(x: number, y: number): FootpathInfo[] {
+	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
+		return [];
+	}
+	return findFootpathElementsOnTile(map.getTile(x, y));
 }
 
 // The world height of a footpath at the edge facing the given direction
@@ -581,7 +590,7 @@ function scanGardeningTiles(): { gardenTiles: number; ownedTiles: number; areas:
 	// workCounts[i] = number of mowable/waterable tiles in areas[i]; path connectors
 	// in an area don't count toward gardener staffing.
 	const workCounts: number[] = [];
-	const grassSurfaceStyleIndices = findGrassSurfaceStyleIndices();
+	const grassStyleIndices = grassSurfaceStyleIndices();
 
 	for (let x = 0; x < mapSize.x; x++) {
 		for (let y = 0; y < mapSize.y; y++) {
@@ -596,14 +605,15 @@ function scanGardeningTiles(): { gardenTiles: number; ownedTiles: number; areas:
 			if (hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
 				continue;
 			}
-			if (hasFootpathElement(tile)) {
+			const footpaths = findFootpathElementsOnTile(tile);
+			if (footpaths.length > 0) {
 				// An owned plain (non-queue) footpath tile is a walkable connector: it
 				// is not mowed itself, but it lets a gardener walk across it and join
 				// garden areas that a path would otherwise split. Queue tiles are NOT
 				// connectors - a queue has railing/fencing the gardener cannot step off
 				// onto the adjacent grass, so they are excluded here (and being footpaths
 				// they were never counted as garden work anyway).
-				const hasPlainPath = findFootpathElements(x, y).some(function (fp) { return !fp.isQueue; });
+				const hasPlainPath = footpaths.some(function (fp) { return !fp.isQueue; });
 				if (!hasPlainPath) {
 					continue;
 				}
@@ -618,7 +628,7 @@ function scanGardeningTiles(): { gardenTiles: number; ownedTiles: number; areas:
 			// grassLength itself is not tested: it is always a valid number
 			// for any surface, so the old ">= 0" check filtered nothing, and
 			// only grass surfaces actually grow long grass that needs mowing.
-			const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices.has(surface.surfaceStyle);
+			const isMowable = isLandSurface(surface) && grassStyleIndices.has(surface.surfaceStyle);
 			const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
 			if (isMowable || isWaterable) {
 				gardenTiles++;
@@ -629,6 +639,11 @@ function scanGardeningTiles(): { gardenTiles: number; ownedTiles: number; areas:
 
 	const areas: PathTileInfo[][] = [];
 	const visited = new Set<string>();
+	// A walkable node is either a garden work tile or a footpath connector tile.
+	// Built once up front: it is identical for every component, so rebuilding it
+	// per component made the grouping cost O(components x garden tiles).
+	const walkKeys = new Set<string>(connectorKeys);
+	isGardenTile.forEach(function (k) { walkKeys.add(k); });
 	isGardenTile.forEach(function (key) {
 		if (visited.has(key)) {
 			return;
@@ -638,9 +653,6 @@ function scanGardeningTiles(): { gardenTiles: number; ownedTiles: number; areas:
 		const startY = parseInt(parts[1], 10);
 		const component: PathTileInfo[] = [];
 		const componentByKey = new Map<string, PathTileInfo>();
-		// A walkable node is either a garden work tile or a footpath connector tile.
-		const walkKeys = new Set<string>(connectorKeys);
-		isGardenTile.forEach(function (k) { walkKeys.add(k); });
 		const stack: CoordsXY[] = [{ x: startX, y: startY }];
 		visited.add(key);
 		let workTileCount = 0;
@@ -808,6 +820,14 @@ function grassSurfaceStyleIndices(): Set<number> {
 	return cachedGrassSurfaceStyleIndices;
 }
 
+// Drops the memoised grass surface-style lookup so the next scan re-reads it
+// from the object manager. The installed surface objects can change between
+// scans (e.g. loading a different park), and the cache was previously never
+// invalidated, so a stale set could misclassify mowable tiles.
+export function invalidateGrassSurfaceStyleCache(): void {
+	cachedGrassSurfaceStyleIndices = null;
+}
+
 // The world-to-tile coordinate of the tile containing the given world coordinate.
 export function worldToTile(x: number, y: number): CoordsXY {
 	return { x: Math.floor(x / 32), y: Math.floor(y / 32) };
@@ -817,6 +837,9 @@ export function worldToTile(x: number, y: number): CoordsXY {
 // the park's owned tiles for gardening tiles. Logs and stores the resulting
 // path/queue/mowable/waterable tile counts.
 export function scanFootpathNetwork(): void {
+	// A full rescan is the point at which the park's installed surface objects
+	// may have changed, so drop the memoised grass-style set first.
+	invalidateGrassSurfaceStyleCache();
 	const parkEntranceTiles = findParkEntranceTiles();
 	if (parkEntranceTiles.length === 0) {
 		return;
