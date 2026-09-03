@@ -1590,6 +1590,9 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			// For a gardening area, avoid dropping the handyman onto a queue/fenced
 			// footpath (which now only occurs as a possible teleport tile when the tile
 			// itself is a path), so they can actually step onto the grass they are to mow.
+			let teleportX = tx;
+			let teleportY = ty;
+			let teleportZ = z;
 			if (group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING && isQueueTile(tx, ty)) {
 				const workTile = area.coords.find(function (c) {
 					const wx = Math.floor(c.x / 32);
@@ -1597,13 +1600,36 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 					return wx === tx && wy === ty ? false : !isQueueTile(wx, wy);
 				});
 				if (workTile) {
-					teleportStaffToTile(member, Math.floor(workTile.x / 32), Math.floor(workTile.y / 32), surfaceBaseZAt(Math.floor(workTile.x / 32), Math.floor(workTile.y / 32)));
-				} else {
-					teleportStaffToTile(member, tx, ty, z);
+					teleportX = Math.floor(workTile.x / 32);
+					teleportY = Math.floor(workTile.y / 32);
+					teleportZ = surfaceBaseZAt(teleportX, teleportY);
 				}
-			} else {
-				teleportStaffToTile(member, tx, ty, z);
 			}
+			// The chosen (tx, ty) tile (e.g. a gardening/land tile that just triggered
+			// this hire) isn't guaranteed to be peep-placeable - it may have small
+			// scenery (a tree) or other obstruction on it - so fall back to the
+			// nearest actually-placeable tile in this area, then park-wide, rather
+			// than issuing a "peeppickup" place that's guaranteed to fail (surfaced
+			// in-game as a "Can't place person here..." popup).
+			if (!isPeepPlaceableTile(teleportX, teleportY)) {
+				const fallback = findNearestPathInOrderedTiles(
+					area.coords.map(function (c): PathTileInfo {
+						return { x: Math.floor(c.x / 32), y: Math.floor(c.y / 32), baseHeight: 0, baseZ: 0, isQueue: false, neighbourKeys: [] };
+					}),
+					teleportX, teleportY
+				);
+				if (fallback) {
+					console.log("[staff-manager] queueAutoHire: (" + String(teleportX) + "," + String(teleportY) + ") not placeable, using fallback (" + String(fallback.x) + "," + String(fallback.y) + ")");
+					teleportX = fallback.x;
+					teleportY = fallback.y;
+					teleportZ = group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING
+						? surfaceBaseZAt(teleportX, teleportY)
+						: footpathBaseZAt(teleportX, teleportY);
+				} else {
+					console.log("[staff-manager] queueAutoHire: (" + String(teleportX) + "," + String(teleportY) + ") not placeable and no fallback tile found");
+				}
+			}
+			teleportStaffToTile(member, teleportX, teleportY, teleportZ);
 		}
 		refreshHiredAndAssignedStaffCounts();
 	});
