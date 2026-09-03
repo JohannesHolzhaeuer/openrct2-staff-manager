@@ -671,24 +671,34 @@ function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void
 // teleport search bounce staff to the nearest unadorned path park-wide
 // (clustering them on one far tile). If a place on a genuinely-blocked tile
 // still fails, the async queue simply leaves the staff where they are.
+//
+// A tile with no footpath but a bare grass/surface (used for gardening
+// areas, which have no footpath of their own) is also accepted, as long as
+// it isn't blocked the same way and has no small scenery on it either -
+// unlike mowing/watering (see hasBlockingElement/hasWaterableSceneryElement
+// in scan.ts, which deliberately do NOT treat small scenery as a blocker so
+// flower beds still count as garden tiles), "peeppickup" placement itself
+// fails outright on any small scenery item (e.g. a tree), so such a tile
+// must never be chosen as a teleport target even though a handyman can
+// still walk across/around it once already patrolling the area normally.
 function isPeepPlaceableTile(x: number, y: number): boolean {
 	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
 		return false;
 	}
 	const tile = map.getTile(x, y);
 	let footpath: FootpathElement | null = null;
+	let hasSurface = false;
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if (element.type === "footpath") {
 			footpath = element;
-		} else if (element.type === "entrance" || element.type === "track" || element.type === "large_scenery") {
+		} else if (element.type === "entrance" || element.type === "track" || element.type === "large_scenery" || element.type === "small_scenery") {
 			return false;
+		} else if (element.type === "surface") {
+			hasSurface = true;
 		}
 	}
-	if (!footpath) {
-		return false;
-	}
-	return true;
+	return footpath !== null || hasSurface;
 }
 
 // Returns the given tiles ordered by Manhattan distance from (x, y), nearest
@@ -1580,6 +1590,9 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			// For a gardening area, avoid dropping the handyman onto a queue/fenced
 			// footpath (which now only occurs as a possible teleport tile when the tile
 			// itself is a path), so they can actually step onto the grass they are to mow.
+			let teleportX = tx;
+			let teleportY = ty;
+			let teleportZ = z;
 			if (group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING && isQueueTile(tx, ty)) {
 				const workTile = area.coords.find(function (c) {
 					const wx = Math.floor(c.x / 32);
@@ -1587,13 +1600,33 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 					return wx === tx && wy === ty ? false : !isQueueTile(wx, wy);
 				});
 				if (workTile) {
-					teleportStaffToTile(member, Math.floor(workTile.x / 32), Math.floor(workTile.y / 32), surfaceBaseZAt(Math.floor(workTile.x / 32), Math.floor(workTile.y / 32)));
-				} else {
-					teleportStaffToTile(member, tx, ty, z);
+					teleportX = Math.floor(workTile.x / 32);
+					teleportY = Math.floor(workTile.y / 32);
+					teleportZ = surfaceBaseZAt(teleportX, teleportY);
 				}
-			} else {
-				teleportStaffToTile(member, tx, ty, z);
 			}
+			// The chosen (tx, ty) tile (e.g. a gardening/land tile that just triggered
+			// this hire) isn't guaranteed to be peep-placeable - it may have small
+			// scenery (a tree) or other obstruction on it - so fall back to the
+			// nearest actually-placeable tile in this area, then park-wide, rather
+			// than issuing a "peeppickup" place that's guaranteed to fail (surfaced
+			// in-game as a "Can't place person here..." popup).
+			if (!isPeepPlaceableTile(teleportX, teleportY)) {
+				const fallback = findNearestPathInOrderedTiles(
+					area.coords.map(function (c): PathTileInfo {
+						return { x: Math.floor(c.x / 32), y: Math.floor(c.y / 32), baseHeight: 0, baseZ: 0, isQueue: false, neighbourKeys: [] };
+					}),
+					teleportX, teleportY
+				);
+				if (fallback) {
+					teleportX = fallback.x;
+					teleportY = fallback.y;
+					teleportZ = group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING
+						? surfaceBaseZAt(teleportX, teleportY)
+						: footpathBaseZAt(teleportX, teleportY);
+				}
+			}
+			teleportStaffToTile(member, teleportX, teleportY, teleportZ);
 		}
 		refreshHiredAndAssignedStaffCounts();
 	});
