@@ -92,10 +92,32 @@ function parkEntranceStatCell(name: string, value: Bindable<number>): WidgetCrea
 	});
 }
 
-function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
+// A small decorative icon shown to the left of a section. It is a border-less
+// button without a click handler, because that is the only widget that can
+// render one of the game's named icon sprites.
+const SECTION_ICON_SIZE = 24;
+
+function sectionIcon(image: IconName, tooltip: string, rowHeight: number): WidgetCreator<FlexiblePosition> {
 	return vertical({
-		spacing: 2,
+		spacing: 0,
+		width: SECTION_ICON_SIZE,
+		height: rowHeight,
+		content: [
+			button({ image: image, width: SECTION_ICON_SIZE, height: SECTION_ICON_SIZE, border: false, tooltip: tooltip })
+		]
+	});
+}
+
+function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
+	return horizontal({
+		spacing: 4,
 		width: "100%",
+		height: TOP_ROW_HEIGHT,
+		content: [
+			sectionIcon("map", t("parkEntrance.tooltip"), TOP_ROW_HEIGHT),
+			vertical({
+		spacing: 2,
+		width: "1w",
 		height: TOP_ROW_HEIGHT,
 		content: [
 			horizontal({
@@ -115,6 +137,8 @@ function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
 					parkEntranceStatCell(t("parkEntrance.ownedTiles"), ownedTilesCountStore),
 					label({ text: parkEntranceInfoStore, width: "1w", height: PARK_ENTRANCE_CELL_HEIGHT, tooltip: t("parkEntrance.tooltip") })
 				]
+			})
+		]
 			})
 		]
 	});
@@ -251,8 +275,22 @@ const PROGRESS_ROW_HEIGHT = 10;
 const APPLY_MESSAGE_ROW_HEIGHT = 14;
 const APPLY_ROW_HEIGHT = 20;
 const CONTENT_SPACING = 4; // spacing between the window's top-level content rows
+const SEPARATOR_ROW_HEIGHT = 4; // horizontal divider between the window's sections
+const SEPARATOR_COUNT = 2; // statistics | configuration | progress and buttons
+const ACTIONS_ROW_HEIGHT = PROGRESS_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + CONTENT_SPACING + AUTO_ROW_HEIGHT;
 const WINDOW_CHROME_HEIGHT = 29; // title bar + top/bottom window padding
-const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + AUTO_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + PROGRESS_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + WINDOW_CHROME_HEIGHT;
+const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + AUTO_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + PROGRESS_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + (SEPARATOR_COUNT * (SEPARATOR_ROW_HEIGHT + CONTENT_SPACING)) + WINDOW_CHROME_HEIGHT;
+
+// A thin engraved divider drawn across the full window width.
+function separator(): WidgetCreator<FlexiblePosition> {
+	return graphics({
+		width: "100%",
+		height: SEPARATOR_ROW_HEIGHT,
+		onDraw: function (g) {
+			g.well(0, 1, g.width, 2);
+		}
+	});
+}
 
 // Tooltip shared by both halves of the progress bar, so hovering anywhere over
 // the bar shows the same percentage.
@@ -273,7 +311,7 @@ for (let i = 0; i < PROGRESS_SEGMENT_COUNT; i++) {
 }
 
 function staffManagerWindowTemplate(): WindowTemplate {
-	const windowWidth = 400;
+	const windowWidth = 430; // 400 + room for the section icon column on the left
 	return flexWindow({
 			title: t("window.title"),
 			width: windowWidth,
@@ -282,10 +320,12 @@ function staffManagerWindowTemplate(): WindowTemplate {
 			spacing: 4,
 			content: [
 				parkEntranceStatTable(),
+				separator(),
 				horizontal({
 					spacing: 6,
 					height: COLUMN_ROW_HEIGHT,
 					content: [
+						sectionIcon("patrol", t("window.title"), COLUMN_ROW_HEIGHT),
 						vertical({
 							spacing: 4,
 							width: GROUP_WIDTH,
@@ -306,6 +346,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 						})
 					]
 				}),
+				separator(),
 				// Progress bar. Variable-width widgets did not work: neither a single
 				// custom-drawn widget nor two weight-bound halves were reliably
 				// re-laid out / repainted when the progress store changed, so the
@@ -314,6 +355,17 @@ function staffManagerWindowTemplate(): WindowTemplate {
 				// either completely filled or completely empty, driven by its own
 				// bound store. That keeps every repaint correct regardless of how
 				// the engine batches invalidations.
+				horizontal({
+					spacing: 4,
+					width: "100%",
+					height: ACTIONS_ROW_HEIGHT,
+					content: [
+						sectionIcon("cheats", t("button.adjustAndAssign.tooltip"), ACTIONS_ROW_HEIGHT),
+						vertical({
+							spacing: CONTENT_SPACING,
+							width: "1w",
+							height: ACTIONS_ROW_HEIGHT,
+							content: [
 				horizontal({
 					spacing: 0,
 					width: "100%",
@@ -374,6 +426,10 @@ function staffManagerWindowTemplate(): WindowTemplate {
 							tooltip: t("auto.tooltip"),
 							disabled: compute(hasRanAdjustAndAssignStore, function (hasRun) { return !hasRun; }),
 							onChange: function (pressed) { setAutoEnabled(pressed); }
+						})
+					]
+				})
+							]
 						})
 					]
 				})
