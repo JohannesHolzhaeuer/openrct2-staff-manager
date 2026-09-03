@@ -840,7 +840,5 @@ export function scanFootpathNetwork(): void {
 
 	tilesCalculatedStore.set(true);
 
-	parkEntranceInfoStore.set(
-		t("parkEntrance.summary", result.pathTiles.length, result.queueTiles.length, gardeningResult.gardenTiles, rideExitCount, gardeningResult.ownedTiles)
-	);
+	parkEntranceInfoStore.set("");
 }

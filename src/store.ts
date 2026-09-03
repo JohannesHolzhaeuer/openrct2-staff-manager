@@ -68,10 +68,9 @@ export const tilesCalculatedStore = flexStore<boolean>(false);
 export const staffControlsDisabledStore = compute(tilesCalculatedStore, function (calculated) { return !calculated; });
 
 // Text shown at the top of the window describing where the park entrance was
-// found. Not translated via t() here: this initial value only exists for the
-// brief moment before openWindow() triggers a scan and overwrites it (t()
-// must not be called at module-load time - see src/i18n/index.ts for why).
-export const parkEntranceInfoStore = flexStore<string>("Paths 0   Queues 0   Garden 0\nRide exits 0   Owned tiles 0");
+// found (only used when no entrance is found; otherwise the top row shows a
+// table of individual tile counts bound directly to the stores below).
+export const parkEntranceInfoStore = flexStore<string>("");
 
 // Text shown in the status row during "Adjust and assign". Updated as each
 // staff type's processing step runs, so the player can see which step is

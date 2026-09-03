@@ -7,6 +7,7 @@ import {
 import { t } from "./i18n";
 import {
 	parkEntranceInfoStore, autoEnabledStore, hasRanAdjustAndAssignStore,
+	pathTilesCountStore, queueTilesCountStore, gardenTilesCountStore, rideExitCountStore, ownedTilesCountStore,
 	handymenTilesPerStaffStore, handymenMowerTilesPerStaffStore,
 	guardsTilesPerStaffStore, entertainersTilesPerStaffStore, entertainersPerAreaStore, entertainersIncludeQueueStore,
 	handymenEnabledStore, guardsEnabledStore, entertainersEnabledStore, mechanicsEnabledStore,
@@ -69,6 +70,54 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, disabled: 
 		statRow(t("statRow.needed"), needed, t("statRow.needed.tooltip"), disabled),
 		statRow(t("statRow.difference"), difference, t("statRow.difference.tooltip"), disabled, differenceColorToken)
 	];
+}
+
+// --- Park entrance tile-count table -------------------------------------------
+// One cell of the top status table: a left-aligned name and a right-aligned
+// count, stacked vertically, e.g. "Paths" over "12". Three cells make up each
+// of the two rows so all six values (path/queue/garden/ride exits/owned
+// tiles) line up into a compact aligned table instead of one free-form string.
+const PARK_ENTRANCE_CELL_HEIGHT = 24;
+
+function parkEntranceStatCell(name: string, value: Bindable<number>): WidgetCreator<FlexiblePosition> {
+	const valueText = isStore(value) ? compute(value, String) : String(value);
+	return vertical({
+		spacing: 0,
+		width: "1w",
+		height: PARK_ENTRANCE_CELL_HEIGHT,
+		content: [
+			label({ text: name, width: "100%", height: 12, tooltip: t("parkEntrance.tooltip") }),
+			label({ text: valueText, width: "100%", height: 12, alignment: "centred", tooltip: t("parkEntrance.tooltip") })
+		]
+	});
+}
+
+function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
+	return vertical({
+		spacing: 2,
+		width: "100%",
+		height: TOP_ROW_HEIGHT,
+		content: [
+			horizontal({
+				spacing: 6,
+				height: PARK_ENTRANCE_CELL_HEIGHT,
+				content: [
+					parkEntranceStatCell(t("parkEntrance.paths"), pathTilesCountStore),
+					parkEntranceStatCell(t("parkEntrance.queues"), queueTilesCountStore),
+					parkEntranceStatCell(t("parkEntrance.garden"), gardenTilesCountStore)
+				]
+			}),
+			horizontal({
+				spacing: 6,
+				height: PARK_ENTRANCE_CELL_HEIGHT,
+				content: [
+					parkEntranceStatCell(t("parkEntrance.rideExits"), rideExitCountStore),
+					parkEntranceStatCell(t("parkEntrance.ownedTiles"), ownedTilesCountStore),
+					label({ text: parkEntranceInfoStore, width: "1w", height: PARK_ENTRANCE_CELL_HEIGHT, tooltip: t("parkEntrance.tooltip") })
+				]
+			})
+		]
+	});
 }
 
 // --- Staff group widget ------------------------------------------------------
@@ -196,7 +245,7 @@ const STACK_HEIGHT = HANDYMEN_HEIGHT + GROUP_HEIGHT + 4; // Handymen + Guards gr
 const MECHANICS_ENTERTAINERS_STACK_HEIGHT = MECHANICS_HEIGHT + ENTERTAINERS_HEIGHT + 4;
 const COLUMN_ROW_HEIGHT = Math.max(STACK_HEIGHT, MECHANICS_ENTERTAINERS_STACK_HEIGHT);
 
-const TOP_ROW_HEIGHT = 28;
+const TOP_ROW_HEIGHT = 50;
 const AUTO_ROW_HEIGHT = 20;
 const PROGRESS_ROW_HEIGHT = 10;
 const APPLY_MESSAGE_ROW_HEIGHT = 14;
@@ -232,7 +281,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 			position: { x: Math.round((ui.width - windowWidth) / 2), y: Math.round((ui.height - WINDOW_HEIGHT) / 2) },
 			spacing: 4,
 			content: [
-				label({ text: parkEntranceInfoStore, width: "100%", height: 28, tooltip: t("parkEntrance.tooltip") }),
+				parkEntranceStatTable(),
 				horizontal({
 					spacing: 6,
 					height: COLUMN_ROW_HEIGHT,
