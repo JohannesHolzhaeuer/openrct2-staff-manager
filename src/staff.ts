@@ -671,24 +671,34 @@ function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void
 // teleport search bounce staff to the nearest unadorned path park-wide
 // (clustering them on one far tile). If a place on a genuinely-blocked tile
 // still fails, the async queue simply leaves the staff where they are.
+//
+// A tile with no footpath but a bare grass/surface (used for gardening
+// areas, which have no footpath of their own) is also accepted, as long as
+// it isn't blocked the same way and has no small scenery on it either -
+// unlike mowing/watering (see hasBlockingElement/hasWaterableSceneryElement
+// in scan.ts, which deliberately do NOT treat small scenery as a blocker so
+// flower beds still count as garden tiles), "peeppickup" placement itself
+// fails outright on any small scenery item (e.g. a tree), so such a tile
+// must never be chosen as a teleport target even though a handyman can
+// still walk across/around it once already patrolling the area normally.
 function isPeepPlaceableTile(x: number, y: number): boolean {
 	if (x < 0 || y < 0 || x >= map.size.x || y >= map.size.y) {
 		return false;
 	}
 	const tile = map.getTile(x, y);
 	let footpath: FootpathElement | null = null;
+	let hasSurface = false;
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if (element.type === "footpath") {
 			footpath = element;
-		} else if (element.type === "entrance" || element.type === "track" || element.type === "large_scenery") {
+		} else if (element.type === "entrance" || element.type === "track" || element.type === "large_scenery" || element.type === "small_scenery") {
 			return false;
+		} else if (element.type === "surface") {
+			hasSurface = true;
 		}
 	}
-	if (!footpath) {
-		return false;
-	}
-	return true;
+	return footpath !== null || hasSurface;
 }
 
 // Returns the given tiles ordered by Manhattan distance from (x, y), nearest
