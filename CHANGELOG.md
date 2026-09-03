@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/staff-manager-v0.10.0...staff-manager-v0.11.0) (2026-09-03)
+
+
+### Features
+
+* add ride exit and owned tile counts to top status line ([#25](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/25)) ([1f2dddf](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/1f2dddf3b249874ddc7694099f73b5bf3b1a9794))
+
+
+### Bug Fixes
+
+* add git usr/bin PATH fallback to commit-msg hook ([#24](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/24)) ([dcfa50e](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/dcfa50e898a2db45bd058ecdd6a6f04984d3bd7b))
+* name releases/tags just vX.Y.Z instead of staff-manager-vX.Y.Z ([#26](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/26)) ([eac028b](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/eac028bdb857f73e9a93509b79578f2a1a7a29b8))
+
 ## [0.10.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/staff-manager-v0.9.5...staff-manager-v0.10.0) (2026-09-03)
 
 
