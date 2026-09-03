@@ -1,1 +1,11 @@
+# Fallback for Git clients (e.g. Visual Studio's bundled Team Explorer Git)
+# whose PATH lacks a full Git for Windows usr/bin (missing bash/sh, causing
+# "/bin/env: 'bash': No such file or directory" / exit 127).
+for gitBin in "/c/Program Files/Git/usr/bin" "/c/Program Files (x86)/Git/usr/bin" "/c/Users/$USERNAME/AppData/Local/Programs/Git/usr/bin"; do
+	if [ -d "$gitBin" ]; then
+		PATH="$PATH:$gitBin"
+	fi
+done
+export PATH
+
 npx --no -- commitlint --edit "$1"
