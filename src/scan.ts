@@ -2,7 +2,7 @@
 import { t } from "./i18n";
 import {
 	pathTilesCountStore, queueTilesCountStore, gardenTilesCountStore, gardenAreaSizesStore,
-	rideExitCountStore, tilesCalculatedStore, parkEntranceInfoStore
+	rideExitCountStore, ownedTilesCountStore, tilesCalculatedStore, parkEntranceInfoStore
 } from "./store";
 
 // A single visited path/queue tile: its tile coordinates plus the base height of
@@ -570,9 +570,10 @@ function findGrassSurfaceStyleIndices(): Set<number> {
 // components (4-directionally adjacent tiles), each in BFS visitation order,
 // so groups of tiles that are physically next to each other stay together;
 // this is used by Assign to build spatially local gardening patrol areas.
-function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][]; workCounts: number[] } {
+function scanGardeningTiles(): { gardenTiles: number; ownedTiles: number; areas: PathTileInfo[][]; workCounts: number[] } {
 	const mapSize = map.size;
 	let gardenTiles = 0;
+	let ownedTiles = 0;
 	const isGardenTile = new Set<string>();
 	// Owned footpath tiles that act as walkable connectors between garden work tiles,
 	// so a gardener can reach (and join) grass areas split by a path.
@@ -587,6 +588,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][]; w
 			if (!isParkOwnedTile(x, y)) {
 				continue;
 			}
+			ownedTiles++;
 
 			const tile = map.getTile(x, y);
 			const surface = findSurfaceElement(tile);
@@ -700,7 +702,7 @@ function scanGardeningTiles(): { gardenTiles: number; areas: PathTileInfo[][]; w
 		workCounts.push(workTileCount);
 	});
 
-	return { gardenTiles: gardenTiles, areas: areas, workCounts: workCounts };
+	return { gardenTiles: gardenTiles, ownedTiles: ownedTiles, areas: areas, workCounts: workCounts };
 }
 
 // --- Ride exit counting -------------------------------------------------------
@@ -831,13 +833,12 @@ export function scanFootpathNetwork(): void {
 	gardenTilesCountStore.set(gardeningResult.gardenTiles);
 	gardenAreaSizesStore.set(gardeningResult.workCounts);
 	rideExitCountStore.set(rideExitCount);
+	ownedTilesCountStore.set(gardeningResult.ownedTiles);
 
 	lastAllPathTiles = result.allTiles;
 	lastGardenAreas = gardeningResult.areas;
 
 	tilesCalculatedStore.set(true);
 
-	parkEntranceInfoStore.set(
-		t("parkEntrance.summary", result.pathTiles.length, result.queueTiles.length, gardeningResult.gardenTiles)
-	);
+	parkEntranceInfoStore.set("");
 }

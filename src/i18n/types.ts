@@ -8,7 +8,11 @@ export interface Translations {
 	"menu.title": string;
 
 	"parkEntrance.notFound": string;
-	"parkEntrance.summary": string;
+	"parkEntrance.paths": string;
+	"parkEntrance.queues": string;
+	"parkEntrance.garden": string;
+	"parkEntrance.rideExits": string;
+	"parkEntrance.ownedTiles": string;
 	"parkEntrance.tooltip": string;
 
 	"applyMessage.tooltip": string;

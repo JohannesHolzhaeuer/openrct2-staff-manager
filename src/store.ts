@@ -30,6 +30,9 @@ export const gardenTilesCountStore = flexStore<number>(0);
 // leaving some areas with none).
 export const gardenAreaSizesStore = flexStore<number[]>([]);
 export const rideExitCountStore = flexStore<number>(0);
+// Total number of tiles owned by the park (or under construction rights),
+// shown in the top status line alongside path/queue/garden/ride-exit counts.
+export const ownedTilesCountStore = flexStore<number>(0);
 
 // --- User settings stores ---------------------------------------------------
 export const handymenTilesPerStaffStore = flexStore<number>(DEFAULT_HANDYMEN_TILES_PER_STAFF);
@@ -65,10 +68,9 @@ export const tilesCalculatedStore = flexStore<boolean>(false);
 export const staffControlsDisabledStore = compute(tilesCalculatedStore, function (calculated) { return !calculated; });
 
 // Text shown at the top of the window describing where the park entrance was
-// found. Not translated via t() here: this initial value only exists for the
-// brief moment before openWindow() triggers a scan and overwrites it (t()
-// must not be called at module-load time - see src/i18n/index.ts for why).
-export const parkEntranceInfoStore = flexStore<string>("Path tiles: 0, Queue tiles: 0, Garden tiles: 0");
+// found (only used when no entrance is found; otherwise the top row shows a
+// table of individual tile counts bound directly to the stores below).
+export const parkEntranceInfoStore = flexStore<string>("");
 
 // Text shown in the status row during "Adjust and assign". Updated as each
 // staff type's processing step runs, so the player can see which step is
