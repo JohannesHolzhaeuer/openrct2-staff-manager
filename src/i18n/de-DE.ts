@@ -7,8 +7,8 @@ export const deDE: Translations = {
 	"menu.title": "Personalverwaltung",
 
 	"parkEntrance.notFound": "Parkeingang: nicht gefunden.",
-	"parkEntrance.summary": "Wegfliesen: {0}, Warteschlangenfliesen: {1}, Gartenfliesen: {2}",
-	"parkEntrance.tooltip": "Zusammenfassung der letzten Kartenabtastung: erreichbare Weg-, Warteschlangen- und Gartenfliesenanzahl, aktualisiert durch Personalanzahl anpassen/Zuweisen.",
+	"parkEntrance.summary": "{RED}P{BLACK} {0}  {RED}Q{BLACK} {1}  {RED}G{BLACK} {2}  {RED}E{BLACK} {3}  {RED}O{BLACK} {4}",
+	"parkEntrance.tooltip": "Zusammenfassung der letzten Kartenabtastung: P = Wegfliesen, Q = Warteschlangenfliesen, G = Gartenfliesen, E = Fahrgeschäftsausgänge, O = Gesamtzahl der Grundstücksfliesen. Aktualisiert durch Personalanzahl anpassen/Zuweisen.",
 
 	"applyMessage.tooltip": "Reserviert für Statusmeldungen nach Personalanzahl anpassen/Zuweisen.",
 	"progress.tooltip": "Fortschritt des laufenden Vorgangs Personalanzahl anpassen/Zuweisen.",
