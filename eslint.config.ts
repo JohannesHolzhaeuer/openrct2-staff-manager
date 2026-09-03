@@ -14,9 +14,12 @@ export default defineConfig(
 		],
 		languageOptions: {
 			parserOptions: {
-				projectService: {
-					allowDefaultProject: ["test/*.ts", "deploy.ts", "eslint.config.ts", "vitest.config.ts"],
-				},
+				// Every linted file is covered by a real tsconfig project
+				// (src/** by tsconfig.json, tooling + test/** by
+				// tsconfig.node.json), so no file falls back to the default
+				// project. Both must be listed explicitly: the project service
+				// only auto-discovers tsconfig.json.
+				project: ["tsconfig.json", "tsconfig.node.json"],
 				tsconfigRootDir: import.meta.dirname,
 				ecmaVersion: 2023,
 				sourceType: "module",

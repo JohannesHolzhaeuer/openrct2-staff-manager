@@ -17,6 +17,9 @@
   },
   "include": [
     "deploy.ts",
-    "eslint.config.ts"
+    "eslint.config.ts",
+    "vitest.config.ts",
+    "test/**/*.ts",
+    "node_modules/@openrct2/types/openrct2.d.ts"
   ]
 }

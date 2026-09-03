@@ -9,6 +9,7 @@ import {
     isValidStationExit, tileKey, PathTileInfo, isGardenTile, isQueueTile,
     footpathsConnectTiles, surfaceTilesConnect, surfaceBaseZAt
 } from "./scan";
+import { gameMap } from "./game";
 import {
     STAFF_TYPE_ID_HANDYMAN, STAFF_TYPE_ID_SECURITY, STAFF_TYPE_ID_ENTERTAINER,
     STAFF_TYPE_ID_MECHANIC, HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING,
@@ -205,7 +206,7 @@ function getLastStaffOfType(staffType: StaffType): Staff | null {
 
 // The baseZ of the footpath on a tile, if any (used as a teleport height).
 function footpathBaseZAt(tx: number, ty: number): number {
-	const tile = map.getTile(tx, ty);
+	const tile = gameMap().getTile(tx, ty);
 	for (const member of getFootpathBaseZFromTile(tile)) {
 		return member;
 	}
@@ -314,7 +315,7 @@ function handleMechanicForAdjacentExit(tx: number, ty: number): void {
 
 // Whether a ride exit element sits on the given tile.
 function isRideExitOnTile(tx: number, ty: number): boolean {
-	const rides = map.rides;
+	const rides = gameMap().rides;
 	for (const ride of rides) {
 		const stations = ride.stations;
 		for (const station of stations) {

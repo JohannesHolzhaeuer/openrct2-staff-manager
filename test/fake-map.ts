@@ -1,8 +1,6 @@
 /// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import type { GameMap } from "../src/game";
 
-/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/consistent-type-assertions */
-
 export interface FakeSurface {
     baseHeight: number;
     waterHeight?: number;
@@ -22,10 +20,12 @@ export interface FakeFootpath {
 export interface FakeTileSpec {
     surface?: FakeSurface;
     footpaths?: FakeFootpath[];
+    // Extra element types on the tile (e.g. "small_scenery", "track"), used to
+    // exercise the checks that reject obstructed tiles.
+    others?: TileElementType[];
 }
 
-function toElements(spec: FakeTileSpec): TileElement[] {
-    const elements: TileElement[] = [];
+function toElements(spec: FakeTileSpec): TileElement[] {    const elements: TileElement[] = [];
     if (spec.surface) {
         elements.push({
             type: "surface",
@@ -46,16 +46,22 @@ function toElements(spec: FakeTileSpec): TileElement[] {
             isGhost: footpath.isGhost ?? false
         } as unknown as TileElement);
     }
+    for (const type of spec.others ?? []) {
+        elements.push({ type: type } as unknown as TileElement);
+    }
     return elements;
 }
 
 // Builds a GameMap backed by a plain "x,y" -> tile-spec dictionary, so the
 // scanning helpers can be exercised without the OpenRCT2 globals. Tiles that
 // were not specified come back empty.
-export function fakeMap(size: CoordsXY, tiles: Record<string, FakeTileSpec> = {}, rides: Ride[] = []): GameMap {
+export function fakeMap(size: CoordsXY, tiles: Record<string, FakeTileSpec> = {}, rides: Ride[] = [], staff: Staff[] = []): GameMap {
     return {
         size: size,
         rides: rides,
+        getAllEntities(): Staff[] {
+            return staff;
+        },
         getTile(x: number, y: number): Tile {
             const elements = toElements(tiles[String(x) + "," + String(y)] ?? {});
             return {
@@ -68,4 +74,10 @@ export function fakeMap(size: CoordsXY, tiles: Record<string, FakeTileSpec> = {}
             } as unknown as Tile;
         }
     };
+}
+
+// A minimal staff entity for getAllEntities("staff") based lookups. `orders`
+// only matters for handymen, where it decides cleanup vs gardening.
+export function fakeStaff(id: number, staffType: StaffType, orders = 0): Staff {
+    return { id: id, staffType: staffType, orders: orders } as unknown as Staff;
 }
