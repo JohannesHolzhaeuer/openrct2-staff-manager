@@ -3,6 +3,7 @@ import { autoEnabledStore } from "./store";
 import { isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
 import { handlePlacedPathTile, handleBoughtLandTile } from "./staff-auto";
 import { BATCH_TICK_DELAY } from "./staff";
+import { gameContext } from "./game";
 
 // The storage key backing the persisted auto flag. Versioned so an earlier
 // persisted "on" value isn't carried over (the default is off).
@@ -45,9 +46,9 @@ const TILES_PER_TICK = 16;
 
 export function setAutoEnabled(enabled: boolean): void {
 	autoEnabledStore.set(enabled);
-	context.sharedStorage.set(AUTO_STORAGE_KEY, enabled);
+	gameContext().setSetting(AUTO_STORAGE_KEY, enabled);
 	if (pendingTimer !== null) {
-		context.clearTimeout(pendingTimer);
+		gameContext().clearTimeout(pendingTimer);
 		pendingTimer = null;
 	}
 	pendingTiles = [];
@@ -56,7 +57,7 @@ export function setAutoEnabled(enabled: boolean): void {
 		actionSubscription = null;
 	}
 	if (enabled) {
-		actionSubscription = context.subscribe("action.execute", onAction);
+		actionSubscription = gameContext().subscribe("action.execute", onAction);
 	}
 }
 
@@ -146,9 +147,9 @@ function queueTileIfPlacedPath(x: number, y: number): void {
 // Debounce: coalesce a burst of tile placements into one grouped processing pass.
 function schedule(): void {
 	if (pendingTimer !== null) {
-		context.clearTimeout(pendingTimer);
+		gameContext().clearTimeout(pendingTimer);
 	}
-	pendingTimer = context.setTimeout(function () {
+	pendingTimer = gameContext().setTimeout(function () {
 		pendingTimer = null;
 		processPending();
 	}, DEBOUNCE_MS);
@@ -183,7 +184,7 @@ function processPending(): void {
 			// ignore errors from individual tile handling
 		}
 		if (index < tiles.length) {
-			context.setTimeout(step, BATCH_TICK_DELAY);
+			gameContext().setTimeout(step, BATCH_TICK_DELAY);
 		} else {
 			isWorking = false;
 		}
@@ -195,6 +196,6 @@ function processPending(): void {
 // (only subscribes when the flag is true and no subscription exists yet).
 export function initAuto(): void {
 	if (autoEnabledStore.get() && actionSubscription === null) {
-		actionSubscription = context.subscribe("action.execute", onAction);
+		actionSubscription = gameContext().subscribe("action.execute", onAction);
 	}
 }

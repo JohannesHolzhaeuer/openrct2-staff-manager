@@ -3,7 +3,7 @@ import { footpathEdgeZ, oppositeDirection, footpathsConnect, surfacesConnect } f
 import type { PathTileInfo } from "../src/scan";
 import { chunkTilesForStaffCount, isStandingOnTile, decideAreaAction } from "../src/staff";
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/restrict-template-expressions, @typescript-eslint/restrict-plus-operands */
+/* eslint-disable @typescript-eslint/restrict-template-expressions */
 
 function fp(baseZ: number, slopeDirection: number | null = null): { baseZ: number; slopeDirection: number | null } {
 	return { baseZ: baseZ, slopeDirection: slopeDirection };
