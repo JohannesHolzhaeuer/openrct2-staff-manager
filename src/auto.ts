@@ -1,7 +1,8 @@
 /// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { autoEnabledStore } from "./store";
 import { isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
-import { handlePlacedPathTile, handleBoughtLandTile, BATCH_TICK_DELAY } from "./staff";
+import { handlePlacedPathTile, handleBoughtLandTile } from "./staff-auto";
+import { BATCH_TICK_DELAY } from "./staff";
 
 // The storage key backing the persisted auto flag. Versioned so an earlier
 // persisted "on" value isn't carried over (the default is off).
