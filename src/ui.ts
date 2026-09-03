@@ -196,7 +196,7 @@ const STACK_HEIGHT = HANDYMEN_HEIGHT + GROUP_HEIGHT + 4; // Handymen + Guards gr
 const MECHANICS_ENTERTAINERS_STACK_HEIGHT = MECHANICS_HEIGHT + ENTERTAINERS_HEIGHT + 4;
 const COLUMN_ROW_HEIGHT = Math.max(STACK_HEIGHT, MECHANICS_ENTERTAINERS_STACK_HEIGHT);
 
-const TOP_ROW_HEIGHT = 14;
+const TOP_ROW_HEIGHT = 28;
 const AUTO_ROW_HEIGHT = 20;
 const PROGRESS_ROW_HEIGHT = 10;
 const APPLY_MESSAGE_ROW_HEIGHT = 14;
@@ -232,7 +232,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 			position: { x: Math.round((ui.width - windowWidth) / 2), y: Math.round((ui.height - WINDOW_HEIGHT) / 2) },
 			spacing: 4,
 			content: [
-				label({ text: parkEntranceInfoStore, width: "100%", height: 14, tooltip: t("parkEntrance.tooltip") }),
+				label({ text: parkEntranceInfoStore, width: "100%", height: 28, tooltip: t("parkEntrance.tooltip") }),
 				horizontal({
 					spacing: 6,
 					height: COLUMN_ROW_HEIGHT,

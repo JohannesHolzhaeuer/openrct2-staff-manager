@@ -71,7 +71,7 @@ export const staffControlsDisabledStore = compute(tilesCalculatedStore, function
 // found. Not translated via t() here: this initial value only exists for the
 // brief moment before openWindow() triggers a scan and overwrites it (t()
 // must not be called at module-load time - see src/i18n/index.ts for why).
-export const parkEntranceInfoStore = flexStore<string>("Paths: 0  Queues: 0  Garden: 0  Exits: 0  Owned: 0");
+export const parkEntranceInfoStore = flexStore<string>("Paths 0   Queues 0   Garden 0\nRide exits 0   Owned tiles 0");
 
 // Text shown in the status row during "Adjust and assign". Updated as each
 // staff type's processing step runs, so the player can see which step is
