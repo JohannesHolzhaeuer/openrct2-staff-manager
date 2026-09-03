@@ -2,60 +2,74 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 permissions:
   contents: write
+  pull-requests: write
+  issues: write
 
 jobs:
-  release:
+  release-please:
     runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - name: Checkout
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  publish-release:
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+    steps:
+      - name: Checkout released tag
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0
-
-      - name: Re-fetch tag to restore annotation
-        # actions/checkout dereferences the pushed tag to its commit when
-        # checking it out, so the local refs/tags/<name> ref becomes a
-        # lightweight tag pointing straight at the commit and loses the
-        # annotated tag object (message/tagger) entirely. Without this,
-        # `git tag -l --format=%(contents)` below silently falls back to
-        # printing the *commit* message instead of the tag message. Force
-        # re-fetching the tag ref from origin restores the real annotated
-        # tag object so its message can be read correctly.
-        run: git fetch origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}" --force
+          ref: ${{ env.TAG_NAME }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: "24"
+          node-version: 22
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Bundle plugin
+        run: npm run bundle
 
-      - name: Lint
-        run: npm run lint
+      - name: Upload plugin asset to release
+        run: gh release upload "$TAG_NAME" dist/staff-manager.js --repo "$GITHUB_REPOSITORY" --clobber
 
-      - name: Run tests
-        run: npm test
+      - name: Rewrite release notes
+        run: |
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json body -q .body > release-notes-body.md
 
-      - name: Build
-        run: npx esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023
+          {
+            echo "## OpenRCT2 Staff Manager $TAG_NAME"
+            echo ""
+            echo "Automated release of the Staff Manager plugin."
+            echo ""
+            cat release-notes-body.md
+            echo ""
+            echo "## Installation"
+            echo ""
+            echo "1. Download \`staff-manager.js\` from the assets below."
+            echo "2. Copy it into your OpenRCT2 \`plugin\` folder."
+            echo "3. Restart OpenRCT2 (or reload plugins) to pick up the new version."
+          } > release-notes.md
 
-      - name: Write tag message to file
-        id: tag_message
-        run: git tag -l --format='%(contents)' "${{ github.ref_name }}" > release_body.md
+          gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
 
-      - name: Create release and upload asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/staff-manager.js
-          body_path: release_body.md
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish release
+        run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
