@@ -78,5 +78,11 @@ jobs:
 
           gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
 
+      # release-please names the release after the package ("staff-manager:
+      # v1.2.3"). The component is already omitted from the tag, so rename the
+      # release to match the tag and keep the release list consistent.
+      - name: Rename release to the plain tag
+        run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --title "$TAG_NAME"
+
       - name: Publish release
         run: gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
