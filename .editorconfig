@@ -1,0 +1,25 @@
+root = true
+
+# Visual Studio (and any other EditorConfig-aware editor) must keep every file
+# LF, matching .gitattributes (* text=auto eol=lf).
+[*]
+end_of_line = lf
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# TypeScript sources are indented with tabs.
+[*.ts]
+indent_style = tab
+
+[*.{json,jsonc,yml,yaml,js,md}]
+indent_style = space
+indent_size = 2
+
+# Markdown uses trailing spaces for hard line breaks.
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{esproj,slnx,vsconfig}]
+indent_style = space
+indent_size = 2
