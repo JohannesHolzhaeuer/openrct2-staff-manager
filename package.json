@@ -27,7 +27,7 @@
     "@openrct2/types": "^0.5.4",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^26.4.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.8.1",
     "globals": "^17.11.0",
@@ -35,7 +35,7 @@
     "jiti": "^2.7.0",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.68.0",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   },
   "dependencies": {
     "openrct2-flexui": "0.1.0-prerelease.22"
