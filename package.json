@@ -21,6 +21,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
+    "@commitlint/types": "^21.2.0",
     "@eslint/js": "^10.0.1",
     "@openrct2/types": "^0.5.4",
     "@stylistic/eslint-plugin": "^5.10.0",
