@@ -113,6 +113,36 @@ jobs:
       - name: Bundle
         run: npm run bundle
 
+  # CodeQL advanced setup. Unlike the default setup, this always runs on every
+  # pull request, so the code scanning merge protection rule never waits
+  # forever on pull requests that touch no analysable files.
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
   # Single aggregator status check. Make this the only required check in branch
   # protection: the action fails if any job in `needs` failed, was cancelled or
   # was skipped, and it also fails if a job of this workflow is missing from
@@ -126,6 +156,7 @@ jobs:
       - typecheck
       - vitest
       - build
+      - codeql
     runs-on: ubuntu-latest
     permissions:
       contents: read
