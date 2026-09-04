@@ -13,12 +13,12 @@ export default defineConfig({
       exclude: ["src/i18n/**"],
       thresholds: {
         // Baseline floor matching current coverage, to be raised as more
-        // tests are added (auto.ts, staff-auto.ts, ui.ts, main.ts are
-        // currently untested).
-        lines: 25,
-        statements: 24,
-        functions: 23,
-        branches: 20
+        // tests are added (ui.ts and main.ts are still untested; auto.ts is
+        // now well covered, staff-auto.ts partially).
+        lines: 38,
+        statements: 37,
+        functions: 37,
+        branches: 30
       }
     }
   }
