@@ -15,6 +15,9 @@ export class FakeContext implements GameContext {
     readonly settings = new Map<string, unknown>();
     subscriptions = 0;
     disposals = 0;
+    // The most recently subscribed action.execute callback, so tests can
+    // simulate a game action firing without a real event bus.
+    actionExecuteCallback: ((event: GameActionEventArgs) => void) | null = null;
 
     // Pending timer callbacks keyed by handle, in scheduling order.
     private timers = new Map<number, () => void>();
@@ -44,8 +47,9 @@ export class FakeContext implements GameContext {
         callback(this.actionResult);
     }
 
-    subscribe(): IDisposable {
+    subscribe(_hook: "action.execute", callback: (event: GameActionEventArgs) => void): IDisposable {
         this.subscriptions++;
+        this.actionExecuteCallback = callback;
         return {
             dispose: (): void => {
                 this.disposals++;

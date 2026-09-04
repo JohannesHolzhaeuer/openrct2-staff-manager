@@ -28,6 +28,7 @@
     <Content Include="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <None Include=".github\dependabot.yml" />
     <None Include=".github\workflows\ci.yml" />
     <None Include=".github\workflows\release.yml" />
     <None Include=".husky\commit-msg" />
