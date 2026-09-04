@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.13.0...v0.13.1) (2026-09-04)
+
+
+### Documentation
+
+* merge notes and limitations, remove changelog from README ([#58](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/58)) ([c6149ee](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/c6149ee4301adbf9c63ff3989a3248f2f85a0a48))
+
 ## [0.13.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.12.0...v0.13.0) (2026-09-04)
 
 
