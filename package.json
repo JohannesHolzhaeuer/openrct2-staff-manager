@@ -12,6 +12,7 @@
     "dev": "npm run bundle && node deploy.ts",
     "bundle": "esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023",
     "lint": "eslint .",
+    "audit": "npm audit --audit-level=high",
     "watch": "esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 --watch",
     "test": "vitest run --reporter=tap --no-color",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
