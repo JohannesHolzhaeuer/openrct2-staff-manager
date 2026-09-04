@@ -215,16 +215,13 @@ type's assigned areas (independent of the async staff-hire/patrol-area game acti
 which is why a burst of connected tiles extends one area rather than hiring one member per
 tile. It's disabled until "Adjust and assign" has been run once.
 
-### Notes & limitations (new)
-
-- **Auto mode never performs full map scans.** It makes incremental, minimal changes only
-  for the tiles you actually place or buy, so it stays cheap during long path drags.
-
 ---
 
 ## Notes & limitations
 
-- **Mechanic dispatch:** the scripting API doesn't expose which ride a mechanic is
+- **Auto mode never performs full map scans.** It makes incremental, minimal changes only
+  for the tiles you actually place or buy, so it stays cheap during long path drags.
+- **Mechanic dispatch:**
   dispatched to, so “busy” is inferred from the mechanic not standing on a
   footpath tile.
 - **Patrol areas are height‑ and water‑aware.** Tiles are only linked into the
@@ -256,42 +253,6 @@ directly in the UI, but their initial defaults live in code:
 | `entertainersPerAreaStore` (2) | Entertainers assigned per area |
 | `entertainersIncludeQueueStore` (true) | Whether entertainers patrol queues |
 | `*EnabledStore` (true) | Whether each staff type is managed |
-
----
-
-## Changelog
-
-- **0.9.5** – Fixed the game freezing for several seconds after "Adjust and
-  assign": hire/fire and patrol-area work is now spread over real game ticks
-  (timers scheduled with delay 0 were re-entered within the same tick), and the
-  expensive chunk-merging and nearest-placeable-tile searches were replaced with
-  much cheaper algorithms. Added a segmented progress bar above the status row,
-  the status now ends with "Done"/"Fertig", and the "Adjust and assign" button is
-  always enabled.
-- **0.9.4** – Made auto-mode's enlarge-vs-hire decision respect genuine walkable
-  connectivity (bridges over paths, and inclined ways at different heights, are
-  no longer merged into one patrol area). Included elevated footpaths over
-  unowned land (bridges/overpasses) in patrol areas. Fixed a teleport-queue
-  stack overflow for large queues. Excluded tiles with shops/rides/tracks from
-  garden tiles unless the element is clearly elevated above the grass. Fixed
-  gardening handymen being teleported off their patrol area onto the wrong
-  height. Let gardening patrol areas span paths for reachability, so a handyman
-  can walk across a path to reach mowed grass on the other side.
-- **0.9.3** – Combined "Adjust staff count" and "Assign" into a single
-  "Adjust and assign" button that runs only after the async hire/fire actions
-  complete; split the previously-synchronous per-staff patrol-area assignment
-  across ticks so the game no longer freezes; added a live status line
-  showing which step is running. All new strings localized.
-- **0.9.2** – Made patrol and gardening areas height‑ and water‑aware: paths
-  and land tiles are now only linked when actually walkable (matching slope
-  heights, no cliffs, no water), so patrol areas are always one contiguous,
-  fully reachable region instead of sometimes stranding staff on disconnected
-  or submerged tiles.
-- **0.9.0** – Renamed from the plugin's original working title to **Staff
-  Manager**; added per‑staff‑type enable controls; rewrote the UI; improved
-  entrance detection, mechanic patrol assignment (cardinal‑neighbour front‑tile
-  matching, busy‑mechanic protection), gardening granularity, and patrol
-  connectivity; removed leftover console logging.
 
 ---
 
