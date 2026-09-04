@@ -15,6 +15,7 @@
     "audit": "npm audit --audit-level=high",
     "watch": "esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 --watch",
     "test": "vitest run --reporter=tap --no-color",
+    "coverage": "vitest run --coverage --no-color",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "prepare": "husky"
   },
@@ -26,6 +27,7 @@
     "@openrct2/types": "^0.5.4",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^26.4.0",
+    "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "^0.28.2",
     "eslint": "^10.8.1",
     "globals": "^17.11.0",
