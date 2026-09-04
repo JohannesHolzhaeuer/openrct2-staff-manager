@@ -11,11 +11,6 @@ entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
 (re)assign** staff so the right number always patrol the right places — sending
 each staff member to their **nearest** free zone.
 
-- **Version:** 0.9.5
-- **Type:** local (single‑player / client‑side)
-- **Licence:** MIT
-- **Min API:** 34 · **Target API:** 77
-- **Source:** `src/` (TypeScript, `src/main.ts` entry point, compiles to `dist/staff-manager.js`)
 
 ---
 
@@ -69,22 +64,28 @@ Entertainers have their own controls instead of the generic density spinner:
   assign" has been run once.
 
 ### 👥 Hire / Fire
-- **Adjust staff count** button hires or fires the right number of **every** type
+- **Adjust and assign** button hires or fires the right number of **every** type
   at once to match the calculated *Needed* counts — hiring when understaffed,
-  firing staff when overstaffed.
+  firing staff when overstaffed — and then rebuilds the patrol areas.
 - **Oldest staff first.** Surplus staff are fired oldest‑first for a stable,
   consistent result.
 
 ### 🖥️ UI & behaviour
-- One resizable window with an **Enabled** toggle and a *Hired / Needed /
-  Difference* stat table per staff type.
-- **Assign** builds every type's patrol areas from the most recently scanned tiles
-  and teleports one staff member to the start of each new area.
+- One resizable window with a **scan summary** at the top — *Paths*, *Queues*,
+  *Garden*, *Ride exits* and *Owned tiles* — refreshed by every run.
+- Four staff groups (*Handymen*, *Guards*, *Mechanics*, *Entertainers*), each with
+  an **Enabled** toggle, its own spinners and a *Hired / Needed / Difference*
+  stat table. Handymen have separate **Cleanup** and **Gardening** spinners;
+  mechanics need no spinner because they are derived from the ride exits.
+- **Adjust and assign** builds every type's patrol areas from the most recently
+  scanned tiles and teleports one staff member to the start of each new area.
+- A **segmented progress bar** with a status line below it reports the current
+  stage, e.g. *Adjusting staff count...*, *Assigning guards...*, *Done*.
+- A toggle at the bottom shows **Automatic assignment is ON/OFF** next to a
+  red/green indicator.
 - Staff teleports are **serialised through a single queue**, because OpenRCT2 only
   supports one peep being “picked up” at a time — overlapping pickups would
   otherwise clobber each other.
-- A status line reports the scanned counts, e.g.
-  *Path tiles: n, Queue tiles: n, Garden tiles: n*.
 
 ---
 
@@ -166,13 +167,15 @@ typecheck → bundle → deploy), or alone via `npm run test`.
 
 1. **Open the window** from the toolbox menu.
 2. For each staff type, tick the **Enabled** checkbox to include it.
-3. Click **Adjust staff count** to hire/fire the right number of each type based
-   on your settings (this is what fills the *Needed* column).
-4. Click **Assign** to build patrol areas and move staff into them.
-5. Tune the per-type spinners (tiles/staff, entertainer staff/area, handyman
-   gardening density, entertainer Queue checkbox) and repeat steps 3–4 as your park
-   changes.
-6. Optionally **enable automatic management** (toggle at the bottom of the window) so
+3. Click **Adjust and assign** to hire/fire the right number of each type based
+   on your settings (this is what fills the *Needed* column) and to build the
+   patrol areas and move staff into them. The progress bar and status line show
+   how far the pass has got.
+4. Tune the per-type spinners (handyman cleanup/gardening density, guard and
+   entertainer tiles/staff, entertainer staff/area, entertainer Queue checkbox)
+   and run it again as your park changes.
+5. Optionally **enable automatic management** (the *Automatic assignment is
+   ON/OFF* toggle at the bottom of the window) so
    the plugin keeps hiring/firing and assigning staff as you connect new paths or buy new
    land — see [Automatic staffing](#automatic-staffing-1).
 
