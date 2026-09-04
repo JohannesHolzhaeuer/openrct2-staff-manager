@@ -11,27 +11,34 @@ permissions:
 
 jobs:
   commitlint:
-    if: github.event_name == 'pull_request'
+    name: Commitlint
     runs-on: ubuntu-latest
     steps:
+      # Only pull requests have a base/head range to lint; on push to main the
+      # job stays green so the `all-checks` gate never sees a skipped job.
       - name: Checkout
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
+        if: github.event_name == 'pull_request'
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
+        if: github.event_name == 'pull_request'
         run: npm ci
 
       - name: Lint commit messages
+        if: github.event_name == 'pull_request'
         run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
 
-  build:
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -40,7 +47,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -49,11 +56,81 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm run test
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
 
+  vitest:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Bundle
         run: npm run bundle
+
+  # Single aggregator status check. Make this the only required check in branch
+  # protection: the action fails if any job in `needs` failed, was cancelled or
+  # was skipped, and it also fails if a job of this workflow is missing from
+  # `needs`, so newly added jobs become mandatory automatically.
+  all-checks:
+    name: All checks
+    if: always()
+    needs:
+      - commitlint
+      - lint
+      - typecheck
+      - vitest
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    steps:
+      - uses: suzuki-shunsuke/required-status-check-action@2b5a46064846b09381852c2c4217e898f639e768 # v0.1.3
+        with:
+          needs: ${{ toJson(needs) }}
