@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.13.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.12.0...v0.13.0) (2026-09-04)
+
+
+### Features
+
+* **ui:** add section icons and separators to window layout ([#42](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/42)) ([dbada6b](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/dbada6b4a7cb29de61f21617858f57a49434922e))
+
+
+### Bug Fixes
+
+* stop npm install hitting retired audit endpoint ([#46](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/46)) ([d22a0ae](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/d22a0ae4c1e84a694ee13d6b514c324715ae5d05))
+
+
+### Documentation
+
+* update README and screenshot for new UI/workflow ([#44](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/44)) ([e7276b7](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/e7276b7487863156346a35bdf5c2e8df54f4c536))
+
 ## [0.12.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.11.0...v0.12.0) (2026-09-03)
 
 
