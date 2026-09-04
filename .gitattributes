@@ -1,0 +1,9 @@
+# Normalise all text files to LF in the repository and in the working tree,
+# so checkouts are identical on every platform.
+* text=auto eol=lf
+
+# Binary files must never be converted.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
