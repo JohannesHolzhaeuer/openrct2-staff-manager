@@ -12,6 +12,7 @@ import {
 	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
 	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo
 } from "./scan";
+import { exitToPathTile } from "./paths/pathGraph";
 import { gameMap, gameContext, gameObjects } from "./game";
 import { t } from "./i18n";
 
@@ -1095,34 +1096,28 @@ function assignMechanics(onComplete: () => void): void {
 
 			let frontTileX: number | null = null;
 			let frontTileY: number | null = null;
-			let frontFootpath: FootpathElement | null = null;
+			let frontZ: number | null = null;
 
 			// The "front" tile is the footpath the exit actually leads onto.
 			// Prefer the exit's stored facing direction (mapped through
 			// DIRECTION_OFFSETS, since the game's direction ordering does not
 			// match CARDINAL_NEIGHBOUR_OFFSETS), then fall back to whichever
-			// cardinal neighbour has a footpath, in case the stored direction
-			// doesn't line up with where the path really is (e.g. an exit
-			// offset from the queue/track). Selection is based purely on a
-			// footpath being present - NOT on peep-placeability - so a path
-			// tile carrying an addition (bench, lamp, bin, queue TV) or sharing
-			// its column with an unrelated element, which blocks teleporting
-			// but is still the correct tile to patrol, is never skipped in
-			// favour of an unrelated neighbour.
+			// cardinal neighbour the engine's PathNavigator reports a footpath
+			// on, in case the stored direction doesn't line up with where the
+			// path really is (e.g. an exit offset from the queue/track).
+			// Deferring to getPathNavigator (rather than manually probing for a
+			// footpath tile element) means the engine's own height/slope rules
+			// decide whether a candidate is really connected, so this keeps
+			// working across exits sitting at the top or bottom of a slope.
 			const preferredOffset = DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
 			const candidateOffsets = [preferredOffset].concat(
 				CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) { return o.x !== preferredOffset.x || o.y !== preferredOffset.y; })
 			);
-			for (const offset of candidateOffsets) {
-				const candidateX = exitTileX + offset.x;
-				const candidateY = exitTileY + offset.y;
-				const footpath = findFootpathElement(gameMap().getTile(candidateX, candidateY));
-				if (footpath !== null) {
-					frontTileX = candidateX;
-					frontTileY = candidateY;
-					frontFootpath = footpath;
-					break;
-				}
+			const frontTile = exitToPathTile(exitTileX, exitTileY, exit.z, candidateOffsets);
+			if (frontTile !== null) {
+				frontTileX = frontTile.x;
+				frontTileY = frontTile.y;
+				frontZ = frontTile.z;
 			}
 
 			// The patrol area must always stay just the exit tile plus the
@@ -1152,24 +1147,24 @@ function assignMechanics(onComplete: () => void): void {
 				// of where the mechanic is physically placed.
 				let teleportTileX: number | null = null;
 				let teleportTileY: number | null = null;
-				let teleportFootpath: FootpathElement | null = null;
+				let teleportZ: number | null = null;
 				if (frontTileX !== null && frontTileY !== null && isPeepPlaceableTile(frontTileX, frontTileY)) {
 					teleportTileX = frontTileX;
 					teleportTileY = frontTileY;
-					teleportFootpath = frontFootpath;
+					teleportZ = frontZ;
 				} else {
 					const nearestPathTile = findNearestPathTile(exitTileX, exitTileY);
 					if (nearestPathTile) {
 						teleportTileX = nearestPathTile.x;
 						teleportTileY = nearestPathTile.y;
-						teleportFootpath = findFootpathElement(gameMap().getTile(nearestPathTile.x, nearestPathTile.y));
+						teleportZ = nearestPathTile.baseZ;
 					}
 				}
 				if (teleportTileX !== null && teleportTileY !== null) {
 					teleportTarget = {
 						x: teleportTileX * 32 + 16,
 						y: teleportTileY * 32 + 16,
-						z: teleportFootpath ? teleportFootpath.baseZ : exit.z
+						z: teleportZ ?? exit.z
 					};
 				}
 			}

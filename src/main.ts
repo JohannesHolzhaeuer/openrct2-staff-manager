@@ -11,11 +11,11 @@ function main(): void {
 
 registerPlugin({
 	name: "Staff Manager",
-	version: "0.9.5",
+	version: "0.10.0",
 	authors: ["Johannes Holzhäuer"],
 	type: "local",
 	licence: "MIT",
-	minApiVersion: 34,
-	targetApiVersion: 77,
+	minApiVersion: 78,
+	targetApiVersion: 78,
 	main: main
 });
