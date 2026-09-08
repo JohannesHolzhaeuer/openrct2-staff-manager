@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "rules": {
+    "typescript/triple-slash-reference": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-spread": "off"
+  },
+  "env": {
+    "es2023": true,
+    "node": true
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "coverage/**"
+  ]
+}
