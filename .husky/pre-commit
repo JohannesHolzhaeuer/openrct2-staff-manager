@@ -8,4 +8,4 @@ for gitBin in "/c/Program Files/Git/usr/bin" "/c/Program Files (x86)/Git/usr/bin
 done
 export PATH
 
-npx --no -- oxfmt --check .
+npm run format:check

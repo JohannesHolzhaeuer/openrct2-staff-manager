@@ -153,7 +153,7 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
   tied to a specific TypeScript compiler version. Run `npm run lint` on its
   own any time.
 - **Consistent formatting.** `npm run build` also runs `npm run format:check`
-  (`oxfmt --check .`, configured in `.oxfmtrc.json`), the matching Rust-based
+  (`oxfmt --check .`, configured in `.oxfmtrc.ts`), the matching Rust-based
   formatter for oxlint. Run `npm run format` to format the codebase in place,
   or `npm run format:check` to only verify it. A Husky `pre-commit` hook runs
   the check automatically before every commit.
