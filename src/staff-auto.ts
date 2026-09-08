@@ -73,13 +73,7 @@ interface AutoGroup {
 	purpose: string;
 	// Connectivity predicate (shared with the manual scan) used to decide whether a
 	// freshly placed tile is genuinely walkable into an area before enlarging it.
-	connect: (
-		areaTileX: number,
-		areaTileY: number,
-		newTileX: number,
-		newTileY: number,
-		areaIndex: number,
-	) => boolean;
+	connect: (areaTile: CoordsXY, newTile: CoordsXY, areaIndex: number) => boolean;
 }
 
 const AUTO_GROUP_CLEANUP: AutoGroup = {
@@ -88,7 +82,7 @@ const AUTO_GROUP_CLEANUP: AutoGroup = {
 	orders: HANDYMAN_ORDERS_CLEANUP,
 	getMaxSize: () => handymenTilesPerStaffStore.get(),
 	purpose: "cleanup",
-	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny),
+	connect: (areaTile, newTile) => footpathsConnectTiles(areaTile, newTile),
 };
 const AUTO_GROUP_GARDENING: AutoGroup = {
 	staffType: "handyman",
@@ -96,7 +90,7 @@ const AUTO_GROUP_GARDENING: AutoGroup = {
 	orders: HANDYMAN_ORDERS_GARDENING,
 	getMaxSize: () => handymenMowerTilesPerStaffStore.get(),
 	purpose: "gardening",
-	connect: (ax, ay, nx, ny) => surfaceTilesConnect(ax, ay, nx, ny),
+	connect: (areaTile, newTile) => surfaceTilesConnect(areaTile, newTile),
 };
 const AUTO_GROUP_GUARD: AutoGroup = {
 	staffType: "security",
@@ -104,7 +98,7 @@ const AUTO_GROUP_GUARD: AutoGroup = {
 	orders: 0,
 	getMaxSize: () => guardsTilesPerStaffStore.get(),
 	purpose: "guard",
-	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny),
+	connect: (areaTile, newTile) => footpathsConnectTiles(areaTile, newTile),
 };
 const AUTO_GROUP_ENTERTAINER: AutoGroup = {
 	staffType: "entertainer",
@@ -112,7 +106,7 @@ const AUTO_GROUP_ENTERTAINER: AutoGroup = {
 	orders: 0,
 	getMaxSize: () => entertainersTilesPerStaffStore.get(),
 	purpose: "entertainer",
-	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny),
+	connect: (areaTile, newTile) => footpathsConnectTiles(areaTile, newTile),
 };
 
 // Synchronous per-purpose area records (see the block comment above the interface).
@@ -138,24 +132,29 @@ function autoAreas(group: AutoGroup): AutoArea[] {
 	return list;
 }
 
-function autoAddTileToArea(group: AutoGroup, areaIndex: number, tx: number, ty: number): void {
+function autoAddTileToArea(group: AutoGroup, areaIndex: number, tile: CoordsXY): void {
 	const area = autoAreas(group)[areaIndex];
-	if (area.tileKeys.has(tileKey(tx, ty))) {
+	if (area.tileKeys.has(tileKey(tile.x, tile.y))) {
 		return;
 	}
-	area.tileKeys.add(tileKey(tx, ty));
-	area.coords.push({ x: tx * 32, y: ty * 32 });
+	area.tileKeys.add(tileKey(tile.x, tile.y));
+	area.coords.push({ x: tile.x * 32, y: tile.y * 32 });
 }
 
 function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
 	const areas = autoAreas(group);
 	const list = autoAreasAsCoords(group);
-	const decision = decideAreaAction(list, { x: tx, y: ty }, group.getMaxSize(), group.connect);
+	const decision = decideAreaAction({
+		areas: list,
+		newTile: { x: tx, y: ty },
+		maxSize: group.getMaxSize(),
+		connect: group.connect,
+	});
 	if ("covered" === decision.action) {
 		return false;
 	}
 	if ("enlarge" === decision.action) {
-		autoAddTileToArea(group, decision.areaIndex, tx, ty);
+		autoAddTileToArea(group, decision.areaIndex, { x: tx, y: ty });
 		applyAutoAreasToLive(group);
 		return false;
 	}
@@ -187,7 +186,7 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 		return;
 	}
 	autoHireForPurpose.set(group.purpose, true);
-	hireStaff(group.staffTypeId, group.orders, 1, function () {
+	hireStaff({ staffTypeId: group.staffTypeId, orders: group.orders, countToHire: 1 }, function () {
 		autoHireForPurpose.set(group.purpose, false);
 		const member = getLastStaffOfType(group.staffType);
 		if (member) {
@@ -257,7 +256,7 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 							: footpathBaseZAt(teleportX, teleportY);
 				}
 			}
-			teleportStaffToTile(member, teleportX, teleportY, teleportZ);
+			teleportStaffToTile(member, { x: teleportX, y: teleportY, z: teleportZ });
 		}
 		refreshHiredAndAssignedStaffCounts();
 	});
@@ -292,9 +291,9 @@ function getFootpathBaseZFromTile(tile: Tile): number[] {
 // Handles one freshly placed path/queue tile for the given staff type's patroling.
 // `isQueue` boolean determines path vs queue handling; queue tiles are only handled by
 // handymen (cleanup) and entertainers (if the Queue toggle is on).
-function handlePathTileForType(staffType: StaffType, orders: number, tx: number, ty: number): void {
+function handlePathTileForType(staffType: StaffType, orders: number, tile: CoordsXY): void {
 	const group = groupForPathTile(staffType, orders);
-	handleTileForGroup(group, tx, ty);
+	handleTileForGroup(group, tile.x, tile.y);
 	refreshHiredAndAssignedStaffCounts();
 }
 
@@ -318,23 +317,23 @@ export function handlePlacedPathTile(tx: number, ty: number, isQueue: boolean): 
 		// Queue tiles: only handymen (cleanup) and entertainers (if the Queue
 		// toggle is on).
 		if (handymenEnabledStore.get()) {
-			handlePathTileForType("handyman", HANDYMAN_ORDERS_CLEANUP, tx, ty);
+			handlePathTileForType("handyman", HANDYMAN_ORDERS_CLEANUP, { x: tx, y: ty });
 		}
 		if (entertainersEnabledStore.get() && entertainersIncludeQueueStore.get()) {
-			handlePathTileForType("entertainer", 0, tx, ty);
+			handlePathTileForType("entertainer", 0, { x: tx, y: ty });
 		}
 		return;
 	}
 
 	// Plain path tiles: cleanup handymen, guards and entertainers.
 	if (handymenEnabledStore.get()) {
-		handlePathTileForType("handyman", HANDYMAN_ORDERS_CLEANUP, tx, ty);
+		handlePathTileForType("handyman", HANDYMAN_ORDERS_CLEANUP, { x: tx, y: ty });
 	}
 	if (guardsEnabledStore.get()) {
-		handlePathTileForType("security", 0, tx, ty);
+		handlePathTileForType("security", 0, { x: tx, y: ty });
 	}
 	if (entertainersEnabledStore.get()) {
-		handlePathTileForType("entertainer", 0, tx, ty);
+		handlePathTileForType("entertainer", 0, { x: tx, y: ty });
 	}
 }
 
@@ -365,7 +364,7 @@ function handleMechanicForAdjacentExit(tx: number, ty: number): void {
 				return;
 			}
 			// Hire one mechanic and assign (exit + this path tile).
-			hireAndAssignMechanicForExit(ex, ey, tx, ty);
+			hireAndAssignMechanicForExit({ x: ex, y: ey }, { x: tx, y: ty });
 			return;
 		}
 	}
@@ -390,20 +389,27 @@ function isRideExitOnTile(tx: number, ty: number): boolean {
 
 // Hires one mechanic and assigns a patrol area covering the exit tile and the given
 // path tile in front of it.
-function hireAndAssignMechanicForExit(ex: number, ey: number, fx: number, fy: number): void {
-	hireStaff(STAFF_TYPE_ID_MECHANIC, MECHANIC_ORDERS_DEFAULT, 1, function () {
-		const mechanics = getStaffByType("mechanic");
-		if (0 === mechanics.length) {
-			return;
-		}
-		const member = mechanics[mechanics.length - 1];
-		member.patrolArea.add([
-			{ x: ex * 32, y: ey * 32 },
-			{ x: fx * 32, y: fy * 32 },
-		]);
-		if (canTeleportMechanic(member)) {
-			teleportStaffToTile(member, fx, fy, footpathBaseZAt(fx, fy));
-		}
-		refreshHiredAndAssignedStaffCounts();
-	});
+function hireAndAssignMechanicForExit(exitTile: CoordsXY, frontTile: CoordsXY): void {
+	hireStaff(
+		{ staffTypeId: STAFF_TYPE_ID_MECHANIC, orders: MECHANIC_ORDERS_DEFAULT, countToHire: 1 },
+		function () {
+			const mechanics = getStaffByType("mechanic");
+			if (0 === mechanics.length) {
+				return;
+			}
+			const member = mechanics[mechanics.length - 1];
+			member.patrolArea.add([
+				{ x: exitTile.x * 32, y: exitTile.y * 32 },
+				{ x: frontTile.x * 32, y: frontTile.y * 32 },
+			]);
+			if (canTeleportMechanic(member)) {
+				teleportStaffToTile(member, {
+					x: frontTile.x,
+					y: frontTile.y,
+					z: footpathBaseZAt(frontTile.x, frontTile.y),
+				});
+			}
+			refreshHiredAndAssignedStaffCounts();
+		},
+	);
 }

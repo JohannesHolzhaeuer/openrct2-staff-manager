@@ -228,12 +228,10 @@ function runStaffAdjustTask(task: StaffAdjustTask, onActionComplete: () => void)
 // doesn't block the game loop. Invokes onActionComplete once per action after
 // its callback has fired.
 export function hireStaff(
-	staffTypeId: number,
-	orders: number,
-	countToHire: number,
+	spec: { staffTypeId: number; orders: number; countToHire: number },
 	onActionComplete: () => void,
 ): void {
-	const tasks = collectHireStaffTasks(staffTypeId, orders, countToHire);
+	const tasks = collectHireStaffTasks(spec.staffTypeId, spec.orders, spec.countToHire);
 	applyInBatches(
 		tasks,
 		function (task) {
@@ -263,16 +261,16 @@ function collectHandymanTasks(purpose: HandymanPurpose, needed: number): StaffAd
 
 // Collects the hire/fire tasks needed to bring staff of a given type to the
 // needed count, firing the oldest first when there is a surplus.
-function collectStaffOfTypeTasks(
-	staffType: StaffType,
-	staffTypeId: number,
-	orders: number,
-	needed: number,
-): StaffAdjustTask[] {
-	const current = getStaffByType(staffType);
-	const difference = needed - current.length;
+function collectStaffOfTypeTasks(spec: {
+	staffType: StaffType;
+	staffTypeId: number;
+	orders: number;
+	needed: number;
+}): StaffAdjustTask[] {
+	const current = getStaffByType(spec.staffType);
+	const difference = spec.needed - current.length;
 	if (0 < difference) {
-		return collectHireStaffTasks(staffTypeId, orders, difference);
+		return collectHireStaffTasks(spec.staffTypeId, spec.orders, difference);
 	}
 	if (0 > difference) {
 		return collectFireOldestStaffTasks(current, -difference);
@@ -294,19 +292,24 @@ export function adjustStaffCounts(onComplete?: () => void): void {
 	const tasks: StaffAdjustTask[] = [
 		...collectHandymanTasks("cleanup", handymenCleanupNeededStore.get()),
 		...collectHandymanTasks("gardening", handymenGardeningNeededStore.get()),
-		...collectStaffOfTypeTasks("security", STAFF_TYPE_ID_SECURITY, 0, guardsNeededStore.get()),
-		...collectStaffOfTypeTasks(
-			"entertainer",
-			STAFF_TYPE_ID_ENTERTAINER,
-			0,
-			entertainersNeededStore.get(),
-		),
-		...collectStaffOfTypeTasks(
-			"mechanic",
-			STAFF_TYPE_ID_MECHANIC,
-			MECHANIC_ORDERS_DEFAULT,
-			mechanicsNeededStore.get(),
-		),
+		...collectStaffOfTypeTasks({
+			staffType: "security",
+			staffTypeId: STAFF_TYPE_ID_SECURITY,
+			orders: 0,
+			needed: guardsNeededStore.get(),
+		}),
+		...collectStaffOfTypeTasks({
+			staffType: "entertainer",
+			staffTypeId: STAFF_TYPE_ID_ENTERTAINER,
+			orders: 0,
+			needed: entertainersNeededStore.get(),
+		}),
+		...collectStaffOfTypeTasks({
+			staffType: "mechanic",
+			staffTypeId: STAFF_TYPE_ID_MECHANIC,
+			orders: MECHANIC_ORDERS_DEFAULT,
+			needed: mechanicsNeededStore.get(),
+		}),
 	];
 
 	if (0 === tasks.length) {
@@ -452,12 +455,12 @@ function processTeleportQueue(): void {
 	);
 }
 
-export function teleportStaffToTile(member: Staff, x: number, y: number, z: number): void {
+export function teleportStaffToTile(member: Staff, target: CoordsXYZ): void {
 	const id = member.id;
 	if (null === id) {
 		return;
 	}
-	teleportQueue.push({ id: id, x: x * 32 + 16, y: y * 32 + 16, z: z });
+	teleportQueue.push({ id: id, x: target.x * 32 + 16, y: target.y * 32 + 16, z: target.z });
 	processTeleportQueue();
 }
 
@@ -895,7 +898,11 @@ function assignConsecutiveAreas(
 			const teleportTarget =
 				findNearestPathInOrderedTiles(task.chunk, task.chunk[0].x, task.chunk[0].y) ??
 				task.chunk[0];
-			teleportStaffToTile(task.member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
+			teleportStaffToTile(task.member, {
+				x: teleportTarget.x,
+				y: teleportTarget.y,
+				z: teleportTarget.baseZ,
+			});
 		},
 		onComplete,
 	);
@@ -938,18 +945,13 @@ export const ADJACENT_OFFSETS: CoordsXY[] = [
 // existing area tile: when supplied, only actually-connected cardinal neighbours count as
 // adjacent (so bridges/inclined ways are never merged); when omitted (tests), plain
 // cardinal adjacency is used.
-export function decideAreaAction(
-	areas: CoordsXY[][],
-	newTile: CoordsXY,
-	maxSize: number,
-	connect?: (
-		areaTileX: number,
-		areaTileY: number,
-		newTileX: number,
-		newTileY: number,
-		areaIndex: number,
-	) => boolean,
-): AreaDecision {
+export function decideAreaAction(options: {
+	areas: CoordsXY[][];
+	newTile: CoordsXY;
+	maxSize: number;
+	connect?: (areaTile: CoordsXY, newTile: CoordsXY, areaIndex: number) => boolean;
+}): AreaDecision {
+	const { areas, newTile, maxSize, connect } = options;
 	if (0 > newTile.x || 0 > newTile.y) {
 		return { action: "hire" };
 	}
@@ -980,7 +982,8 @@ export function decideAreaAction(
 		const areaIndex = areaIndexByTileKey.get(String(neighbourX) + "," + String(neighbourY));
 		if (
 			areaIndex !== undefined &&
-			(!connect || connect(neighbourX, neighbourY, newTile.x, newTile.y, areaIndex))
+			(!connect ||
+				connect({ x: neighbourX, y: neighbourY }, { x: newTile.x, y: newTile.y }, areaIndex))
 		) {
 			if (areas[areaIndex].length < maxSize) {
 				return { action: "enlarge", areaIndex: areaIndex };
@@ -1142,7 +1145,11 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 			const teleportTarget =
 				findNearestPathInOrderedTiles(task.chunk, task.chunk[0].x, task.chunk[0].y) ??
 				task.chunk[0];
-			teleportStaffToTile(task.member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
+			teleportStaffToTile(task.member, {
+				x: teleportTarget.x,
+				y: teleportTarget.y,
+				z: teleportTarget.baseZ,
+			});
 		},
 		onComplete,
 	);
@@ -1151,12 +1158,13 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 // Assigns consecutive entertainer areas, putting "perArea" entertainers into
 // each patrol area (all sharing the same tiles), rather than one staff
 // member per area like the other staff types.
-function assignEntertainerAreas(
-	members: Staff[],
-	orderedTiles: PathTileInfo[],
-	perArea: number,
-	onComplete: () => void,
-): void {
+function assignEntertainerAreas(options: {
+	members: Staff[];
+	orderedTiles: PathTileInfo[];
+	perArea: number;
+	onComplete: () => void;
+}): void {
+	const { members, orderedTiles, perArea, onComplete } = options;
 	clearPatrolAreas(members);
 	if (0 === members.length || 0 === orderedTiles.length || 0 >= perArea) {
 		onComplete();
@@ -1203,7 +1211,11 @@ function assignEntertainerAreas(
 					task.chunk[0];
 				teleportTargetByChunk.set(task.chunk, teleportTarget);
 			}
-			teleportStaffToTile(task.member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
+			teleportStaffToTile(task.member, {
+				x: teleportTarget.x,
+				y: teleportTarget.y,
+				z: teleportTarget.baseZ,
+			});
 		},
 		onComplete,
 	);
@@ -1300,7 +1312,10 @@ function assignMechanics(onComplete: () => void): void {
 							return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
 						}),
 					];
-					const frontTile = exitToPathTile(exitTileX, exitTileY, exit.z, candidateOffsets);
+					const frontTile = exitToPathTile(
+						{ x: exitTileX, y: exitTileY, z: exit.z },
+						candidateOffsets,
+					);
 					if (undefined !== frontTile) {
 						frontTileX = frontTile.x;
 						frontTileY = frontTile.y;
@@ -1492,13 +1507,20 @@ export function adjustAndAssignAutoMechanics(onComplete: () => void): void {
 	if (0 < shortfall) {
 		let hireDone = false;
 		setStatus(t("status.assigningMechanics"));
-		hireStaff(STAFF_TYPE_ID_MECHANIC, MECHANIC_ORDERS_DEFAULT, shortfall, function () {
-			if (hireDone) {
-				return;
-			}
-			hireDone = true;
-			assignAutoMechanicAreas(exitsNeedingMechanic, onComplete);
-		});
+		hireStaff(
+			{
+				staffTypeId: STAFF_TYPE_ID_MECHANIC,
+				orders: MECHANIC_ORDERS_DEFAULT,
+				countToHire: shortfall,
+			},
+			function () {
+				if (hireDone) {
+					return;
+				}
+				hireDone = true;
+				assignAutoMechanicAreas(exitsNeedingMechanic, onComplete);
+			},
+		);
 	} else {
 		assignAutoMechanicAreas(exitsNeedingMechanic, onComplete);
 	}
@@ -1648,15 +1670,15 @@ export function assignHandymenGuardsEntertainers(onComplete: () => void): void {
 		function () {
 			if (entertainersEnabledStore.get()) {
 				setStatus(t("status.assigningEntertainers"));
-				assignEntertainerAreas(
-					getStaffByType("entertainer"),
-					getEntertainerTiles(entertainersIncludeQueueStore.get()),
-					entertainersPerAreaStore.get(),
-					function () {
+				assignEntertainerAreas({
+					members: getStaffByType("entertainer"),
+					orderedTiles: getEntertainerTiles(entertainersIncludeQueueStore.get()),
+					perArea: entertainersPerAreaStore.get(),
+					onComplete: function () {
 						setProgress(PROGRESS_ENTERTAINERS_DONE);
 						next();
 					},
-				);
+				});
 			} else {
 				setProgress(PROGRESS_ENTERTAINERS_DONE);
 				next();

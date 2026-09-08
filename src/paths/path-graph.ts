@@ -39,32 +39,30 @@ export interface PathGraph {
 // Returns every path tile directly reachable from (x, y, z) according to the
 // engine, or an empty array if there is no footpath there at all.
 export function getConnectedPaths(
-	x: number,
-	y: number,
-	z: number,
+	position: CoordsXYZ,
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
 ): PathConnection[] {
-	const navigator = gameMap().getPathNavigator({ x: x * 32, y: y * 32, z: z }, options);
+	const navigator = gameMap().getPathNavigator(
+		{ x: position.x * 32, y: position.y * 32, z: position.z },
+		options,
+	);
 	if (!navigator) {
 		return [];
 	}
 	return navigator.getConnectedPaths();
 }
 
-// Whether the engine reports a real PathConnection from (fromX, fromY,
-// fromZ) to (toX, toY). This is the graph-based replacement for the old
-// manual baseZ/slope arithmetic: it defers entirely to the engine's own
-// notion of walkability instead of re-deriving it from tile-element fields.
+// Whether the engine reports a real PathConnection from `from` to `to`. This
+// is the graph-based replacement for the old manual baseZ/slope arithmetic:
+// it defers entirely to the engine's own notion of walkability instead of
+// re-deriving it from tile-element fields.
 export function pathTilesConnected(
-	fromX: number,
-	fromY: number,
-	fromZ: number,
-	toX: number,
-	toY: number,
+	from: CoordsXYZ,
+	to: CoordsXY,
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
 ): boolean {
-	const targetKey = tileKey(toX, toY);
-	for (const connection of getConnectedPaths(fromX, fromY, fromZ, options)) {
+	const targetKey = tileKey(to.x, to.y);
+	for (const connection of getConnectedPaths(from, options)) {
 		if (
 			tileKey(Math.floor(connection.position.x / 32), Math.floor(connection.position.y / 32)) ===
 			targetKey
@@ -96,7 +94,7 @@ export function buildNetwork(
 		const current = queue[head++];
 		const currentKey = tileKey(current.x, current.y);
 		const neighbourKeys: string[] = [];
-		for (const connection of getConnectedPaths(current.x, current.y, current.z, options)) {
+		for (const connection of getConnectedPaths(current, options)) {
 			const nx = Math.floor(connection.position.x / 32);
 			const ny = Math.floor(connection.position.y / 32);
 			if (isIncluded(nx, ny)) {
@@ -241,7 +239,7 @@ export function snapToNetwork(
 	if (graph.nodes.has(startKey)) {
 		return startKey;
 	}
-	for (const connection of getConnectedPaths(start.x, start.y, start.z, options)) {
+	for (const connection of getConnectedPaths(start, options)) {
 		const key = tileKey(
 			Math.floor(connection.position.x / 32),
 			Math.floor(connection.position.y / 32),
@@ -288,17 +286,15 @@ export function centralTile(graph: PathGraph, keys: string[]): string | undefine
 // slopes/height offsets that a plain "is there a footpath here" check
 // cannot distinguish from an unrelated path at a different level.
 export function exitToPathTile(
-	exitTileX: number,
-	exitTileY: number,
-	exitZ: number,
+	exitTile: CoordsXYZ,
 	orderedOffsets: CoordsXY[],
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
 ): PathGraphNode | undefined {
 	for (const offset of orderedOffsets) {
-		const candidateX = exitTileX + offset.x;
-		const candidateY = exitTileY + offset.y;
+		const candidateX = exitTile.x + offset.x;
+		const candidateY = exitTile.y + offset.y;
 		const navigator = gameMap().getPathNavigator(
-			{ x: candidateX * 32, y: candidateY * 32, z: exitZ },
+			{ x: candidateX * 32, y: candidateY * 32, z: exitTile.z },
 			options,
 		);
 		if (navigator) {

@@ -25,13 +25,14 @@ describe("getStaffByType", () => {
 			fakeMap(
 				{ x: 8, y: 8 },
 				{},
-				[],
-				[
-					fakeStaff(1, "handyman"),
-					fakeStaff(2, "mechanic"),
-					fakeStaff(3, "security"),
-					fakeStaff(4, "mechanic"),
-				],
+				{
+					staff: [
+						fakeStaff(1, "handyman"),
+						fakeStaff(2, "mechanic"),
+						fakeStaff(3, "security"),
+						fakeStaff(4, "mechanic"),
+					],
+				},
 			),
 		);
 		expect(getStaffByType("mechanic").map((s) => s.id)).toEqual([2, 4]);
@@ -45,13 +46,14 @@ describe("getHandymenByPurpose", () => {
 			fakeMap(
 				{ x: 8, y: 8 },
 				{},
-				[],
-				[
-					fakeStaff(1, "handyman", HANDYMAN_ORDERS_CLEANUP),
-					fakeStaff(2, "handyman", HANDYMAN_ORDERS_GARDENING),
-					fakeStaff(3, "handyman", 0),
-					fakeStaff(4, "mechanic", HANDYMAN_ORDERS_GARDENING),
-				],
+				{
+					staff: [
+						fakeStaff(1, "handyman", HANDYMAN_ORDERS_CLEANUP),
+						fakeStaff(2, "handyman", HANDYMAN_ORDERS_GARDENING),
+						fakeStaff(3, "handyman", 0),
+						fakeStaff(4, "mechanic", HANDYMAN_ORDERS_GARDENING),
+					],
+				},
 			),
 		);
 		// No orders at all counts as cleanup; the mechanic is never included.

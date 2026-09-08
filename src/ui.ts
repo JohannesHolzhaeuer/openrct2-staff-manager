@@ -91,13 +91,14 @@ function coloredText(
 	return colorToken + text;
 }
 
-function statRow(
-	name: string,
-	value: Bindable<number>,
-	tooltip: string,
-	disabled: Bindable<boolean>,
-	colorToken?: Bindable<string>,
-): WidgetCreator<FlexiblePosition> {
+function statRow(options: {
+	name: string;
+	value: Bindable<number>;
+	tooltip: string;
+	disabled: Bindable<boolean>;
+	colorToken?: Bindable<string>;
+}): WidgetCreator<FlexiblePosition> {
+	const { name, value, tooltip, disabled, colorToken } = options;
 	const text = isStore(value) ? compute(value, String) : String(value);
 	const nameText = coloredText(colorToken, name);
 	const valueText = coloredText(colorToken, text);
@@ -163,15 +164,25 @@ function statTable(
 				)
 			: differenceColor(difference);
 	return [
-		statRow(t("statRow.hired"), hired, t("statRow.hired.tooltip"), disabled),
-		statRow(t("statRow.needed"), needed, t("statRow.needed.tooltip"), disabled),
-		statRow(
-			t("statRow.difference"),
-			difference,
-			t("statRow.difference.tooltip"),
-			disabled,
-			differenceColorToken,
-		),
+		statRow({
+			name: t("statRow.hired"),
+			value: hired,
+			tooltip: t("statRow.hired.tooltip"),
+			disabled: disabled,
+		}),
+		statRow({
+			name: t("statRow.needed"),
+			value: needed,
+			tooltip: t("statRow.needed.tooltip"),
+			disabled: disabled,
+		}),
+		statRow({
+			name: t("statRow.difference"),
+			value: difference,
+			tooltip: t("statRow.difference.tooltip"),
+			disabled: disabled,
+			colorToken: differenceColorToken,
+		}),
 	];
 }
 
@@ -275,21 +286,36 @@ function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function staffGroup(
-	title: string,
-	tilesPerStaff: WritableStore<number> | undefined,
-	needed: Bindable<number>,
-	hired: Bindable<number>,
-	width: Scale,
-	height: Scale,
-	enabled: WritableStore<boolean>,
-	controlsDisabled: Store<boolean>,
-	spinnerLabel?: string,
-	mowerTilesPerStaff?: WritableStore<number>,
-	mowerSpinnerLabel?: string,
-	spinnerTooltip?: string,
-	onSettingsChanged?: () => void,
-): WidgetCreator<FlexiblePosition> {
+function staffGroup(options: {
+	title: string;
+	tilesPerStaff: WritableStore<number> | undefined;
+	needed: Bindable<number>;
+	hired: Bindable<number>;
+	width: Scale;
+	height: Scale;
+	enabled: WritableStore<boolean>;
+	controlsDisabled: Store<boolean>;
+	spinnerLabel?: string;
+	mowerTilesPerStaff?: WritableStore<number>;
+	mowerSpinnerLabel?: string;
+	spinnerTooltip?: string;
+	onSettingsChanged?: () => void;
+}): WidgetCreator<FlexiblePosition> {
+	const {
+		title,
+		tilesPerStaff,
+		needed,
+		hired,
+		width,
+		height,
+		enabled,
+		controlsDisabled,
+		spinnerLabel,
+		mowerTilesPerStaff,
+		mowerSpinnerLabel,
+		spinnerTooltip,
+		onSettingsChanged,
+	} = options;
 	return box({
 		text: title,
 		width: width,
@@ -382,14 +408,15 @@ function staffGroup(
 
 // One bordered box for entertainers: same as staffGroup plus a "Queue"
 // toggle underneath, laid out vertically like in the mockup.
-function entertainersGroup(
-	needed: Bindable<number>,
-	hired: Bindable<number>,
-	width: Scale,
-	height: Scale,
-	enabled: WritableStore<boolean>,
-	controlsDisabled: Store<boolean>,
-): WidgetCreator<FlexiblePosition> {
+function entertainersGroup(options: {
+	needed: Bindable<number>;
+	hired: Bindable<number>;
+	width: Scale;
+	height: Scale;
+	enabled: WritableStore<boolean>;
+	controlsDisabled: Store<boolean>;
+}): WidgetCreator<FlexiblePosition> {
+	const { needed, hired, width, height, enabled, controlsDisabled } = options;
 	return box({
 		text: t("staffGroup.entertainers.title"),
 		width: width,
@@ -584,34 +611,32 @@ function staffManagerWindowTemplate(): WindowTemplate {
 						width: GROUP_WIDTH,
 						height: STACK_HEIGHT,
 						content: [
-							staffGroup(
-								t("staffGroup.handymen.title"),
-								handymenTilesPerStaffStore,
-								handymenNeededStore,
-								handymenHiredStore,
-								"100%",
-								HANDYMEN_HEIGHT,
-								handymenEnabledStore,
-								handymenControlsDisabledStore,
-								t("spinnerLabel.cleanup"),
-								handymenMowerTilesPerStaffStore,
-								t("spinnerLabel.gardening"),
-								t("tooltip.handymenCleanupSpinner"),
-							),
-							staffGroup(
-								t("staffGroup.guards.title"),
-								guardsTilesPerStaffStore,
-								guardsNeededStore,
-								guardsHiredStore,
-								"100%",
-								GROUP_HEIGHT,
-								guardsEnabledStore,
-								guardsControlsDisabledStore,
-								t("spinnerLabel.tilesPerStaff"),
-								undefined,
-								undefined,
-								t("tooltip.guardsSpinner"),
-							),
+							staffGroup({
+								title: t("staffGroup.handymen.title"),
+								tilesPerStaff: handymenTilesPerStaffStore,
+								needed: handymenNeededStore,
+								hired: handymenHiredStore,
+								width: "100%",
+								height: HANDYMEN_HEIGHT,
+								enabled: handymenEnabledStore,
+								controlsDisabled: handymenControlsDisabledStore,
+								spinnerLabel: t("spinnerLabel.cleanup"),
+								mowerTilesPerStaff: handymenMowerTilesPerStaffStore,
+								mowerSpinnerLabel: t("spinnerLabel.gardening"),
+								spinnerTooltip: t("tooltip.handymenCleanupSpinner"),
+							}),
+							staffGroup({
+								title: t("staffGroup.guards.title"),
+								tilesPerStaff: guardsTilesPerStaffStore,
+								needed: guardsNeededStore,
+								hired: guardsHiredStore,
+								width: "100%",
+								height: GROUP_HEIGHT,
+								enabled: guardsEnabledStore,
+								controlsDisabled: guardsControlsDisabledStore,
+								spinnerLabel: t("spinnerLabel.tilesPerStaff"),
+								spinnerTooltip: t("tooltip.guardsSpinner"),
+							}),
 						],
 					}),
 					vertical({
@@ -619,24 +644,24 @@ function staffManagerWindowTemplate(): WindowTemplate {
 						width: GROUP_WIDTH,
 						height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
 						content: [
-							staffGroup(
-								t("staffGroup.mechanics.title"),
-								undefined,
-								mechanicsNeededStore,
-								mechanicsHiredStore,
-								"100%",
-								MECHANICS_HEIGHT,
-								mechanicsEnabledStore,
-								mechanicsControlsDisabledStore,
-							),
-							entertainersGroup(
-								entertainersNeededStore,
-								entertainersHiredStore,
-								"100%",
-								ENTERTAINERS_HEIGHT,
-								entertainersEnabledStore,
-								entertainersControlsDisabledStore,
-							),
+							staffGroup({
+								title: t("staffGroup.mechanics.title"),
+								tilesPerStaff: undefined,
+								needed: mechanicsNeededStore,
+								hired: mechanicsHiredStore,
+								width: "100%",
+								height: MECHANICS_HEIGHT,
+								enabled: mechanicsEnabledStore,
+								controlsDisabled: mechanicsControlsDisabledStore,
+							}),
+							entertainersGroup({
+								needed: entertainersNeededStore,
+								hired: entertainersHiredStore,
+								width: "100%",
+								height: ENTERTAINERS_HEIGHT,
+								enabled: entertainersEnabledStore,
+								controlsDisabled: entertainersControlsDisabledStore,
+							}),
 						],
 					}),
 				],

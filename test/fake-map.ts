@@ -59,9 +59,10 @@ function toElements(spec: FakeTileSpec): TileElement[] {
 export function fakeMap(
 	size: CoordsXY,
 	tiles: { [key: string]: FakeTileSpec } = {},
-	rides: Ride[] = [],
-	staff: Staff[] = [],
+	extras: { rides?: Ride[]; staff?: Staff[] } = {},
 ): GameMap {
+	const rides = extras.rides ?? [];
+	const staff = extras.staff ?? [];
 	function footpathsAt(x: number, y: number): FakeFootpath[] {
 		const spec = (tiles as { [key: string]: FakeTileSpec | undefined })[
 			String(x) + "," + String(y)

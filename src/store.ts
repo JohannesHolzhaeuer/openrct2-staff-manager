@@ -128,13 +128,19 @@ export function computeNeeded(totalTiles: number, tilesPerStaff: number): number
 // to mow/water the park's garden tiles (Gardening). These are tracked as
 // separate needed counts (used when hiring/firing specialised handymen) and
 // summed for the single "Needed" row shown in the UI.
-export const handymenCleanupNeededStore = compute(
+const handymenCleanupTilesStore = compute(
 	pathTilesCountStore,
 	queueTilesCountStore,
+	function (path, queue) {
+		return path + queue;
+	},
+);
+export const handymenCleanupNeededStore = compute(
+	handymenCleanupTilesStore,
 	handymenTilesPerStaffStore,
 	handymenEnabledStore,
-	function (path: number, queue: number, tilesPerStaff: number, enabled: boolean) {
-		return enabled ? computeNeeded(path + queue, tilesPerStaff) : 0;
+	function (tiles: number, tilesPerStaff: number, enabled: boolean) {
+		return enabled ? computeNeeded(tiles, tilesPerStaff) : 0;
 	},
 );
 export const handymenGardeningNeededStore = compute(
@@ -173,20 +179,19 @@ export const guardsNeededStore = compute(
 
 // Entertainers patrol path tiles (and queue tiles, if the "Queue" toggle is
 // on), but multiple entertainers can be assigned to each patrol area.
-const entertainersNeededBaseStore = compute(
+const entertainersTilesStore = compute(
 	pathTilesCountStore,
 	queueTilesCountStore,
 	entertainersIncludeQueueStore,
+	function (path: number, queue: number, includeQueue: boolean) {
+		return path + (includeQueue ? queue : 0);
+	},
+);
+const entertainersNeededBaseStore = compute(
+	entertainersTilesStore,
 	entertainersTilesPerStaffStore,
 	entertainersPerAreaStore,
-	function (
-		path: number,
-		queue: number,
-		includeQueue: boolean,
-		tilesPerStaff: number,
-		perArea: number,
-	) {
-		const tiles = path + (includeQueue ? queue : 0);
+	function (tiles: number, tilesPerStaff: number, perArea: number) {
 		return computeNeeded(tiles, tilesPerStaff) * Math.max(perArea, 0);
 	},
 );
