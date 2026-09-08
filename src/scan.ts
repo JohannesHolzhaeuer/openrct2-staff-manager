@@ -676,7 +676,7 @@ function scanGardeningColumn(x: number, state: GardeningSweepState): void {
 					// connectors - a queue has railing/fencing the gardener cannot step off
 					// onto the adjacent grass, so they are excluded here (and being footpaths
 					// they were never counted as garden work anyway).
-					const hasPlainPath = footpaths.some(function (fp) {
+					const hasPlainPath = footpaths.some(function isNonQueuePath(fp) {
 						return !fp.isQueue;
 					});
 					if (hasPlainPath) {
@@ -722,10 +722,10 @@ function groupGardeningTiles(state: GardeningSweepState): {
 	// Built once up front: it is identical for every component, so rebuilding it
 	// per component made the grouping cost O(components x garden tiles).
 	const walkKeys = new Set<string>(connectorKeys);
-	isGardenTile.forEach(function (k) {
+	isGardenTile.forEach(function addWalkKey(k) {
 		walkKeys.add(k);
 	});
-	isGardenTile.forEach(function (key) {
+	isGardenTile.forEach(function visitGardenTile(key) {
 		if (visited.has(key)) {
 			return;
 		}
@@ -860,21 +860,21 @@ export let lastGardenAreas: PathTileInfo[][] = [];
 // that only filters on footpath presence would treat the hover preview as a real
 // placement and needlessly hire/assign staff before the path is actually built.
 export function hasNonGhostFootpathElements(x: number, y: number): boolean {
-	return findFootpathElements(x, y).some(function (fp) {
+	return findFootpathElements(x, y).some(function isNotGhost(fp) {
 		return !fp.isGhost;
 	});
 }
 
 // Whether the given tile has a plain (non-queue) footpath.
 export function isPlainPathTile(x: number, y: number): boolean {
-	return findFootpathElements(x, y).some(function (fp) {
+	return findFootpathElements(x, y).some(function isNonQueueFootpath(fp) {
 		return !fp.isQueue;
 	});
 }
 
 // Whether the given tile has a queue footpath.
 export function isQueueTile(x: number, y: number): boolean {
-	return findFootpathElements(x, y).some(function (fp) {
+	return findFootpathElements(x, y).some(function isQueueFootpath(fp) {
 		return fp.isQueue;
 	});
 }

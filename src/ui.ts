@@ -74,17 +74,17 @@ function coloredText(
 		return text;
 	}
 	if (isStore(colorToken) && isStore(text)) {
-		return compute(colorToken, text, function (token: string, t: string) {
+		return compute(colorToken, text, function combineTokenAndText(token: string, t: string) {
 			return token + t;
 		});
 	}
 	if (isStore(colorToken)) {
-		return compute(colorToken, function (token: string) {
+		return compute(colorToken, function prependToken(token: string) {
 			return token + (text as string);
 		});
 	}
 	if (isStore(text)) {
-		return compute(text, function (t: string) {
+		return compute(text, function appendToToken(t: string) {
 			return colorToken + t;
 		});
 	}
@@ -151,9 +151,13 @@ function toStore<T>(value: Bindable<T>): Store<T> {
 
 function computeDifference(needed: Bindable<number>, hired: Bindable<number>): Bindable<number> {
 	if (isStore(needed) || isStore(hired)) {
-		return compute(toStore(needed), toStore(hired), function (n: number, h: number) {
-			return n - h;
-		});
+		return compute(
+			toStore(needed),
+			toStore(hired),
+			function subtractHiredFromNeeded(n: number, h: number) {
+				return n - h;
+			},
+		);
 	}
 	return needed - hired;
 }
@@ -166,7 +170,7 @@ function computeDifferenceColorToken(
 		return compute(
 			toStore(difference),
 			toStore(disabled),
-			function (d: number, isDisabled: boolean) {
+			function differenceColorTokenFor(d: number, isDisabled: boolean) {
 				if (isDisabled) {
 					return "";
 				}
@@ -628,7 +632,7 @@ function separator(): WidgetCreator<FlexiblePosition> {
 
 // Tooltip shared by both halves of the progress bar, so hovering anywhere over
 // the bar shows the same percentage.
-const progressTooltipStore = compute(progressStore, function (fraction: number) {
+const progressTooltipStore = compute(progressStore, function progressTooltip(fraction: number) {
 	return `${t("progress.tooltip")} (${Math.round(Math.max(0, Math.min(1, fraction)) * 100).toString()}%)`;
 });
 
@@ -640,7 +644,7 @@ const progressSegmentStores: Store<boolean>[] = [];
 for (let i = 0; i < PROGRESS_SEGMENT_COUNT; i++) {
 	const threshold = (i + 1) / PROGRESS_SEGMENT_COUNT;
 	progressSegmentStores.push(
-		compute(progressStore, function (fraction: number) {
+		compute(progressStore, function isSegmentFilled(fraction: number) {
 			return fraction >= threshold;
 		}),
 	);
@@ -749,7 +753,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 								spacing: 0,
 								width: "100%",
 								height: PROGRESS_ROW_HEIGHT,
-								content: progressSegmentStores.map(function (segmentFilledStore) {
+								content: progressSegmentStores.map(function progressSegment(segmentFilledStore) {
 									// The tooltip is bound per segment on purpose: it is what makes
 									// flexui refresh this widget (and therefore call onDraw) when
 									// the segment flips between filled and empty.
@@ -759,7 +763,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 										tooltip: compute(
 											progressTooltipStore,
 											segmentFilledStore,
-											function (tooltip: string) {
+											function identityTooltip(tooltip: string) {
 												return tooltip;
 											},
 										),
@@ -819,7 +823,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 										},
 									}),
 									toggle({
-										text: compute(autoEnabledStore, function (on) {
+										text: compute(autoEnabledStore, function autoToggleText(on) {
 											if (on) {
 												return t("auto.on");
 											}
@@ -829,9 +833,12 @@ function staffManagerWindowTemplate(): WindowTemplate {
 										height: AUTO_ROW_HEIGHT,
 										isPressed: autoEnabledStore,
 										tooltip: t("auto.tooltip"),
-										disabled: compute(hasRanAdjustAndAssignStore, function (hasRun) {
-											return !hasRun;
-										}),
+										disabled: compute(
+											hasRanAdjustAndAssignStore,
+											function autoToggleDisabled(hasRun) {
+												return !hasRun;
+											},
+										),
 										onChange: function onChange(pressed) {
 											setAutoEnabled(pressed);
 										},

@@ -200,7 +200,7 @@ export function splitIntoZones(graph: PathGraph, zoneCount: number): string[][] 
 		}
 	}
 
-	const zones: string[][] = seeds.map(function () {
+	const zones: string[][] = seeds.map(function emptyZone() {
 		return [];
 	});
 	for (const entry of zoneOfKey) {
@@ -341,7 +341,7 @@ function ensureInvalidationSubscribed(): void {
 	}
 	invalidationSubscription = gameContext().subscribe(
 		"action.execute",
-		function (event: GameActionEventArgs) {
+		function onActionExecute(event: GameActionEventArgs) {
 			if (GRAPH_INVALIDATING_ACTIONS.has(event.action)) {
 				invalidatePathGraphCache();
 			}

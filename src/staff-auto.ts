@@ -168,7 +168,7 @@ function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
 }
 
 function autoAreasAsCoords(group: AutoGroup): CoordsXY[][] {
-	return autoAreas(group).map(function (a) {
+	return autoAreas(group).map(function areaCoords(a) {
 		return a.coords;
 	});
 }
@@ -196,77 +196,80 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 		return;
 	}
 	autoHireForPurpose.set(group.purpose, true);
-	hireStaff({ staffTypeId: group.staffTypeId, orders: group.orders, countToHire: 1 }, function () {
-		autoHireForPurpose.set(group.purpose, false);
-		const member = getLastStaffOfType(group.staffType);
-		if (member) {
-			const area = autoAreas(group)[autoAreas(group).length - 1];
-			if (
-				"handyman" === group.staffType &&
-				group.orders === HANDYMAN_ORDERS_GARDENING &&
-				(member as Handyman).orders !== HANDYMAN_ORDERS_GARDENING
-			) {
-				(member as Handyman).orders = HANDYMAN_ORDERS_GARDENING;
-			}
-			area.member = member;
-			member.patrolArea.add(area.coords);
-			const z = teleportZForGroup(group, tx, ty);
-			// For a gardening area, avoid dropping the handyman onto a queue/fenced
-			// footpath (which now only occurs as a possible teleport tile when the tile
-			// itself is a path), so they can actually step onto the grass they are to mow.
-			let teleportX = tx;
-			let teleportY = ty;
-			let teleportZ = z;
-			if (
-				"handyman" === group.staffType &&
-				group.orders === HANDYMAN_ORDERS_GARDENING &&
-				isQueueTile(tx, ty)
-			) {
-				const workTile = area.coords.find(function (c) {
-					const wx = Math.floor(c.x / 32);
-					const wy = Math.floor(c.y / 32);
-					if (wx === tx && wy === ty) {
-						return false;
+	hireStaff(
+		{ staffTypeId: group.staffTypeId, orders: group.orders, countToHire: 1 },
+		function onAutoHired() {
+			autoHireForPurpose.set(group.purpose, false);
+			const member = getLastStaffOfType(group.staffType);
+			if (member) {
+				const area = autoAreas(group)[autoAreas(group).length - 1];
+				if (
+					"handyman" === group.staffType &&
+					group.orders === HANDYMAN_ORDERS_GARDENING &&
+					(member as Handyman).orders !== HANDYMAN_ORDERS_GARDENING
+				) {
+					(member as Handyman).orders = HANDYMAN_ORDERS_GARDENING;
+				}
+				area.member = member;
+				member.patrolArea.add(area.coords);
+				const z = teleportZForGroup(group, tx, ty);
+				// For a gardening area, avoid dropping the handyman onto a queue/fenced
+				// footpath (which now only occurs as a possible teleport tile when the tile
+				// itself is a path), so they can actually step onto the grass they are to mow.
+				let teleportX = tx;
+				let teleportY = ty;
+				let teleportZ = z;
+				if (
+					"handyman" === group.staffType &&
+					group.orders === HANDYMAN_ORDERS_GARDENING &&
+					isQueueTile(tx, ty)
+				) {
+					const workTile = area.coords.find(function isNonQueueWorkTile(c) {
+						const wx = Math.floor(c.x / 32);
+						const wy = Math.floor(c.y / 32);
+						if (wx === tx && wy === ty) {
+							return false;
+						}
+						return !isQueueTile(wx, wy);
+					});
+					if (workTile) {
+						teleportX = Math.floor(workTile.x / 32);
+						teleportY = Math.floor(workTile.y / 32);
+						teleportZ = surfaceBaseZAt(teleportX, teleportY);
 					}
-					return !isQueueTile(wx, wy);
-				});
-				if (workTile) {
-					teleportX = Math.floor(workTile.x / 32);
-					teleportY = Math.floor(workTile.y / 32);
-					teleportZ = surfaceBaseZAt(teleportX, teleportY);
 				}
-			}
-			// The chosen (tx, ty) tile (e.g. a gardening/land tile that just triggered
-			// this hire) isn't guaranteed to be peep-placeable - it may have small
-			// scenery (a tree) or other obstruction on it - so fall back to the
-			// nearest actually-placeable tile in this area, then park-wide, rather
-			// than issuing a "peeppickup" place that's guaranteed to fail (surfaced
-			// in-game as a "Can't place person here..." popup).
-			if (!isPeepPlaceableTile(teleportX, teleportY)) {
-				const fallback = findNearestPathInOrderedTiles(
-					area.coords.map(function (c): PathTileInfo {
-						return {
-							x: Math.floor(c.x / 32),
-							y: Math.floor(c.y / 32),
-							baseHeight: 0,
-							baseZ: 0,
-							isQueue: false,
-							neighbourKeys: [],
-						};
-					}),
-					teleportX,
-					teleportY,
-				);
-				if (fallback) {
-					teleportX = fallback.x;
-					teleportY = fallback.y;
-					teleportZ = teleportZForGroup(group, teleportX, teleportY);
+				// The chosen (tx, ty) tile (e.g. a gardening/land tile that just triggered
+				// this hire) isn't guaranteed to be peep-placeable - it may have small
+				// scenery (a tree) or other obstruction on it - so fall back to the
+				// nearest actually-placeable tile in this area, then park-wide, rather
+				// than issuing a "peeppickup" place that's guaranteed to fail (surfaced
+				// in-game as a "Can't place person here..." popup).
+				if (!isPeepPlaceableTile(teleportX, teleportY)) {
+					const fallback = findNearestPathInOrderedTiles(
+						area.coords.map(function toPathTileInfo(c): PathTileInfo {
+							return {
+								x: Math.floor(c.x / 32),
+								y: Math.floor(c.y / 32),
+								baseHeight: 0,
+								baseZ: 0,
+								isQueue: false,
+								neighbourKeys: [],
+							};
+						}),
+						teleportX,
+						teleportY,
+					);
+					if (fallback) {
+						teleportX = fallback.x;
+						teleportY = fallback.y;
+						teleportZ = teleportZForGroup(group, teleportX, teleportY);
+					}
 				}
+				teleportStaffToTile(member, { x: teleportX, y: teleportY, z: teleportZ });
 			}
-			teleportStaffToTile(member, { x: teleportX, y: teleportY, z: teleportZ });
-		}
-		refreshHiredAndAssignedStaffCounts();
-	});
+			refreshHiredAndAssignedStaffCounts();
+		},
+	);
 }
 
 function getLastStaffOfType(staffType: StaffType): Staff | undefined {
@@ -405,7 +408,7 @@ function isRideExitOnTile(tx: number, ty: number): boolean {
 function hireAndAssignMechanicForExit(exitTile: CoordsXY, frontTile: CoordsXY): void {
 	hireStaff(
 		{ staffTypeId: STAFF_TYPE_ID_MECHANIC, orders: MECHANIC_ORDERS_DEFAULT, countToHire: 1 },
-		function () {
+		function onMechanicHired() {
 			const mechanics = getStaffByType("mechanic");
 			if (0 === mechanics.length) {
 				return;
