@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import {
 	window as flexWindow, box, horizontal, vertical, label, button, spinner, checkbox, toggle, graphics, compute, isStore,
 	store as flexStore,

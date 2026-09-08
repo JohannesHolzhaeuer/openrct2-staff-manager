@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import {
 	handymenCleanupNeededStore, handymenGardeningNeededStore, handymenMowerTilesPerStaffStore,
 	guardsNeededStore, entertainersNeededStore, mechanicsNeededStore,
@@ -871,6 +870,18 @@ export function getStaffAreas(staffType: StaffType): CoordsXY[][] {
 	return getStaffByType(staffType).map(function (m) { return m.patrolArea.tiles.slice(); });
 }
 
+// Only mowable/waterable tiles (work tiles) count toward staffing; footpath
+// connector tiles in an area are reachability only and don't add staffing.
+function workSize(area: PathTileInfo[]): number {
+	let count = 0;
+	for (const t of area) {
+		if (!t.isConnector) {
+			count++;
+		}
+	}
+	return count;
+}
+
 // Assigns gardening areas built from the garden tiles' connected components.
 // Unlike a flat/naive approach (concatenating every component into one tile
 // list before chunking), each connected component is allocated its own
@@ -896,18 +907,6 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 	if (components.length === 0) {
 		onComplete();
 		return;
-	}
-
-	// Only mowable/waterable tiles (work tiles) count toward staffing; footpath
-	// connector tiles in an area are reachability only and don't add staffing.
-	function workSize(area: PathTileInfo[]): number {
-		let count = 0;
-		for (const t of area) {
-			if (!t.isConnector) {
-				count++;
-			}
-		}
-		return count;
 	}
 
 	const totalTiles = components.reduce(function (sum, area) { return sum + workSize(area); }, 0);

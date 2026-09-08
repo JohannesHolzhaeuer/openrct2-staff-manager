@@ -118,13 +118,14 @@ describe("isStandingOnTile", () => {
 	});
 });
 
+function chain(xs: number[], ys: number[]): PathTileInfo[] {
+	return xs.map((x, i) => ({
+		x: x, y: ys[i], baseHeight: 0, baseZ: 0, isQueue: false,
+		neighbourKeys: [] as string[]
+	}));
+}
+
 describe("chunkTilesForStaffCount", () => {
-	function chain(xs: number[], ys: number[]): PathTileInfo[] {
-		return xs.map((x, i) => ({
-			x: x, y: ys[i], baseHeight: 0, baseZ: 0, isQueue: false,
-			neighbourKeys: [] as string[]
-		}));
-	}
 	it("returns no chunks for no staff or no tiles", () => {
 		expect(chunkTilesForStaffCount([], 3)).toEqual([]);
 		expect(chunkTilesForStaffCount([{ x: 0, y: 0, baseHeight: 0, baseZ: 0, isQueue: false, neighbourKeys: [] }], 0)).toEqual([]);

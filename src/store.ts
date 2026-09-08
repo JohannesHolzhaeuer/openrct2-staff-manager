@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import {
 	store as flexStore, compute, Store
 } from "openrct2-flexui";

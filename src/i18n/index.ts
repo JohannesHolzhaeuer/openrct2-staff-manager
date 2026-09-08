@@ -1,4 +1,3 @@
-/// <reference path="../../node_modules/@openrct2/types/openrct2.d.ts" />
 import { Translations, TranslationKey } from "./types";
 import { enGB } from "./en-GB";
 import { deDE } from "./de-DE";

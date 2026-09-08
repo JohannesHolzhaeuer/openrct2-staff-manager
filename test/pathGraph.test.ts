@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { setGameMap, resetGameMap, setGameContext, resetGameContext } from "../src/game";
 import { fakeMap } from "./fake-map";
@@ -10,6 +9,7 @@ import {
 } from "../src/paths/pathGraph";
 
 let ctx: FakeContext;
+const isIncluded = function (): boolean { return true; };
 
 beforeEach(() => {
 	ctx = new FakeContext();
@@ -178,7 +178,6 @@ describe("path graph cache", () => {
 			"1,1": { footpaths: [{ baseZ: 100 }] },
 			"2,1": { footpaths: [{ baseZ: 100 }] }
 		}));
-		const isIncluded = function (): boolean { return true; };
 		const first = getCachedNetwork({ x: 1, y: 1, z: 100 }, isIncluded);
 		const second = getCachedNetwork({ x: 1, y: 1, z: 100 }, isIncluded);
 		expect(second).toBe(first);
@@ -192,7 +191,6 @@ describe("path graph cache", () => {
 		setGameMap(fakeMap({ x: 8, y: 8 }, {
 			"1,1": { footpaths: [{ baseZ: 100 }] }
 		}));
-		const isIncluded = function (): boolean { return true; };
 		const first = getCachedNetwork({ x: 1, y: 1, z: 100 }, isIncluded);
 		fireAction("staffhire");
 		const second = getCachedNetwork({ x: 1, y: 1, z: 100 }, isIncluded);
@@ -203,7 +201,6 @@ describe("path graph cache", () => {
 		setGameMap(fakeMap({ x: 8, y: 8 }, {
 			"1,1": { footpaths: [{ baseZ: 100 }] }
 		}));
-		const isIncluded = function (): boolean { return true; };
 		const first = getCachedNetwork({ x: 1, y: 1, z: 100 }, isIncluded);
 		invalidatePathGraphCache();
 		const second = getCachedNetwork({ x: 1, y: 1, z: 100 }, isIncluded);

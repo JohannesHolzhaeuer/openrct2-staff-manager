@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { autoEnabledStore } from "./store";
 import { isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
 import { handlePlacedPathTile, handleBoughtLandTile } from "./staff-auto";

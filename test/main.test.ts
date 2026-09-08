@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // main.ts registers the plugin as a side effect of being imported, and calls

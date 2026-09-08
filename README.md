@@ -109,7 +109,7 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 
 - **[Node.js](https://nodejs.org/) 24+ with npm** — required to install
   dependencies, run the TypeScript compiler, and run the `.ts` build tooling
-  (`deploy.ts`, `eslint.config.ts`) through Node's native TypeScript support.
+  (`deploy.ts`, `vitest.config.ts`) through Node's native TypeScript support.
   Verify with:
   ```powershell
   node -v
@@ -141,12 +141,11 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
 
 ### Code quality
 
-- **Type-safe linting.** `npm run build` starts with `npm run lint` (`eslint .`).
-  Plugin source and tests are checked with the type-aware
-  `recommendedTypeChecked`/`strictTypeChecked`/`stylisticTypeChecked` presets,
-  and the TypeScript build tooling (`deploy.ts`, `eslint.config.ts`) with
-  ESLint core plus `@stylistic/eslint-plugin`. Run `npm run lint` on its own
-  any time.
+- **Fast linting.** `npm run build` starts with `npm run lint`
+  (`oxlint .`, configured in `.oxlintrc.json`), a Rust-based linter that
+  covers plugin source, tests and build tooling (`deploy.ts`) without being
+  tied to a specific TypeScript compiler version. Run `npm run lint` on its
+  own any time.
 
 ### Tests
 

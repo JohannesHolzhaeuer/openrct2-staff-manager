@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import type { GameContext, GameObjects } from "../src/game";
 
 export interface RecordedAction {

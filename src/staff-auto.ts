@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import {
     handymenTilesPerStaffStore, handymenMowerTilesPerStaffStore,
     guardsTilesPerStaffStore, entertainersTilesPerStaffStore,

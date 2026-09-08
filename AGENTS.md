@@ -43,15 +43,13 @@ used by handymen/guards.
   system, strict mode).
 - `tsconfig.node.json` — type-checks the Node build-tooling `.ts` files (`deploy.ts`,
   `eslint.config.ts`) against `@types/node` as part of `npm run typecheck`.
-- `eslint.config.ts` — dual-config ESLint flat config. Plugin source and unit tests
-  (`src/**/*.ts`, `test/**/*.ts`) use the **type-aware** presets
-  `recommendedTypeChecked` + `strictTypeChecked` + `stylisticTypeChecked`, wired to ESLint's
-  `projectService` so rules have type info (tests are added to `allowDefaultProject` since
-  `tsconfig.json` only includes `src/`). Build-tooling `.ts` files (`deploy.ts`,
-  `eslint.config.ts`, `*.cjs`, `*.mjs`) are linted with the `@typescript-eslint/parser`
-  plus ESLint core (`@eslint/js`) and `@stylistic/eslint-plugin`, with Node globals from the
-  `globals` package and a strict/core rule set — do not apply the TS type-aware presets there.
-  ESLint loads this TS config via `jiti` (ESLint 10 natively supports `.ts` configs).
+- `.oxlintrc.json` — [oxlint](https://oxc.rs/docs/guide/usage/linter.html) configuration covering
+  all `.ts` files (`src/**`, `test/**`, and build-tooling scripts like `deploy.ts`). oxlint is a
+  Rust-based linter with no dependency on the `typescript`/`typescript-eslint` version, which is
+  why it replaced ESLint here (ESLint's type-aware `typescript-eslint` presets lagged behind
+  TypeScript major releases and blocked upgrading past TypeScript 6). It does not do type-aware
+  linting; TypeScript's own `strict` compiler options in `tsconfig.json`/`tsconfig.node.json`
+  cover the type-checking rules ESLint used to provide via `typescript-eslint`.
 - `deploy.ts` — copies `dist/staff-manager.js` into the local OpenRCT2 `plugin` folder
   (OS-specific default path, overridable via `OPENRCT2_PLUGIN_DIR` env var) so it can be
   hot-reloaded in-game. Run with `node` (project is `"type": "module"`).
@@ -72,7 +70,7 @@ npm run dev        # bundle + deploy only, skipping verify - fast inner dev loop
 npm run watch       # esbuild --watch, for iterative development (does not auto-deploy)
 npm test           # run the unit tests alone (vitest run)
 npm run typecheck  # run the TypeScript compiler alone (src + tsconfig.node.json)
-npm run lint       # run the linter alone (eslint .)
+npm run lint       # run the linter alone (oxlint .)
 ```
 
 Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.slnx` runs the same
