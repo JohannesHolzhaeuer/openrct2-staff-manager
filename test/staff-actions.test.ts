@@ -17,7 +17,7 @@ import {
 	teleportStaffToTile,
 } from "../src/staff";
 
-let ctx: FakeContext;
+let ctx: FakeContext = new FakeContext();
 
 beforeEach(() => {
 	ctx = new FakeContext();

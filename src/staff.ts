@@ -1058,7 +1058,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		return sum + c;
 	}, 0);
 
-	let counts: number[];
+	let counts: number[] = desiredCounts;
 	if (desiredTotal === members.length) {
 		// Exactly enough gardeners hired to cover every area's own need;
 		// use the per-area counts directly.
@@ -1573,7 +1573,7 @@ function reassignHandymenOrders(): void {
 	const gardeningNeeded = handymenGardeningNeededStore.get();
 	const totalNeeded = cleanupNeeded + gardeningNeeded;
 
-	let cleanupCount: number;
+	let cleanupCount: number = handymen.length;
 	if (0 >= totalNeeded) {
 		cleanupCount = handymen.length;
 	} else {

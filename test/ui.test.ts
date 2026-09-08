@@ -78,7 +78,7 @@ interface TestGlobal {
 }
 const testGlobal = globalThis as unknown as TestGlobal;
 
-let ctx: FakeContext;
+let ctx: FakeContext = new FakeContext();
 
 beforeEach(() => {
 	openedWindows.length = 0;

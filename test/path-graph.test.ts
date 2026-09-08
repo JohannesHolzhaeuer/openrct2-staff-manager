@@ -15,7 +15,7 @@ import {
 	splitIntoZones,
 } from "../src/paths/path-graph";
 
-let ctx: FakeContext;
+let ctx: FakeContext = new FakeContext();
 const isIncluded = function isIncluded(): boolean {
 	return true;
 };
