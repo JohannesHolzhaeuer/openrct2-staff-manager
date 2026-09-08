@@ -19,6 +19,7 @@
     "commitlint.config.ts",
     "deploy.ts",
     "vitest.config.ts",
+    ".oxfmtrc.ts",
     "test/**/*.ts",
     "node_modules/@openrct2/types/openrct2.d.ts"
   ]
