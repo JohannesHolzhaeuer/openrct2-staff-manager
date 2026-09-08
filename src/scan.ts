@@ -456,14 +456,14 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 				// walkable nodes. Only the node matching this tile's recorded baseZ may
 				// contribute links - otherwise a single tile whose two stacked paths belong to
 				// different networks would bridge them, merging into one unreachable area.
-				if (info != null) {
+				if (info !== undefined) {
 					if (info.baseZ === footpath.baseZ) {
 						const neighbourKey = tileKey(neighbour.x, neighbour.y);
 						if (!info.neighbourKeys.includes(neighbourKey)) {
 							info.neighbourKeys.push(neighbourKey);
 						}
 						const neighbourInfo = tilesByKey.get(neighbourKey);
-						if (neighbourInfo != null) {
+						if (neighbourInfo !== undefined) {
 							if (neighbourInfo.baseZ === footpath.baseZ && !neighbourInfo.neighbourKeys.includes(key)) {
 								neighbourInfo.neighbourKeys.push(key);
 							}
