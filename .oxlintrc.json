@@ -5,7 +5,19 @@
     "suspicious": "error",
     "perf": "error"
   },
-  "rules": {},
+  "rules": {
+    "eslint/no-var": "error",
+    "eslint/unicode-bom": "error",
+    "eslint/no-eq-null": "error",
+    "eslint/no-console": "error",
+    "eslint/no-empty": "error",
+    "eslint/no-empty-function": "error",
+    "oxc/no-const-enum": "error",
+    "typescript/no-namespace": "error",
+    "typescript/no-non-null-assertion": "error",
+    "unicorn/no-anonymous-default-export": "error",
+    "unicorn/no-process-exit": "error"
+  },
   "env": {
     "es2023": true,
     "node": true
@@ -14,5 +26,14 @@
     "dist/**",
     "node_modules/**",
     "coverage/**"
+  ],
+  "overrides": [
+    {
+      "files": ["deploy.ts"],
+      "rules": {
+        "eslint/no-console": "off",
+        "unicorn/no-process-exit": "off"
+      }
+    }
   ]
 }
