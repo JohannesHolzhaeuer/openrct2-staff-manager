@@ -82,7 +82,7 @@ export function fakeMap(
 	): PathNavigator | null {
 		const x = Math.floor(position.x / 32);
 		const y = Math.floor(position.y / 32);
-		const here = footpathsAt(x, y).find(function (fp) {
+		const here = footpathsAt(x, y).find(function isAtPositionZ(fp) {
 			return fp.baseZ === position.z;
 		});
 		if (!here) {

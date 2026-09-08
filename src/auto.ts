@@ -152,7 +152,7 @@ function schedule(): void {
 	if (undefined !== pendingTimer) {
 		gameContext().clearTimeout(pendingTimer);
 	}
-	pendingTimer = gameContext().setTimeout(function () {
+	pendingTimer = gameContext().setTimeout(function runPendingProcessing() {
 		pendingTimer = undefined;
 		processPending();
 	}, DEBOUNCE_MS);

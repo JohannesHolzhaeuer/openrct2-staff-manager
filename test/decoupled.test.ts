@@ -17,6 +17,14 @@ function fp(
 	return { baseZ: baseZ, slopeDirection: slopeDirection };
 }
 
+function alwaysConnected(): boolean {
+	return true;
+}
+
+function neverConnected(): boolean {
+	return false;
+}
+
 describe("footpathEdgeZ", () => {
 	it("flat footpath is at baseZ on every edge", () => {
 		expect(footpathEdgeZ(fp(100), 0)).toBe(100);
@@ -371,9 +379,7 @@ describe("decideAreaAction", () => {
 			areas: areas,
 			newTile: { x: 0, y: 0 },
 			maxSize: 8,
-			connect: function () {
-				return true;
-			},
+			connect: alwaysConnected,
 		});
 		expect(decision).toEqual({ action: "enlarge", areaIndex: 0 });
 	});
@@ -386,9 +392,7 @@ describe("decideAreaAction", () => {
 			areas: areas,
 			newTile: { x: 0, y: 0 },
 			maxSize: 8,
-			connect: function () {
-				return false;
-			},
+			connect: neverConnected,
 		});
 		expect(decision.action).toBe("hire");
 	});
@@ -399,9 +403,7 @@ describe("decideAreaAction", () => {
 			areas: areas,
 			newTile: { x: 0, y: 0 },
 			maxSize: 8,
-			connect: function () {
-				return false;
-			},
+			connect: neverConnected,
 		});
 		expect(decision).toEqual({ action: "covered" });
 	});
@@ -434,7 +436,7 @@ describe("decideAreaAction", () => {
 			areas: areas,
 			newTile: { x: 0, y: 0 },
 			maxSize: 8,
-			connect: function (areaTile, newTile, index) {
+			connect: function connect(areaTile, newTile, index) {
 				calls.push([areaTile.x, areaTile.y, newTile.x, newTile.y, index]);
 				return true;
 			},

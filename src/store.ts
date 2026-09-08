@@ -66,9 +66,12 @@ export const mechanicsAssignedStore = flexStore<number>(0);
 // Whether the tile counts have been calculated yet. Until this is true, all
 // spinners and stat text within the staff group boxes are disabled.
 export const tilesCalculatedStore = flexStore<boolean>(false);
-export const staffControlsDisabledStore = compute(tilesCalculatedStore, function (calculated) {
-	return !calculated;
-});
+export const staffControlsDisabledStore = compute(
+	tilesCalculatedStore,
+	function staffControlsDisabled(calculated) {
+		return !calculated;
+	},
+);
 
 // Text shown at the top of the window describing where the park entrance was
 // found (only used when no entrance is found; otherwise the top row shows a
@@ -108,7 +111,7 @@ function controlsDisabledFor(enabled: Store<boolean>): Store<boolean> {
 	return compute(
 		staffControlsDisabledStore,
 		enabled,
-		function (controlsDisabled: boolean, isEnabled: boolean) {
+		function controlsDisabledOrNotEnabled(controlsDisabled: boolean, isEnabled: boolean) {
 			return controlsDisabled || !isEnabled;
 		},
 	);
@@ -133,7 +136,7 @@ export function computeNeeded(totalTiles: number, tilesPerStaff: number): number
 const handymenCleanupTilesStore = compute(
 	pathTilesCountStore,
 	queueTilesCountStore,
-	function (path, queue) {
+	function sumPathAndQueueTiles(path, queue) {
 		return path + queue;
 	},
 );
@@ -141,7 +144,7 @@ export const handymenCleanupNeededStore = compute(
 	handymenCleanupTilesStore,
 	handymenTilesPerStaffStore,
 	handymenEnabledStore,
-	function (tiles: number, tilesPerStaff: number, enabled: boolean) {
+	function handymenCleanupNeeded(tiles: number, tilesPerStaff: number, enabled: boolean) {
 		if (!enabled) {
 			return 0;
 		}
@@ -152,14 +155,18 @@ export const handymenGardeningNeededStore = compute(
 	gardenAreaSizesStore,
 	handymenMowerTilesPerStaffStore,
 	handymenEnabledStore,
-	function (areaSizes: number[], mowerTilesPerStaff: number, enabled: boolean) {
+	function handymenGardeningNeeded(
+		areaSizes: number[],
+		mowerTilesPerStaff: number,
+		enabled: boolean,
+	) {
 		if (!enabled) {
 			return 0;
 		}
 		// Sum of each area's own needed count, so every disconnected area
 		// gets at least one gardener (as long as it has any tiles), rather
 		// than allocating gardeners against the grand total tile count.
-		return areaSizes.reduce(function (sum, size) {
+		return areaSizes.reduce(function sumNeededPerArea(sum, size) {
 			return sum + computeNeeded(size, mowerTilesPerStaff);
 		}, 0);
 	},
@@ -167,7 +174,7 @@ export const handymenGardeningNeededStore = compute(
 export const handymenNeededStore = compute(
 	handymenCleanupNeededStore,
 	handymenGardeningNeededStore,
-	function (cleanup: number, gardening: number) {
+	function sumCleanupAndGardening(cleanup: number, gardening: number) {
 		return cleanup + gardening;
 	},
 );
@@ -177,7 +184,7 @@ export const guardsNeededStore = compute(
 	pathTilesCountStore,
 	guardsTilesPerStaffStore,
 	guardsEnabledStore,
-	function (path: number, tilesPerStaff: number, enabled: boolean) {
+	function guardsNeeded(path: number, tilesPerStaff: number, enabled: boolean) {
 		if (!enabled) {
 			return 0;
 		}
@@ -191,7 +198,7 @@ const entertainersTilesStore = compute(
 	pathTilesCountStore,
 	queueTilesCountStore,
 	entertainersIncludeQueueStore,
-	function (path: number, queue: number, includeQueue: boolean) {
+	function entertainersTiles(path: number, queue: number, includeQueue: boolean) {
 		if (includeQueue) {
 			return path + queue;
 		}
@@ -202,14 +209,14 @@ const entertainersNeededBaseStore = compute(
 	entertainersTilesStore,
 	entertainersTilesPerStaffStore,
 	entertainersPerAreaStore,
-	function (tiles: number, tilesPerStaff: number, perArea: number) {
+	function entertainersNeededBase(tiles: number, tilesPerStaff: number, perArea: number) {
 		return computeNeeded(tiles, tilesPerStaff) * Math.max(perArea, 0);
 	},
 );
 export const entertainersNeededStore = compute(
 	entertainersNeededBaseStore,
 	entertainersEnabledStore,
-	function (needed: number, enabled: boolean) {
+	function entertainersNeeded(needed: number, enabled: boolean) {
 		if (!enabled) {
 			return 0;
 		}
@@ -221,7 +228,7 @@ export const entertainersNeededStore = compute(
 export const mechanicsNeededStore = compute(
 	rideExitCountStore,
 	mechanicsEnabledStore,
-	function (rideExits: number, enabled: boolean) {
+	function mechanicsNeeded(rideExits: number, enabled: boolean) {
 		if (!enabled) {
 			return 0;
 		}

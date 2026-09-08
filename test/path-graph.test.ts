@@ -82,7 +82,7 @@ describe("buildNetwork", () => {
 				},
 			),
 		);
-		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function () {
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
 			return true;
 		});
 		expect([...graph.nodes.keys()].sort()).toEqual(["1,1", "2,1", "3,1"]);
@@ -99,7 +99,7 @@ describe("buildNetwork", () => {
 				},
 			),
 		);
-		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function (x, y) {
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function excludeQueueTile(x, y) {
 			return !(2 === x && 1 === y);
 		});
 		expect(graph.nodes.has("2,1")).toBe(false);
@@ -119,7 +119,7 @@ describe("graphDistance", () => {
 				},
 			),
 		);
-		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function () {
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
 			return true;
 		});
 		expect(graphDistance(graph, "1,1", "2,3")).toBe(3);
@@ -140,7 +140,7 @@ describe("splitIntoZones", () => {
 				},
 			),
 		);
-		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function () {
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
 			return true;
 		});
 		const zones = splitIntoZones(graph, 2);
@@ -179,7 +179,7 @@ describe("nearestZoneIndex", () => {
 				},
 			),
 		);
-		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function () {
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
 			return true;
 		});
 		const zones = [["3,1"], ["1,1"]];
@@ -195,7 +195,7 @@ describe("nearestZoneIndex", () => {
 				},
 			),
 		);
-		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function () {
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
 			return true;
 		});
 		expect(nearestZoneIndex(graph, "1,1", [["9,9"]])).toBe(-1);
@@ -216,7 +216,7 @@ describe("centralTile", () => {
 				},
 			),
 		);
-		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function () {
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
 			return true;
 		});
 		const keys = ["1,1", "2,1", "3,1", "4,1", "5,1"];

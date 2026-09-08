@@ -3,7 +3,7 @@ import { openWindow } from "./ui";
 
 function main(): void {
 	if ("undefined" !== typeof ui) {
-		ui.registerMenuItem("Staff Manager", function () {
+		ui.registerMenuItem("Staff Manager", function openStaffManagerWindow() {
 			openWindow();
 		});
 	}

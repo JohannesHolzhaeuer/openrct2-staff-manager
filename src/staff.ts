@@ -107,7 +107,7 @@ type StaffAdjustTask =
 // are not reused while the entity is alive).
 function collectFireOldestStaffTasks(members: Staff[], countToFire: number): StaffAdjustTask[] {
 	const tasks: StaffAdjustTask[] = [];
-	const sorted = [...members].sort(function (a, b) {
+	const sorted = [...members].sort(function byEntityIdAscending(a, b) {
 		return (a.id ?? 0) - (b.id ?? 0);
 	});
 	for (let i = 0; i < countToFire && i < sorted.length; i++) {
@@ -194,7 +194,7 @@ function collectHireStaffTasks(
 // action's callback has fired (regardless of success/failure).
 function runStaffAdjustTask(task: StaffAdjustTask, onActionComplete: () => void): void {
 	if ("fire" === task.kind) {
-		gameContext().executeAction("stafffire", { id: task.id }, function () {
+		gameContext().executeAction("stafffire", { id: task.id }, function onFireActionComplete() {
 			onActionComplete();
 		});
 		return;
@@ -218,7 +218,7 @@ function runStaffAdjustTask(task: StaffAdjustTask, onActionComplete: () => void)
 			costumeIndex: costumeIndex,
 			staffOrders: task.orders,
 		},
-		function () {
+		function onHireActionComplete() {
 			onActionComplete();
 		},
 	);
@@ -237,10 +237,10 @@ export function hireStaff(
 	const tasks = collectHireStaffTasks(spec.staffTypeId, spec.orders, spec.countToHire);
 	applyInBatches(
 		tasks,
-		function (task) {
+		function runAdjustTask(task) {
 			runStaffAdjustTask(task, onActionComplete);
 		},
-		function () {
+		function noopOnComplete() {
 			/* per-action callbacks already reported completion */
 		},
 	);
@@ -350,12 +350,12 @@ export function adjustStaffCounts(onComplete?: () => void): void {
 	setProgress(0);
 	applyInBatches(
 		tasks,
-		function (task, index) {
+		function runAdjustTaskWithStatus(task, index) {
 			runStaffAdjustTask(task, onActionComplete);
 			setStatus(`${t("status.adjusting")} (${(index + 1).toString()}/${tasks.length.toString()})`);
 			setProgress(PROGRESS_ADJUST_DONE * ((index + 1) / tasks.length));
 		},
-		function () {
+		function onAllDispatched() {
 			allDispatched = true;
 			finishIfDone();
 		},
@@ -449,7 +449,7 @@ function processTeleportQueue(): void {
 	gameContext().executeAction(
 		"peeppickup",
 		{ type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 },
-		function (pickupResult) {
+		function onPickupComplete(pickupResult) {
 			if (pickupResult.error) {
 				scheduleNext();
 				return;
@@ -457,7 +457,7 @@ function processTeleportQueue(): void {
 			gameContext().executeAction(
 				"peeppickup",
 				{ type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 },
-				function () {
+				function onPlaceComplete() {
 					scheduleNext();
 				},
 			);
@@ -593,7 +593,7 @@ export function chunkTilesForStaffCount(
 	// With fewer staff than (unmergeable) areas, cover the biggest
 	// areas first instead of whichever happened to be found first.
 	if (chunks.length > staffCount) {
-		chunks.sort(function (a, b) {
+		chunks.sort(function byLengthDescending(a, b) {
 			return b.length - a.length;
 		});
 	}
@@ -621,10 +621,10 @@ function mergeSurplusChunks(chunks: PathTileInfo[][], staffCount: number): void 
 	// linksOut[a] holds every chunk b that chunk a has a walkable link into
 	// (mirroring the old chunksConnect(chunks[a], keySets[b]) test), linksIn[b]
 	// the reverse, so both directions can be rewired on merge.
-	const linksOut: Set<number>[] = chunks.map(function () {
+	const linksOut: Set<number>[] = chunks.map(function newEmptySet() {
 		return new Set<number>();
 	});
-	const linksIn: Set<number>[] = chunks.map(function () {
+	const linksIn: Set<number>[] = chunks.map(function newEmptySet2() {
 		return new Set<number>();
 	});
 	for (let a = 0; a < chunks.length; a++) {
@@ -639,7 +639,7 @@ function mergeSurplusChunks(chunks: PathTileInfo[][], staffCount: number): void 
 		}
 	}
 
-	const merged: boolean[] = chunks.map(function () {
+	const merged: boolean[] = chunks.map(function notMerged() {
 		return false;
 	});
 	let aliveCount = chunks.length;
@@ -818,7 +818,7 @@ export function isPeepPlaceableTile(x: number, y: number): boolean {
 // first. Used so the placeability check below only has to touch the closest
 // candidates instead of every tile in the park.
 function tilesByDistance(tiles: PathTileInfo[], x: number, y: number): PathTileInfo[] {
-	return [...tiles].sort(function (a, b) {
+	return [...tiles].sort(function byManhattanDistance(a, b) {
 		return Math.abs(a.x - x) + Math.abs(a.y - y) - (Math.abs(b.x - x) + Math.abs(b.y - y));
 	});
 }
@@ -855,7 +855,7 @@ export function findNearestPathInOrderedTiles(
 	x: number,
 	y: number,
 ): PathTileInfo | undefined {
-	const inBounds = tiles.filter(function (tile) {
+	const inBounds = tiles.filter(function isInBounds(tile) {
 		return 0 <= tile.x && 0 <= tile.y && tile.x < gameMap().size.x && tile.y < gameMap().size.y;
 	});
 	for (const tile of tilesByDistance(inBounds, x, y)) {
@@ -885,13 +885,13 @@ function assignConsecutiveAreas(
 		return;
 	}
 	const chunks = chunkTilesForStaffCount(orderedTiles, members.length);
-	const tasks = chunks.slice(0, members.length).map(function (chunk, i) {
+	const tasks = chunks.slice(0, members.length).map(function toMemberChunkTask(chunk, i) {
 		return { member: members[i], chunk: chunk };
 	});
 	applyInBatches(
 		tasks,
-		function (task) {
-			const area = task.chunk.map(function (t) {
+		function assignAreaToMember(task) {
+			const area = task.chunk.map(function toWorldCoords(t) {
 				return tileToWorldXY(t.x, t.y);
 			});
 			task.member.patrolArea.add(area);
@@ -1007,7 +1007,7 @@ export function decideAreaAction(options: {
 // Returns the patrol-area tile arrays for every currently hired member of the
 // given staff type (in order, one entry per member).
 export function getStaffAreas(staffType: StaffType): CoordsXY[][] {
-	return getStaffByType(staffType).map(function (m) {
+	return getStaffByType(staffType).map(function toPatrolAreaTiles(m) {
 		return [...m.patrolArea.tiles];
 	});
 }
@@ -1045,8 +1045,8 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		return;
 	}
 
-	const components = lastGardenAreas.filter(function (area) {
-		return area.some(function (t) {
+	const components = lastGardenAreas.filter(function hasWorkTile(area) {
+		return area.some(function isNotConnector(t) {
 			return !t.isConnector;
 		});
 	});
@@ -1055,7 +1055,7 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		return;
 	}
 
-	const totalTiles = components.reduce(function (sum, area) {
+	const totalTiles = components.reduce(function sumWorkSize(sum, area) {
 		return sum + workSize(area);
 	}, 0);
 
@@ -1064,10 +1064,10 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 	// area gets at least one gardener regardless of its size relative to
 	// the others.
 	const tilesPerStaff = handymenMowerTilesPerStaffStore.get();
-	const desiredCounts = components.map(function (area) {
+	const desiredCounts = components.map(function desiredCountForArea(area) {
 		return computeNeeded(workSize(area), tilesPerStaff);
 	});
-	const desiredTotal = desiredCounts.reduce(function (sum, c) {
+	const desiredTotal = desiredCounts.reduce(function sumCounts(sum, c) {
 		return sum + c;
 	}, 0);
 
@@ -1080,11 +1080,11 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// Hired count doesn't match total need (e.g. hiring/firing hasn't
 		// caught up yet); fall back to a largest-remainder allocation of
 		// the actually-available gardeners, proportional to tile count.
-		const allocations = components.map(function (area) {
+		const allocations = components.map(function allocationForArea(area) {
 			return (workSize(area) / totalTiles) * members.length;
 		});
 		counts = allocations.map(Math.floor);
-		const assignedTotal = counts.reduce(function (sum, c) {
+		const assignedTotal = counts.reduce(function sumCounts2(sum, c) {
 			return sum + c;
 		}, 0);
 		let remainder = members.length - assignedTotal;
@@ -1092,10 +1092,10 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// Distribute leftover gardeners (from flooring) to the components with
 		// the largest fractional remainder first.
 		const order = components
-			.map(function (_, i) {
+			.map(function indexOf(_, i) {
 				return i;
 			})
-			.sort(function (a, b) {
+			.sort(function byRemainderDescending(a, b) {
 				return allocations[b] - counts[b] - (allocations[a] - counts[a]);
 			});
 		for (let i = 0; i < order.length && 0 < remainder; i++) {
@@ -1109,13 +1109,13 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// multiply-allocated component, largest first.
 		if (members.length < components.length) {
 			const bySizeDesc = components
-				.map(function (_, i) {
+				.map(function indexOf2(_, i) {
 					return i;
 				})
-				.sort(function (a, b) {
+				.sort(function byComponentSizeDescending(a, b) {
 					return workSize(components[b]) - workSize(components[a]);
 				});
-			const newCounts = components.map(function () {
+			const newCounts = components.map(function zero() {
 				return 0;
 			});
 			for (let i = 0; i < members.length; i++) {
@@ -1141,9 +1141,9 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 	}
 	applyInBatches(
 		tasks,
-		function (task) {
+		function assignGardeningChunk(task) {
 			task.member.patrolArea.add(
-				task.chunk.map(function (t) {
+				task.chunk.map(function toWorldCoords2(t) {
 					return tileToWorldXY(t.x, t.y);
 				}),
 			);
@@ -1191,7 +1191,7 @@ function assignEntertainerAreas(options: {
 	let memberIndex = 0;
 	for (let a = 0; a < chunks.length && memberIndex < members.length; a++) {
 		const chunk = chunks[a];
-		const coords = chunk.map(function (t) {
+		const coords = chunk.map(function toWorldCoords3(t) {
 			return tileToWorldXY(t.x, t.y);
 		});
 		for (let p = 0; p < perArea && memberIndex < members.length; p++, memberIndex++) {
@@ -1209,7 +1209,7 @@ function assignEntertainerAreas(options: {
 	const teleportTargetByChunk = new Map<PathTileInfo[], PathTileInfo>();
 	applyInBatches(
 		tasks,
-		function (task) {
+		function assignEntertainerArea(task) {
 			task.member.patrolArea.add(task.coords);
 			if (isStandingOnTile(task.member, task.anchorTile)) {
 				return;
@@ -1318,7 +1318,7 @@ function assignMechanics(onComplete: () => void): void {
 						DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
 					const candidateOffsets = [
 						preferredOffset,
-						...CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) {
+						...CARDINAL_NEIGHBOUR_OFFSETS.filter(function isNotPreferredOffset(o) {
 							return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
 						}),
 					];
@@ -1392,7 +1392,7 @@ function assignMechanics(onComplete: () => void): void {
 	}
 	applyInBatches(
 		tasks,
-		function (task) {
+		function applyMechanicPatrolTask(task) {
 			task.member.patrolArea.add(task.patrolTiles);
 			if (task.teleportTarget) {
 				const id = task.member.id;
@@ -1441,7 +1441,7 @@ function getStaffedRideExitFronts(): StaffedRideExit[] {
 						DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
 					const candidateOffsets = [
 						preferredOffset,
-						...CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) {
+						...CARDINAL_NEIGHBOUR_OFFSETS.filter(function isNotPreferredOffset(o) {
 							return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
 						}),
 					];
@@ -1500,7 +1500,7 @@ export function adjustAndAssignAutoMechanics(onComplete: () => void): void {
 		return;
 	}
 	const staffedExits = getStaffedRideExitFronts();
-	const exitsNeedingMechanic = staffedExits.filter(function (exit) {
+	const exitsNeedingMechanic = staffedExits.filter(function isExitUnassigned(exit) {
 		return !isExitAlreadyAssigned(exit.exitTileX, exit.exitTileY);
 	});
 	if (0 === exitsNeedingMechanic.length) {
@@ -1510,7 +1510,7 @@ export function adjustAndAssignAutoMechanics(onComplete: () => void): void {
 	const currentMechanics = getStaffByType("mechanic");
 	const currentFree =
 		currentMechanics.length -
-		currentMechanics.filter(function (m) {
+		currentMechanics.filter(function hasPatrolTiles(m) {
 			return 0 < m.patrolArea.tiles.length;
 		}).length;
 	const shortfall = Math.max(0, exitsNeedingMechanic.length - currentFree);
@@ -1523,7 +1523,7 @@ export function adjustAndAssignAutoMechanics(onComplete: () => void): void {
 				orders: MECHANIC_ORDERS_DEFAULT,
 				countToHire: shortfall,
 			},
-			function () {
+			function onMechanicsHired() {
 				if (hireDone) {
 					return;
 				}
@@ -1542,15 +1542,17 @@ export function adjustAndAssignAutoMechanics(onComplete: () => void): void {
 // caller. Batching the work across ticks avoids a game freeze.
 function assignAutoMechanicAreas(neededExits: StaffedRideExit[], onComplete: () => void): void {
 	const mechanics = getStaffByType("mechanic");
-	const freeMechanics = mechanics.filter(function (m) {
+	const freeMechanics = mechanics.filter(function hasNoPatrolTiles(m) {
 		return 0 === m.patrolArea.tiles.length;
 	});
-	const tasks: { member: Staff; exit: StaffedRideExit }[] = neededExits.map(function (exit, i) {
-		return { member: freeMechanics[i % freeMechanics.length], exit: exit };
-	});
+	const tasks: { member: Staff; exit: StaffedRideExit }[] = neededExits.map(
+		function toMechanicTask(exit, i) {
+			return { member: freeMechanics[i % freeMechanics.length], exit: exit };
+		},
+	);
 	applyInBatches(
 		tasks,
-		function (task) {
+		function applyMechanicAreaTask(task) {
 			const patrolTiles: CoordsXY[] = [tileToWorldXY(task.exit.exitTileX, task.exit.exitTileY)];
 			patrolTiles.push(tileToWorldXY(task.exit.frontTileX, task.exit.frontTileY));
 			task.member.patrolArea.add(patrolTiles);
@@ -1578,7 +1580,7 @@ function getEntertainerTiles(includeQueue: boolean): PathTileInfo[] {
 	if (includeQueue) {
 		return lastAllPathTiles;
 	}
-	return lastAllPathTiles.filter(function (t) {
+	return lastAllPathTiles.filter(function isNotQueueTile(t) {
 		return !t.isQueue;
 	});
 }
@@ -1594,7 +1596,7 @@ function getEntertainerTiles(includeQueue: boolean): PathTileInfo[] {
 // the currently hired handymen (oldest first, for a stable/consistent
 // result) between cleanup and gardening in proportion to the needed counts.
 function reassignHandymenOrders(): void {
-	const handymen = [...getStaffByType("handyman")].sort(function (a, b) {
+	const handymen = [...getStaffByType("handyman")].sort(function byIdAscending(a, b) {
 		return (a.id ?? 0) - (b.id ?? 0);
 	});
 	if (0 === handymen.length) {
@@ -1644,7 +1646,7 @@ export function assignHandymenGuardsEntertainers(onComplete: () => void): void {
 	}
 
 	const steps: (() => void)[] = [
-		function () {
+		function assignHandymenStep() {
 			if (!handymenEnabledStore.get()) {
 				next();
 				return;
@@ -1662,15 +1664,15 @@ export function assignHandymenGuardsEntertainers(onComplete: () => void): void {
 			assignConsecutiveAreas(getHandymenByPurpose("cleanup"), lastAllPathTiles, done);
 			assignGardeningAreas(getHandymenByPurpose("gardening"), done);
 		},
-		function () {
+		function assignGuardsStep() {
 			if (guardsEnabledStore.get()) {
 				setStatus(t("status.assigningGuards"));
 				assignConsecutiveAreas(
 					getStaffByType("security"),
-					lastAllPathTiles.filter(function (t) {
+					lastAllPathTiles.filter(function isNotQueue(t) {
 						return !t.isQueue;
 					}),
-					function () {
+					function onGuardsAssigned() {
 						setProgress(PROGRESS_GUARDS_DONE);
 						next();
 					},
@@ -1680,14 +1682,14 @@ export function assignHandymenGuardsEntertainers(onComplete: () => void): void {
 				next();
 			}
 		},
-		function () {
+		function assignEntertainersStep() {
 			if (entertainersEnabledStore.get()) {
 				setStatus(t("status.assigningEntertainers"));
 				assignEntertainerAreas({
 					members: getStaffByType("entertainer"),
 					orderedTiles: getEntertainerTiles(entertainersIncludeQueueStore.get()),
 					perArea: entertainersPerAreaStore.get(),
-					onComplete: function () {
+					onComplete: function onEntertainersAssigned() {
 						setProgress(PROGRESS_ENTERTAINERS_DONE);
 						next();
 					},
@@ -1708,7 +1710,7 @@ export function assignStaff(): void {
 		setProgress(1);
 		setStatus(t("status.done"));
 	};
-	assignHandymenGuardsEntertainers(function () {
+	assignHandymenGuardsEntertainers(function onHandymenGuardsEntertainersAssigned() {
 		if (mechanicsEnabledStore.get()) {
 			setStatus(t("status.assigningMechanics"));
 			assignMechanics(finish);
