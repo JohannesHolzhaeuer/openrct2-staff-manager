@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resetGameContext, resetGameMap, resetGameObjects, setGameContext, setGameMap, setGameObjects } from "../src/game";
+import {
+	resetGameContext,
+	resetGameMap,
+	resetGameObjects,
+	setGameContext,
+	setGameMap,
+	setGameObjects,
+} from "../src/game";
 import { initAuto, setAutoEnabled } from "../src/auto";
 import { autoEnabledStore } from "../src/store";
 import { fakeMap } from "./fake-map";
@@ -17,12 +24,17 @@ function fireAction(action: string, args: { [key: string]: unknown }): void {
 beforeEach(() => {
 	ctx = new FakeContext();
 	setGameContext(ctx);
-	setGameMap(fakeMap({ x: 16, y: 16 }, {
-		"5,5": { footpaths: [{ baseZ: 0 }] },
-		"6,5": { footpaths: [{ baseZ: 0 }] },
-		"5,6": { footpaths: [{ baseZ: 0, isGhost: true }] },
-		"7,5": { footpaths: [{ baseZ: 0, isQueue: true }] }
-	}));
+	setGameMap(
+		fakeMap(
+			{ x: 16, y: 16 },
+			{
+				"5,5": { footpaths: [{ baseZ: 0 }] },
+				"6,5": { footpaths: [{ baseZ: 0 }] },
+				"5,6": { footpaths: [{ baseZ: 0, isGhost: true }] },
+				"7,5": { footpaths: [{ baseZ: 0, isQueue: true }] },
+			},
+		),
+	);
 	setGameObjects(fakeObjects(["rct2.peep_animations.handyman", "rct2.peep_animations.panda"]));
 });
 

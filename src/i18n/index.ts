@@ -6,7 +6,7 @@ import { deDE } from "./de-DE";
 // translating every value, and registering it here.
 export const translations: { [key: string]: Translations } = {
 	"en-GB": enGB,
-	"de-DE": deDE
+	"de-DE": deDE,
 };
 
 const FALLBACK_LANGUAGE = "en-GB";
@@ -45,8 +45,5 @@ function getDict(): Translations {
 // language, to en-GB, to the raw key - it never throws or returns blank.
 export function t(key: TranslationKey, ...args: (string | number)[]): string {
 	const s = getDict()[key];
-	return args.reduce<string>(
-		(acc, a, i) => acc.replaceAll(`{${String(i)}}`, String(a)),
-		s
-	);
+	return args.reduce<string>((acc, a, i) => acc.replaceAll(`{${String(i)}}`, String(a)), s);
 }

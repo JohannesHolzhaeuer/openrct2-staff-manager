@@ -1,21 +1,44 @@
 import {
-    entertainersEnabledStore, entertainersIncludeQueueStore,
-    entertainersTilesPerStaffStore, guardsEnabledStore,
-    guardsTilesPerStaffStore, handymenEnabledStore, handymenMowerTilesPerStaffStore,
-    handymenTilesPerStaffStore, mechanicsEnabledStore
+	entertainersEnabledStore,
+	entertainersIncludeQueueStore,
+	entertainersTilesPerStaffStore,
+	guardsEnabledStore,
+	guardsTilesPerStaffStore,
+	handymenEnabledStore,
+	handymenMowerTilesPerStaffStore,
+	handymenTilesPerStaffStore,
+	mechanicsEnabledStore,
 } from "./store";
 import {
-    PathTileInfo, footpathsConnectTiles, isGardenTile, isQueueTile, isValidStationExit,
-    surfaceBaseZAt, surfaceTilesConnect, tileKey
+	PathTileInfo,
+	footpathsConnectTiles,
+	isGardenTile,
+	isQueueTile,
+	isValidStationExit,
+	surfaceBaseZAt,
+	surfaceTilesConnect,
+	tileKey,
 } from "./scan";
 import { gameMap } from "./game";
 import {
-    ADJACENT_OFFSETS, HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING,
-    MECHANIC_ORDERS_DEFAULT, STAFF_TYPE_ID_ENTERTAINER, STAFF_TYPE_ID_HANDYMAN,
-    STAFF_TYPE_ID_MECHANIC, STAFF_TYPE_ID_SECURITY,
-    canTeleportMechanic, decideAreaAction, findNearestPathInOrderedTiles, getStaffByType,
-    hireStaff, isExitAlreadyAssigned, isPeepPlaceableTile,
-    refreshHiredAndAssignedStaffCounts, teleportStaffToTile, worldToTileX
+	ADJACENT_OFFSETS,
+	HANDYMAN_ORDERS_CLEANUP,
+	HANDYMAN_ORDERS_GARDENING,
+	MECHANIC_ORDERS_DEFAULT,
+	STAFF_TYPE_ID_ENTERTAINER,
+	STAFF_TYPE_ID_HANDYMAN,
+	STAFF_TYPE_ID_MECHANIC,
+	STAFF_TYPE_ID_SECURITY,
+	canTeleportMechanic,
+	decideAreaAction,
+	findNearestPathInOrderedTiles,
+	getStaffByType,
+	hireStaff,
+	isExitAlreadyAssigned,
+	isPeepPlaceableTile,
+	refreshHiredAndAssignedStaffCounts,
+	teleportStaffToTile,
+	worldToTileX,
 } from "./staff";
 
 // --- Incremental automatic helpers (single-tile) ---------------------------------
@@ -50,28 +73,46 @@ interface AutoGroup {
 	purpose: string;
 	// Connectivity predicate (shared with the manual scan) used to decide whether a
 	// freshly placed tile is genuinely walkable into an area before enlarging it.
-	connect: (areaTileX: number, areaTileY: number, newTileX: number, newTileY: number, areaIndex: number) => boolean;
+	connect: (
+		areaTileX: number,
+		areaTileY: number,
+		newTileX: number,
+		newTileY: number,
+		areaIndex: number,
+	) => boolean;
 }
 
 const AUTO_GROUP_CLEANUP: AutoGroup = {
-	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_CLEANUP,
-	getMaxSize: () => handymenTilesPerStaffStore.get(), purpose: "cleanup",
-	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
+	staffType: "handyman",
+	staffTypeId: STAFF_TYPE_ID_HANDYMAN,
+	orders: HANDYMAN_ORDERS_CLEANUP,
+	getMaxSize: () => handymenTilesPerStaffStore.get(),
+	purpose: "cleanup",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny),
 };
 const AUTO_GROUP_GARDENING: AutoGroup = {
-	staffType: "handyman", staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_GARDENING,
-	getMaxSize: () => handymenMowerTilesPerStaffStore.get(), purpose: "gardening",
-	connect: (ax, ay, nx, ny) => surfaceTilesConnect(ax, ay, nx, ny)
+	staffType: "handyman",
+	staffTypeId: STAFF_TYPE_ID_HANDYMAN,
+	orders: HANDYMAN_ORDERS_GARDENING,
+	getMaxSize: () => handymenMowerTilesPerStaffStore.get(),
+	purpose: "gardening",
+	connect: (ax, ay, nx, ny) => surfaceTilesConnect(ax, ay, nx, ny),
 };
 const AUTO_GROUP_GUARD: AutoGroup = {
-	staffType: "security", staffTypeId: STAFF_TYPE_ID_SECURITY, orders: 0,
-	getMaxSize: () => guardsTilesPerStaffStore.get(), purpose: "guard",
-	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
+	staffType: "security",
+	staffTypeId: STAFF_TYPE_ID_SECURITY,
+	orders: 0,
+	getMaxSize: () => guardsTilesPerStaffStore.get(),
+	purpose: "guard",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny),
 };
 const AUTO_GROUP_ENTERTAINER: AutoGroup = {
-	staffType: "entertainer", staffTypeId: STAFF_TYPE_ID_ENTERTAINER, orders: 0,
-	getMaxSize: () => entertainersTilesPerStaffStore.get(), purpose: "entertainer",
-	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny)
+	staffType: "entertainer",
+	staffTypeId: STAFF_TYPE_ID_ENTERTAINER,
+	orders: 0,
+	getMaxSize: () => entertainersTilesPerStaffStore.get(),
+	purpose: "entertainer",
+	connect: (ax, ay, nx, ny) => footpathsConnectTiles(ax, ay, nx, ny),
 };
 
 // Synchronous per-purpose area records (see the block comment above the interface).
@@ -118,13 +159,19 @@ function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
 		applyAutoAreasToLive(group);
 		return false;
 	}
-	areas.push({ member: null, tileKeys: new Set([tileKey(tx, ty)]), coords: [{ x: tx * 32, y: ty * 32 }] });
+	areas.push({
+		member: null,
+		tileKeys: new Set([tileKey(tx, ty)]),
+		coords: [{ x: tx * 32, y: ty * 32 }],
+	});
 	queueAutoHire(group, tx, ty);
 	return true;
 }
 
 function autoAreasAsCoords(group: AutoGroup): CoordsXY[][] {
-	return autoAreas(group).map(function (a) { return a.coords; });
+	return autoAreas(group).map(function (a) {
+		return a.coords;
+	});
 }
 
 function applyAutoAreasToLive(group: AutoGroup): void {
@@ -145,21 +192,30 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 		const member = getLastStaffOfType(group.staffType);
 		if (member) {
 			const area = autoAreas(group)[autoAreas(group).length - 1];
-			if ("handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING && (member as Handyman).orders !== HANDYMAN_ORDERS_GARDENING) {
+			if (
+				"handyman" === group.staffType &&
+				group.orders === HANDYMAN_ORDERS_GARDENING &&
+				(member as Handyman).orders !== HANDYMAN_ORDERS_GARDENING
+			) {
 				(member as Handyman).orders = HANDYMAN_ORDERS_GARDENING;
 			}
 			area.member = member;
 			member.patrolArea.add(area.coords);
-			const z = "handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
-				? surfaceBaseZAt(tx, ty)
-				: footpathBaseZAt(tx, ty);
+			const z =
+				"handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
+					? surfaceBaseZAt(tx, ty)
+					: footpathBaseZAt(tx, ty);
 			// For a gardening area, avoid dropping the handyman onto a queue/fenced
 			// footpath (which now only occurs as a possible teleport tile when the tile
 			// itself is a path), so they can actually step onto the grass they are to mow.
 			let teleportX = tx;
 			let teleportY = ty;
 			let teleportZ = z;
-			if ("handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING && isQueueTile(tx, ty)) {
+			if (
+				"handyman" === group.staffType &&
+				group.orders === HANDYMAN_ORDERS_GARDENING &&
+				isQueueTile(tx, ty)
+			) {
 				const workTile = area.coords.find(function (c) {
 					const wx = Math.floor(c.x / 32);
 					const wy = Math.floor(c.y / 32);
@@ -180,16 +236,25 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			if (!isPeepPlaceableTile(teleportX, teleportY)) {
 				const fallback = findNearestPathInOrderedTiles(
 					area.coords.map(function (c): PathTileInfo {
-						return { x: Math.floor(c.x / 32), y: Math.floor(c.y / 32), baseHeight: 0, baseZ: 0, isQueue: false, neighbourKeys: [] };
+						return {
+							x: Math.floor(c.x / 32),
+							y: Math.floor(c.y / 32),
+							baseHeight: 0,
+							baseZ: 0,
+							isQueue: false,
+							neighbourKeys: [],
+						};
 					}),
-					teleportX, teleportY
+					teleportX,
+					teleportY,
 				);
 				if (fallback) {
 					teleportX = fallback.x;
 					teleportY = fallback.y;
-					teleportZ = "handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
-						? surfaceBaseZAt(teleportX, teleportY)
-						: footpathBaseZAt(teleportX, teleportY);
+					teleportZ =
+						"handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
+							? surfaceBaseZAt(teleportX, teleportY)
+							: footpathBaseZAt(teleportX, teleportY);
 				}
 			}
 			teleportStaffToTile(member, teleportX, teleportY, teleportZ);
@@ -227,12 +292,7 @@ function getFootpathBaseZFromTile(tile: Tile): number[] {
 // Handles one freshly placed path/queue tile for the given staff type's patroling.
 // `isQueue` boolean determines path vs queue handling; queue tiles are only handled by
 // handymen (cleanup) and entertainers (if the Queue toggle is on).
-function handlePathTileForType(
-	staffType: StaffType,
-	orders: number,
-	tx: number,
-	ty: number
-): void {
+function handlePathTileForType(staffType: StaffType, orders: number, tx: number, ty: number): void {
 	const group = groupForPathTile(staffType, orders);
 	handleTileForGroup(group, tx, ty);
 	refreshHiredAndAssignedStaffCounts();
@@ -338,7 +398,10 @@ function hireAndAssignMechanicForExit(ex: number, ey: number, fx: number, fy: nu
 			return;
 		}
 		const member = mechanics[mechanics.length - 1];
-		member.patrolArea.add([{ x: ex * 32, y: ey * 32 }, { x: fx * 32, y: fy * 32 }]);
+		member.patrolArea.add([
+			{ x: ex * 32, y: ey * 32 },
+			{ x: fx * 32, y: fy * 32 },
+		]);
 		if (canTeleportMechanic(member)) {
 			teleportStaffToTile(member, fx, fy, footpathBaseZAt(fx, fy));
 		}

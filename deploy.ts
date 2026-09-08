@@ -17,7 +17,12 @@ function windowsDocumentsDir(): string {
 	try {
 		const output = execFileSync(
 			"reg",
-			["query", String.raw`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders`, "/v", "Personal"],
+			[
+				"query",
+				String.raw`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders`,
+				"/v",
+				"Personal",
+			],
 			{ encoding: "utf8" },
 		);
 		const match = /Personal\s+REG_(?:EXPAND_)?SZ\s+(.+)/.exec(output);

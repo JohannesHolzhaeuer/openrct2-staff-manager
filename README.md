@@ -15,21 +15,21 @@ entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
 (re)assign** staff so the right number always patrol the right places — sending
 each staff member to their **nearest** free zone.
 
-
 ---
 
 ## Features
 
 ### 🧹 Path staff — Handymen, Guards, Entertainers
+
 - **One area per staff member.** The park's pathways are split into contiguous
   patrol areas and one is assigned to each staff member.
 - **Nearest‑zone assignment.** Every staff member is matched to the **closest free
   zone** to where they currently stand, minimising walking.
 - **Only relevant paths.** Path counting walks the real footpath graph from the
   **park entrance** and keeps only tiles on **park‑owned land** — so unusable
-  public streets (e.g. *Bumbly Beach*) are ignored.
+  public streets (e.g. _Bumbly Beach_) are ignored.
 - **Configurable density.** A spinner sets how many tiles each staff member should
-  cover; the stats table shows *Hired · Needed · Difference* per type.
+  cover; the stats table shows _Hired · Needed · Difference_ per type.
 - **Handymen split in two.** Handymen are classified by their orders:
   - **Cleanup** handymen patrol the **path and queue** network.
   - **Gardening** handymen water and **mow** the park's grass/scenery tiles,
@@ -38,7 +38,9 @@ each staff member to their **nearest** free zone.
   centre of its area (onto a real, safely‑placeable path/queue tile).
 
 ### 🎭 Entertainers — dedicated options
+
 Entertainers have their own controls instead of the generic density spinner:
+
 - **Tiles / Staff** — how many tiles each entertainer covers.
 - **Staff / Area** — how many entertainers share each area; **> 1 = overlapping**
   (the area grows so the tiles‑per‑staff density is preserved). Defaults to 2.
@@ -46,6 +48,7 @@ Entertainers have their own controls instead of the generic density spinner:
   entertainers can keep queuing guests happy instead of only patrolling plain paths.
 
 ### 🔧 Mechanics
+
 - **One mechanic per ride exit.** Each mechanic patrols the exit tile plus the
   path tile directly in front of it (chosen by checking every cardinal neighbour
   for an actual footpath, rather than trusting the exit's stored facing direction).
@@ -53,6 +56,7 @@ Entertainers have their own controls instead of the generic density spinner:
   teleported or interrupted; they keep their patrol area but finish their job first.
 
 ### 🤖 Automatic management
+
 - **Optional auto mode.** A toggle at the bottom of the window keeps staffing
   right-sized as the park changes, without pressing the buttons. New staff are only
   hired (or an existing area extended) when appropriate — see
@@ -68,23 +72,25 @@ Entertainers have their own controls instead of the generic density spinner:
   assign" has been run once.
 
 ### 👥 Hire / Fire
+
 - **Adjust and assign** button hires or fires the right number of **every** type
-  at once to match the calculated *Needed* counts — hiring when understaffed,
+  at once to match the calculated _Needed_ counts — hiring when understaffed,
   firing staff when overstaffed — and then rebuilds the patrol areas.
 - **Oldest staff first.** Surplus staff are fired oldest‑first for a stable,
   consistent result.
 
 ### 🖥️ UI & behaviour
-- One resizable window with a **scan summary** at the top — *Paths*, *Queues*,
-  *Garden*, *Ride exits* and *Owned tiles* — refreshed by every run.
-- Four staff groups (*Handymen*, *Guards*, *Mechanics*, *Entertainers*), each with
-  an **Enabled** toggle, its own spinners and a *Hired / Needed / Difference*
+
+- One resizable window with a **scan summary** at the top — _Paths_, _Queues_,
+  _Garden_, _Ride exits_ and _Owned tiles_ — refreshed by every run.
+- Four staff groups (_Handymen_, _Guards_, _Mechanics_, _Entertainers_), each with
+  an **Enabled** toggle, its own spinners and a _Hired / Needed / Difference_
   stat table. Handymen have separate **Cleanup** and **Gardening** spinners;
   mechanics need no spinner because they are derived from the ride exits.
 - **Adjust and assign** builds every type's patrol areas from the most recently
   scanned tiles and teleports one staff member to the start of each new area.
 - A **segmented progress bar** with a status line below it reports the current
-  stage, e.g. *Adjusting staff count...*, *Assigning guards...*, *Done*.
+  stage, e.g. _Adjusting staff count..._, _Assigning guards..._, _Done_.
 - A toggle at the bottom shows **Automatic assignment is ON/OFF** next to a
   red/green indicator.
 - Staff teleports are **serialised through a single queue**, because OpenRCT2 only
@@ -146,6 +152,11 @@ official OpenRCT2 plugin API typings and is installed as a dev dependency via `n
   covers plugin source, tests and build tooling (`deploy.ts`) without being
   tied to a specific TypeScript compiler version. Run `npm run lint` on its
   own any time.
+- **Consistent formatting.** `npm run build` also runs `npm run format:check`
+  (`oxfmt --check .`, configured in `.oxfmtrc.json`), the matching Rust-based
+  formatter for oxlint. Run `npm run format` to format the codebase in place,
+  or `npm run format:check` to only verify it. A Husky `pre-commit` hook runs
+  the check automatically before every commit.
 
 ### Tests
 
@@ -176,14 +187,14 @@ typecheck → bundle → deploy), or alone via `npm run test`.
 1. **Open the window** from the toolbox menu.
 2. For each staff type, tick the **Enabled** checkbox to include it.
 3. Click **Adjust and assign** to hire/fire the right number of each type based
-   on your settings (this is what fills the *Needed* column) and to build the
+   on your settings (this is what fills the _Needed_ column) and to build the
    patrol areas and move staff into them. The progress bar and status line show
    how far the pass has got.
 4. Tune the per-type spinners (handyman cleanup/gardening density, guard and
    entertainer tiles/staff, entertainer staff/area, entertainer Queue checkbox)
    and run it again as your park changes.
-5. Optionally **enable automatic management** (the *Automatic assignment is
-   ON/OFF* toggle at the bottom of the window) so
+5. Optionally **enable automatic management** (the _Automatic assignment is
+   ON/OFF_ toggle at the bottom of the window) so
    the plugin keeps hiring/firing and assigning staff as you connect new paths or buy new
    land — see [Automatic staffing](#automatic-staffing-1).
 
@@ -264,15 +275,15 @@ Near the top of `src/config.ts` the default tunables are defined (and the
 initial values are assigned to the stores in `src/store.ts`). They're exposed
 directly in the UI, but their initial defaults live in code:
 
-| Store (default) | Purpose |
-| --- | --- |
-| `handymenTilesPerStaffStore` (8) | Path/queue tiles per cleanup handyman |
-| `handymenMowerTilesPerStaffStore` (256) | Garden tiles per gardening handyman |
-| `guardsTilesPerStaffStore` (16) | Plain path tiles per guard |
-| `entertainersTilesPerStaffStore` (16) | Tiles per entertainer |
-| `entertainersPerAreaStore` (2) | Entertainers assigned per area |
-| `entertainersIncludeQueueStore` (true) | Whether entertainers patrol queues |
-| `*EnabledStore` (true) | Whether each staff type is managed |
+| Store (default)                         | Purpose                               |
+| --------------------------------------- | ------------------------------------- |
+| `handymenTilesPerStaffStore` (8)        | Path/queue tiles per cleanup handyman |
+| `handymenMowerTilesPerStaffStore` (256) | Garden tiles per gardening handyman   |
+| `guardsTilesPerStaffStore` (16)         | Plain path tiles per guard            |
+| `entertainersTilesPerStaffStore` (16)   | Tiles per entertainer                 |
+| `entertainersPerAreaStore` (2)          | Entertainers assigned per area        |
+| `entertainersIncludeQueueStore` (true)  | Whether entertainers patrol queues    |
+| `*EnabledStore` (true)                  | Whether each staff type is managed    |
 
 ---
 

@@ -32,5 +32,6 @@
     <None Include=".github\workflows\ci.yml" />
     <None Include=".github\workflows\release.yml" />
     <None Include=".husky\commit-msg" />
+    <None Include=".husky\pre-commit" />
   </ItemGroup>
 </Project>

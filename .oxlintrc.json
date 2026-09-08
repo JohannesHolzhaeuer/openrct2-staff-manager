@@ -28,17 +28,14 @@
     "eslint/init-declarations": "off",
     "eslint/sort-imports": "off",
     "unicorn/filename-case": "off",
-    "unicorn/no-null": "off"
+    "unicorn/no-null": "off",
+    "unicorn/number-literal-case": "off"
   },
   "env": {
     "es2023": true,
     "node": true
   },
-  "ignorePatterns": [
-    "dist/**",
-    "node_modules/**",
-    "coverage/**"
-  ],
+  "ignorePatterns": ["dist/**", "node_modules/**", "coverage/**"],
   "overrides": [
     {
       "files": ["deploy.ts"],
