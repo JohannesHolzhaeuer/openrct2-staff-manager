@@ -5,6 +5,10 @@
 
 ![Staff Manager screenshot](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/raw/main/screenshot.png)
 
+> **Requires OpenRCT2 ≥ 0.5.5.** Patrol-area zoning, nearest-zone assignment and
+> mechanic exit detection rely on the `PathNavigator`/`PathConnection` plugin API
+> introduced in that release, so the plugin will not run on older OpenRCT2 builds.
+
 An [OpenRCT2](https://openrct2.org/) plugin that automates park staff management:
 it splits your paths (and ride **queues**) among **handymen, security guards and
 entertainers**, assigns **mechanics** to ride exits, and can **hire, fire and
@@ -21,9 +25,9 @@ each staff member to their **nearest** free zone.
   patrol areas and one is assigned to each staff member.
 - **Nearest‑zone assignment.** Every staff member is matched to the **closest free
   zone** to where they currently stand, minimising walking.
-- **Only relevant paths.** Path counting uses a flood‑fill from the **park
-  entrance** and keeps only tiles on **park‑owned land** — so unusable public
-  streets (e.g. *Bumbly Beach*) are ignored.
+- **Only relevant paths.** Path counting walks the real footpath graph from the
+  **park entrance** and keeps only tiles on **park‑owned land** — so unusable
+  public streets (e.g. *Bumbly Beach*) are ignored.
 - **Configurable density.** A spinner sets how many tiles each staff member should
   cover; the stats table shows *Hired · Needed · Difference* per type.
 - **Handymen split in two.** Handymen are classified by their orders:
@@ -95,6 +99,11 @@ This plugin is written in TypeScript against the community-maintained
 [`@openrct2/types`](https://www.npmjs.com/package/@openrct2/types) package, which provides
 official OpenRCT2 plugin API typings and is installed as a dev dependency via `npm install`
 (no vendored `.d.ts` file is checked into this repository).
+
+> **Minimum OpenRCT2 version: 0.5.5.** Patrol-area zoning, nearest-zone assignment and
+> mechanic exit detection are built on the `PathNavigator`/`PathConnection` plugin API
+> introduced in that release (see ["How it decides which tiles count"](#how-it-decides-which-tiles-count)),
+> so the plugin no longer runs on older OpenRCT2 builds.
 
 ### Prerequisites
 
@@ -184,14 +193,21 @@ typecheck → bundle → deploy), or alone via `npm run test`.
 
 1. **Scan** every tile for footpaths (incl. queue flag), surface ownership and
    the park entrance.
-2. **Flood‑fill** from the park entrance across connected footpath **edges**.
+2. **Walk the real footpath graph** from the park entrance using the engine's
+   `PathNavigator`/`PathConnection` API ([`src/paths/pathGraph.ts`](src/paths/pathGraph.ts)):
+   two tiles are only treated as connected when the engine itself reports a
+   `PathConnection` between them, which already accounts for slopes, height
+   offsets and queue/regular separation — a bridge path and the path passing
+   underneath it are never merged just because they share the same x/y.
 3. **Keep** only reachable tiles on **owned land**, split into **paths** and
    **queues**.
 4. **Scan gardening tiles** — tiles with mowable grass or waterable scenery —
    grouped into connected components.
 5. **Match** staff to the **nearest** zone (paths, or paths+queues for
    entertainers with the Queue checkbox on), or into fixed‑size overlapping areas for
-   entertainers. Mechanics get the exit tile plus the adjacent path tile.
+   entertainers. Mechanics get the exit tile plus the path tile a `PathNavigator`
+   query from the exit reports as connected, rather than a plain cardinal-neighbour
+   probe, so this also resolves correctly across slopes.
 
 If the entrance can't be found, it falls back to seeding from owned path tiles.
 
@@ -223,12 +239,17 @@ tile. It's disabled until "Adjust and assign" has been run once.
 - **Mechanic dispatch:**
   dispatched to, so “busy” is inferred from the mechanic not standing on a
   footpath tile.
-- **Patrol areas are height‑ and water‑aware.** Tiles are only linked into the
-  same patrol area when actually walkable between each other (matching path/slope
-  heights, no unclimbable height differences, never through water), so an area is
+- **Patrol areas are height‑ and water‑aware.** Path tiles are only linked into the
+  same patrol area when the engine's `PathNavigator` reports a real `PathConnection`
+  between them, and gardening tiles when actually walkable between each other
+  (no unclimbable height differences, never through water), so an area is
   always one contiguous, fully reachable region. If there are more disconnected
   pockets than staff to cover them, the largest pockets are covered first rather
   than merging areas a staff member couldn't actually walk across.
+- **Path graph caching.** The footpath graph built from `PathNavigator` is cached and
+  reused across zoning, nearest-zone assignment and mechanic detection within a single
+  "Adjust and assign" pass, and is invalidated automatically whenever a game action that
+  can change it runs (placing/removing paths or banners, changing land rights).
 - **Teleport vs. patrol:** a staff member's patrol area is always built in full,
   but the physical teleport target is the **nearest safely‑placeable** path tile,
   since the game rejects placement on obstructed tiles (benches, scenery, queue TV,

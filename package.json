@@ -23,7 +23,7 @@
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
     "@commitlint/types": "^21.2.0",
-    "@openrct2/types": "^0.5.4",
+    "@openrct2/types": "^0.5.5",
     "@types/node": "^26.4.0",
     "@vitest/coverage-v8": "^5.0.0",
     "esbuild": "^0.28.2",
