@@ -13,7 +13,7 @@ import {
 	pathTilesConnected,
 	resetPathGraphCacheForTests,
 	splitIntoZones,
-} from "../src/paths/pathGraph";
+} from "../src/paths/path-graph";
 
 let ctx: FakeContext;
 const isIncluded = function isIncluded(): boolean {

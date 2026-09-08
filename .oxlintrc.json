@@ -27,7 +27,7 @@
     "eslint/no-continue": "off",
     "eslint/init-declarations": "off",
     "eslint/sort-imports": "off",
-    "unicorn/filename-case": "off",
+    "unicorn/filename-case": "error",
     "unicorn/no-null": "off",
     "unicorn/number-literal-case": "error"
   },
