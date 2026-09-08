@@ -35,18 +35,18 @@ const realGameMap: GameMap = {
 
 let current: GameMap = realGameMap;
 
-export function gameMap(): GameMap {
+export const gameMap = function gameMap(): GameMap {
 	return current;
-}
+};
 
 // Test seam only. Production code must never call this.
-export function setGameMap(replacement: GameMap): void {
+export const setGameMap = function setGameMap(replacement: GameMap): void {
 	current = replacement;
-}
+};
 
-export function resetGameMap(): void {
+export const resetGameMap = function resetGameMap(): void {
 	current = realGameMap;
-}
+};
 
 // --- Game context -------------------------------------------------------------
 // The part of the OpenRCT2 `context` global the plugin uses: tick scheduling,
@@ -87,18 +87,18 @@ const realGameContext: GameContext = {
 
 let currentContext: GameContext = realGameContext;
 
-export function gameContext(): GameContext {
+export const gameContext = function gameContext(): GameContext {
 	return currentContext;
-}
+};
 
 // Test seam only. Production code must never call this.
-export function setGameContext(replacement: GameContext): void {
+export const setGameContext = function setGameContext(replacement: GameContext): void {
 	currentContext = replacement;
-}
+};
 
-export function resetGameContext(): void {
+export const resetGameContext = function resetGameContext(): void {
 	currentContext = realGameContext;
-}
+};
 
 // --- Object manager -----------------------------------------------------------
 // Only the loaded-object lookup used to pick staff costumes.
@@ -114,15 +114,15 @@ const realGameObjects: GameObjects = {
 
 let currentObjects: GameObjects = realGameObjects;
 
-export function gameObjects(): GameObjects {
+export const gameObjects = function gameObjects(): GameObjects {
 	return currentObjects;
-}
+};
 
 // Test seam only. Production code must never call this.
-export function setGameObjects(replacement: GameObjects): void {
+export const setGameObjects = function setGameObjects(replacement: GameObjects): void {
 	currentObjects = replacement;
-}
+};
 
-export function resetGameObjects(): void {
+export const resetGameObjects = function resetGameObjects(): void {
 	currentObjects = realGameObjects;
-}
+};

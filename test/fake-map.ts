@@ -25,7 +25,7 @@ export interface FakeTileSpec {
 	others?: TileElementType[];
 }
 
-function toElements(spec: FakeTileSpec): TileElement[] {
+const toElements = function toElements(spec: FakeTileSpec): TileElement[] {
 	const elements: TileElement[] = [];
 	if (spec.surface) {
 		elements.push({
@@ -51,24 +51,24 @@ function toElements(spec: FakeTileSpec): TileElement[] {
 		elements.push({ type: type } as unknown as TileElement);
 	}
 	return elements;
-}
+};
 
 // Builds a GameMap backed by a plain "x,y" -> tile-spec dictionary, so the
 // scanning helpers can be exercised without the OpenRCT2 globals. Tiles that
 // were not specified come back empty.
-export function fakeMap(
+export const fakeMap = function fakeMap(
 	size: CoordsXY,
 	tiles: { [key: string]: FakeTileSpec } = {},
 	extras: { rides?: Ride[]; staff?: Staff[] } = {},
 ): GameMap {
 	const rides = extras.rides ?? [];
 	const staff = extras.staff ?? [];
-	function footpathsAt(x: number, y: number): FakeFootpath[] {
+	const footpathsAt = function footpathsAt(x: number, y: number): FakeFootpath[] {
 		const spec = (tiles as { [key: string]: FakeTileSpec | undefined })[
 			String(x) + "," + String(y)
 		];
 		return spec?.footpaths ?? [];
-	}
+	};
 
 	// Derives a minimal PathNavigator from the fake tile data so tests can
 	// exercise pathGraph.ts against the same fixtures used for the rest of
@@ -76,7 +76,7 @@ export function fakeMap(
 	// is reported to a cardinal neighbour whenever any footpath on this tile
 	// and any footpath on the neighbour meet at the same edge height,
 	// matching the real engine's own connectivity rule.
-	function getPathNavigator(
+	const getPathNavigator = function getPathNavigator(
 		position: CoordsXYZ,
 		options?: PathNavigationOptions,
 	): PathNavigator | null {
@@ -90,7 +90,7 @@ export function fakeMap(
 		}
 		const hereBaseZ = here.baseZ;
 		const hereSlopeDirection = here.slopeDirection ?? null;
-		function connectedPaths(): PathConnection[] {
+		const connectedPaths = function connectedPaths(): PathConnection[] {
 			const result: PathConnection[] = [];
 			for (let d = 0; d < CARDINAL_NEIGHBOUR_OFFSETS.length; d++) {
 				const offset = DIRECTION_OFFSETS[d];
@@ -123,7 +123,7 @@ export function fakeMap(
 				}
 			}
 			return result;
-		}
+		};
 		return {
 			current: {
 				position: { x: x * 32, y: y * 32, z: here.baseZ },
@@ -145,7 +145,7 @@ export function fakeMap(
 				return false;
 			},
 		};
-	}
+	};
 
 	return {
 		size: size,
@@ -166,10 +166,10 @@ export function fakeMap(
 		},
 		getPathNavigator: getPathNavigator,
 	};
-}
+};
 
 // A minimal staff entity for getAllEntities("staff") based lookups. `orders`
 // only matters for handymen, where it decides cleanup vs gardening.
-export function fakeStaff(id: number, staffType: StaffType, orders = 0): Staff {
+export const fakeStaff = function fakeStaff(id: number, staffType: StaffType, orders = 0): Staff {
 	return { id: id, staffType: staffType, orders: orders } as unknown as Staff;
-}
+};

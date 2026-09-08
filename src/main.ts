@@ -1,14 +1,14 @@
 import { initAuto } from "./auto";
 import { openWindow } from "./ui";
 
-function main(): void {
+const main = function main(): void {
 	if ("undefined" !== typeof ui) {
 		ui.registerMenuItem("Staff Manager", function openStaffManagerWindow() {
 			openWindow();
 		});
 	}
 	initAuto();
-}
+};
 
 registerPlugin({
 	name: "Staff Manager",

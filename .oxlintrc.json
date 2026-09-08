@@ -19,17 +19,7 @@
     "unicorn/no-anonymous-default-export": "error",
     "unicorn/no-process-exit": "error",
     "eslint/no-magic-numbers": "off",
-    "eslint/func-style": "off",
-    "eslint/sort-keys": "off",
-    "eslint/func-names": "error",
-    "eslint/no-ternary": "error",
-    "eslint/max-params": "error",
-    "eslint/no-continue": "error",
-    "eslint/init-declarations": "error",
-    "eslint/sort-imports": "error",
-    "unicorn/filename-case": "error",
-    "unicorn/no-null": "error",
-    "unicorn/number-literal-case": "error"
+    "eslint/sort-keys": "off"
   },
   "env": {
     "es2023": true,

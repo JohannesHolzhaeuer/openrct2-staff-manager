@@ -14,7 +14,7 @@ const FALLBACK_LANGUAGE = "en-GB";
 // Resolves the player's UI language via context.configuration, falling back
 // to en-GB on any failure (older API versions, missing key, unknown
 // language, etc.) so the plugin never crashes or shows a blank UI.
-function detectLanguage(): string {
+const detectLanguage = function detectLanguage(): string {
 	try {
 		const language = context.configuration.get<string>("general.language", FALLBACK_LANGUAGE);
 		if (language && Object.hasOwn(translations, language)) {
@@ -24,7 +24,7 @@ function detectLanguage(): string {
 		// Ignore - fall back to English below.
 	}
 	return FALLBACK_LANGUAGE;
-}
+};
 
 // Resolved lazily (on every call, not cached) rather than at module load
 // time: calling context.configuration at bundle-evaluation time - before the
@@ -34,16 +34,16 @@ function detectLanguage(): string {
 // result after the first lookup) also means a language change made in the
 // game's options takes effect the next time the window is (re)opened,
 // without requiring a plugin reload.
-function getDict(): Translations {
+const getDict = function getDict(): Translations {
 	const activeLanguage = detectLanguage();
 	return translations[activeLanguage];
-}
+};
 
 // Typed translation helper. Supports positional placeholders {0}, {1}, ...
 // for dynamic values (numbers/currency/dates should be formatted via
 // context.formatString before being passed in). Falls back from the active
 // language, to en-GB, to the raw key - it never throws or returns blank.
-export function t(key: TranslationKey, ...args: (string | number)[]): string {
+export const t = function t(key: TranslationKey, ...args: (string | number)[]): string {
 	const s = getDict()[key];
 	return args.reduce<string>((acc, a, i) => acc.replaceAll(`{${String(i)}}`, String(a)), s);
-}
+};

@@ -17,9 +17,9 @@ let ctx: FakeContext = new FakeContext();
 // world coordinates (32 units per tile) of the tile used for path placements.
 const PATH_TILE_WORLD = { x: 160, y: 160 };
 
-function fireAction(action: string, args: { [key: string]: unknown }): void {
+const fireAction = function fireAction(action: string, args: { [key: string]: unknown }): void {
 	ctx.actionExecuteCallback?.({ action: action, args: args } as unknown as GameActionEventArgs);
-}
+};
 
 beforeEach(() => {
 	ctx = new FakeContext();

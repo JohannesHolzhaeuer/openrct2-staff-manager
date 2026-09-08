@@ -115,7 +115,7 @@ const autoAreasByPurpose = new Map<string, AutoArea[]>();
 // are serialized one at a time instead of one per tile.
 const autoHireForPurpose = new Map<string, boolean>();
 
-function autoAreas(group: AutoGroup): AutoArea[] {
+const autoAreas = function autoAreas(group: AutoGroup): AutoArea[] {
 	let list = autoAreasByPurpose.get(group.purpose);
 	if (!list) {
 		list = [];
@@ -130,18 +130,26 @@ function autoAreas(group: AutoGroup): AutoArea[] {
 		autoAreasByPurpose.set(group.purpose, list);
 	}
 	return list;
-}
+};
 
-function autoAddTileToArea(group: AutoGroup, areaIndex: number, tile: CoordsXY): void {
+const autoAddTileToArea = function autoAddTileToArea(
+	group: AutoGroup,
+	areaIndex: number,
+	tile: CoordsXY,
+): void {
 	const area = autoAreas(group)[areaIndex];
 	if (area.tileKeys.has(tileKey(tile.x, tile.y))) {
 		return;
 	}
 	area.tileKeys.add(tileKey(tile.x, tile.y));
 	area.coords.push({ x: tile.x * 32, y: tile.y * 32 });
-}
+};
 
-function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
+const handleTileForGroup = function handleTileForGroup(
+	group: AutoGroup,
+	tx: number,
+	ty: number,
+): boolean {
 	const areas = autoAreas(group);
 	const list = autoAreasAsCoords(group);
 	const decision = decideAreaAction({
@@ -165,33 +173,37 @@ function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
 	});
 	queueAutoHire(group, tx, ty);
 	return true;
-}
+};
 
-function autoAreasAsCoords(group: AutoGroup): CoordsXY[][] {
+const autoAreasAsCoords = function autoAreasAsCoords(group: AutoGroup): CoordsXY[][] {
 	return autoAreas(group).map(function areaCoords(a) {
 		return a.coords;
 	});
-}
+};
 
-function applyAutoAreasToLive(group: AutoGroup): void {
+const applyAutoAreasToLive = function applyAutoAreasToLive(group: AutoGroup): void {
 	for (const area of autoAreas(group)) {
 		if (area.member) {
 			area.member.patrolArea.add(area.coords);
 		}
 	}
-}
+};
 
 // The teleport height for a member of the given auto group at (tx, ty):
 // surface height for gardening handymen (so they land on the grass to mow),
 // or footpath height otherwise.
-function teleportZForGroup(group: AutoGroup, tx: number, ty: number): number {
+const teleportZForGroup = function teleportZForGroup(
+	group: AutoGroup,
+	tx: number,
+	ty: number,
+): number {
 	if ("handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING) {
 		return surfaceBaseZAt(tx, ty);
 	}
 	return footpathBaseZAt(tx, ty);
-}
+};
 
-function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
+const queueAutoHire = function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 	if (autoHireForPurpose.get(group.purpose)) {
 		return;
 	}
@@ -270,27 +282,27 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			refreshHiredAndAssignedStaffCounts();
 		},
 	);
-}
+};
 
-function getLastStaffOfType(staffType: StaffType): Staff | undefined {
+const getLastStaffOfType = function getLastStaffOfType(staffType: StaffType): Staff | undefined {
 	const members = getStaffByType(staffType);
 	if (0 < members.length) {
 		return members[members.length - 1];
 	}
 	return undefined;
-}
+};
 
 // The baseZ of the footpath on a tile, if any (used as a teleport height).
-function footpathBaseZAt(tx: number, ty: number): number {
+const footpathBaseZAt = function footpathBaseZAt(tx: number, ty: number): number {
 	const tile = gameMap().getTile(tx, ty);
 	for (const member of getFootpathBaseZFromTile(tile)) {
 		return member;
 	}
 	return 0;
-}
+};
 
 // Returns an array with the baseZ of the first footpath element on the tile.
-function getFootpathBaseZFromTile(tile: Tile): number[] {
+const getFootpathBaseZFromTile = function getFootpathBaseZFromTile(tile: Tile): number[] {
 	const result: number[] = [];
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
@@ -299,19 +311,26 @@ function getFootpathBaseZFromTile(tile: Tile): number[] {
 		}
 	}
 	return result;
-}
+};
 
 // Handles one freshly placed path/queue tile for the given staff type's patroling.
 // `isQueue` boolean determines path vs queue handling; queue tiles are only handled by
 // handymen (cleanup) and entertainers (if the Queue toggle is on).
-function handlePathTileForType(staffType: StaffType, orders: number, tile: CoordsXY): void {
+const handlePathTileForType = function handlePathTileForType(
+	staffType: StaffType,
+	orders: number,
+	tile: CoordsXY,
+): void {
 	const group = groupForPathTile(staffType, orders);
 	handleTileForGroup(group, tile.x, tile.y);
 	refreshHiredAndAssignedStaffCounts();
-}
+};
 
 // Maps a staff type + orders to its persistent auto-mode group.
-function groupForPathTile(staffType: StaffType, orders: number): AutoGroup {
+const groupForPathTile = function groupForPathTile(
+	staffType: StaffType,
+	orders: number,
+): AutoGroup {
 	if ("handyman" === staffType) {
 		if (orders === HANDYMAN_ORDERS_GARDENING) {
 			return AUTO_GROUP_GARDENING;
@@ -322,10 +341,14 @@ function groupForPathTile(staffType: StaffType, orders: number): AutoGroup {
 		return AUTO_GROUP_GUARD;
 	}
 	return AUTO_GROUP_ENTERTAINER;
-}
+};
 
 // Handles a freshly placed path/queue tile for all relevant staff types.
-export function handlePlacedPathTile(tx: number, ty: number, isQueue: boolean): void {
+export const handlePlacedPathTile = function handlePlacedPathTile(
+	tx: number,
+	ty: number,
+	isQueue: boolean,
+): void {
 	// Mechanics: if a ride exit is on an adjacent tile, assign a mechanic.
 	handleMechanicForAdjacentExit(tx, ty);
 
@@ -351,11 +374,11 @@ export function handlePlacedPathTile(tx: number, ty: number, isQueue: boolean): 
 	if (entertainersEnabledStore.get()) {
 		handlePathTileForType("entertainer", 0, { x: tx, y: ty });
 	}
-}
+};
 
 // Handles a newly bought land tile: if it becomes a garden tile, apply the
 // gardening-handyman enlarge-vs-hire rule.
-export function handleBoughtLandTile(tx: number, ty: number): void {
+export const handleBoughtLandTile = function handleBoughtLandTile(tx: number, ty: number): void {
 	if (!handymenEnabledStore.get()) {
 		return;
 	}
@@ -364,11 +387,14 @@ export function handleBoughtLandTile(tx: number, ty: number): void {
 	}
 	handleTileForGroup(AUTO_GROUP_GARDENING, tx, ty);
 	refreshHiredAndAssignedStaffCounts();
-}
+};
 
 // If a ride exit sits on a tile adjacent to the given path tile and no mechanic is
 // assigned there yet, hire+assign a mechanic covering (exit tile + this tile).
-function handleMechanicForAdjacentExit(tx: number, ty: number): void {
+const handleMechanicForAdjacentExit = function handleMechanicForAdjacentExit(
+	tx: number,
+	ty: number,
+): void {
 	if (!mechanicsEnabledStore.get()) {
 		return;
 	}
@@ -384,10 +410,10 @@ function handleMechanicForAdjacentExit(tx: number, ty: number): void {
 			return;
 		}
 	}
-}
+};
 
 // Whether a ride exit element sits on the given tile.
-function isRideExitOnTile(tx: number, ty: number): boolean {
+const isRideExitOnTile = function isRideExitOnTile(tx: number, ty: number): boolean {
 	const rides = gameMap().rides;
 	for (const ride of rides) {
 		const stations = ride.stations;
@@ -401,11 +427,14 @@ function isRideExitOnTile(tx: number, ty: number): boolean {
 		}
 	}
 	return false;
-}
+};
 
 // Hires one mechanic and assigns a patrol area covering the exit tile and the given
 // path tile in front of it.
-function hireAndAssignMechanicForExit(exitTile: CoordsXY, frontTile: CoordsXY): void {
+const hireAndAssignMechanicForExit = function hireAndAssignMechanicForExit(
+	exitTile: CoordsXY,
+	frontTile: CoordsXY,
+): void {
 	hireStaff(
 		{ staffTypeId: STAFF_TYPE_ID_MECHANIC, orders: MECHANIC_ORDERS_DEFAULT, countToHire: 1 },
 		function onMechanicHired() {
@@ -428,4 +457,4 @@ function hireAndAssignMechanicForExit(exitTile: CoordsXY, frontTile: CoordsXY): 
 			refreshHiredAndAssignedStaffCounts();
 		},
 	);
-}
+};

@@ -38,7 +38,7 @@ export interface PathGraph {
 
 // Returns every path tile directly reachable from (x, y, z) according to the
 // engine, or an empty array if there is no footpath there at all.
-export function getConnectedPaths(
+export const getConnectedPaths = function getConnectedPaths(
 	position: CoordsXYZ,
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
 ): PathConnection[] {
@@ -50,13 +50,13 @@ export function getConnectedPaths(
 		return [];
 	}
 	return navigator.getConnectedPaths();
-}
+};
 
 // Whether the engine reports a real PathConnection from `from` to `to`. This
 // is the graph-based replacement for the old manual baseZ/slope arithmetic:
 // it defers entirely to the engine's own notion of walkability instead of
 // re-deriving it from tile-element fields.
-export function pathTilesConnected(
+export const pathTilesConnected = function pathTilesConnected(
 	from: CoordsXYZ,
 	to: CoordsXY,
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
@@ -71,7 +71,7 @@ export function pathTilesConnected(
 		}
 	}
 	return false;
-}
+};
 
 // Builds the connected footpath network reachable from `start`, restricted
 // to tiles for which `isIncluded` returns true (e.g. park-owned, non-queue
@@ -79,7 +79,7 @@ export function pathTilesConnected(
 // adjacency, so islands separated by height (bridges, cliffs) or missing
 // connections are never merged, and tiles unreachable from `start` are
 // simply never visited (see findUnreachableTiles below for surfacing that).
-export function buildNetwork(
+export const buildNetwork = function buildNetwork(
 	start: PathGraphNode,
 	isIncluded: (x: number, y: number) => boolean,
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
@@ -110,12 +110,15 @@ export function buildNetwork(
 		edges.set(currentKey, neighbourKeys);
 	}
 	return { nodes: nodes, edges: edges };
-}
+};
 
 // Unweighted shortest-path distances (in tile hops) from `sourceKey` to every
 // node reachable from it within `graph`. Used both to rank staff-to-zone
 // assignment by real walking distance and to find a graph-central tile.
-export function graphDistances(graph: PathGraph, sourceKey: string): Map<string, number> {
+export const graphDistances = function graphDistances(
+	graph: PathGraph,
+	sourceKey: string,
+): Map<string, number> {
 	const distances = new Map<string, number>();
 	if (!graph.nodes.has(sourceKey)) {
 		return distances;
@@ -134,13 +137,17 @@ export function graphDistances(graph: PathGraph, sourceKey: string): Map<string,
 		}
 	}
 	return distances;
-}
+};
 
 // The graph-hop distance between two nodes, or Infinity if `toKey` is not
 // reachable from `fromKey` within the graph.
-export function graphDistance(graph: PathGraph, fromKey: string, toKey: string): number {
+export const graphDistance = function graphDistance(
+	graph: PathGraph,
+	fromKey: string,
+	toKey: string,
+): number {
 	return graphDistances(graph, fromKey).get(toKey) ?? Infinity;
-}
+};
 
 // Splits every node of `graph` into `zoneCount` connected groups of roughly
 // equal size, by growing regions along real graph edges (a multi-source BFS
@@ -148,7 +155,10 @@ export function graphDistance(graph: PathGraph, fromKey: string, toKey: string):
 // by geometric position. Every returned zone is therefore guaranteed to be
 // walkable in one piece; unreachable tiles are never included since they are
 // never part of `graph` in the first place (see buildNetwork).
-export function splitIntoZones(graph: PathGraph, zoneCount: number): string[][] {
+export const splitIntoZones = function splitIntoZones(
+	graph: PathGraph,
+	zoneCount: number,
+): string[][] {
 	const keys = [...graph.nodes.keys()];
 	if (1 >= zoneCount || 0 === keys.length) {
 		if (0 === keys.length) {
@@ -207,12 +217,16 @@ export function splitIntoZones(graph: PathGraph, zoneCount: number): string[][] 
 		zones[entry[1]].push(entry[0]);
 	}
 	return zones;
-}
+};
 
 // Finds the index of the zone closest to `fromKey` by real graph distance
 // (BFS over PathConnections), skipping zones that are unreachable from the
 // starting tile entirely. Returns -1 if none of the zones are reachable.
-export function nearestZoneIndex(graph: PathGraph, fromKey: string, zones: string[][]): number {
+export const nearestZoneIndex = function nearestZoneIndex(
+	graph: PathGraph,
+	fromKey: string,
+	zones: string[][],
+): number {
 	const distances = graphDistances(graph, fromKey);
 	let bestIndex = -1;
 	let bestDistance = Infinity;
@@ -226,14 +240,14 @@ export function nearestZoneIndex(graph: PathGraph, fromKey: string, zones: strin
 		}
 	}
 	return bestIndex;
-}
+};
 
 // The tile key of `start` if it is already a node of `graph`, otherwise the
 // key of the closest node in `graph` by graph distance from a small BFS seeded
 // at `start`'s raw neighbours. Used to snap a staff member who is standing on
 // a tile outside the scanned network (e.g. mid-teleport) onto the nearest
 // reachable node before measuring zone distance.
-export function snapToNetwork(
+export const snapToNetwork = function snapToNetwork(
 	graph: PathGraph,
 	start: PathGraphNode,
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
@@ -252,13 +266,16 @@ export function snapToNetwork(
 		}
 	}
 	return undefined;
-}
+};
 
 // The most graph-central node among `keys`
 // hop distance to every other tile in the set), used to place staff "in the
 // middle" of their zone instead of at its geometric centroid, which can fall
 // on an unreachable or off-network tile for an L-shaped or branching zone.
-export function centralTile(graph: PathGraph, keys: string[]): string | undefined {
+export const centralTile = function centralTile(
+	graph: PathGraph,
+	keys: string[],
+): string | undefined {
 	if (0 === keys.length) {
 		return undefined;
 	}
@@ -279,7 +296,7 @@ export function centralTile(graph: PathGraph, keys: string[]): string | undefine
 		}
 	}
 	return bestKey;
-}
+};
 
 // Finds the footpath tile a ride exit leads onto by asking the engine for a
 // PathNavigator at each candidate tile in turn (preferred direction first),
@@ -288,7 +305,7 @@ export function centralTile(graph: PathGraph, keys: string[]): string | undefine
 // candidate is really the path in front of the exit, so it works across
 // slopes/height offsets that a plain "is there a footpath here" check
 // cannot distinguish from an unrelated path at a different level.
-export function exitToPathTile(
+export const exitToPathTile = function exitToPathTile(
 	exitTile: CoordsXYZ,
 	orderedOffsets: CoordsXY[],
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
@@ -305,7 +322,7 @@ export function exitToPathTile(
 		}
 	}
 	return undefined;
-}
+};
 
 // --- Cache -----------------------------------------------------------------
 // Building the network can require one PathNavigator query per tile, which
@@ -331,11 +348,11 @@ const GRAPH_INVALIDATING_ACTIONS = new Set<string>([
 	"landsetrights",
 ]);
 
-export function invalidatePathGraphCache(): void {
+export const invalidatePathGraphCache = function invalidatePathGraphCache(): void {
 	cachedGraph = undefined;
-}
+};
 
-function ensureInvalidationSubscribed(): void {
+const ensureInvalidationSubscribed = function ensureInvalidationSubscribed(): void {
 	if (invalidationSubscription) {
 		return;
 	}
@@ -347,18 +364,18 @@ function ensureInvalidationSubscribed(): void {
 			}
 		},
 	);
-}
+};
 
 // Test seam only: lets tests reset the module's cache/subscription between
 // runs without needing a real game context.
-export function resetPathGraphCacheForTests(): void {
+export const resetPathGraphCacheForTests = function resetPathGraphCacheForTests(): void {
 	cachedGraph = undefined;
 	invalidationSubscription = undefined;
-}
+};
 
 // Returns the cached network rooted at `start`, building (and subscribing to
 // invalidating actions) it on first use or after the cache was invalidated.
-export function getCachedNetwork(
+export const getCachedNetwork = function getCachedNetwork(
 	start: PathGraphNode,
 	isIncluded: (x: number, y: number) => boolean,
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
@@ -366,4 +383,4 @@ export function getCachedNetwork(
 	ensureInvalidationSubscribed();
 	cachedGraph ??= buildNetwork(start, isIncluded, options);
 	return cachedGraph;
-}
+};

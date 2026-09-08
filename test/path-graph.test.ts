@@ -31,9 +31,9 @@ afterEach(() => {
 	resetPathGraphCacheForTests();
 });
 
-function fireAction(action: string): void {
+const fireAction = function fireAction(action: string): void {
 	ctx.actionExecuteCallback?.({ action: action, args: {} } as unknown as GameActionEventArgs);
-}
+};
 
 describe("pathTilesConnected", () => {
 	it("reports a connection reachable via getConnectedPaths", () => {
