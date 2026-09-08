@@ -99,15 +99,14 @@ export function buildNetwork(
 		for (const connection of getConnectedPaths(current.x, current.y, current.z, options)) {
 			const nx = Math.floor(connection.position.x / 32);
 			const ny = Math.floor(connection.position.y / 32);
-			if (!isIncluded(nx, ny)) {
-				continue;
-			}
-			const key = tileKey(nx, ny);
-			neighbourKeys.push(key);
-			if (!nodes.has(key)) {
-				const node = { x: nx, y: ny, z: connection.position.z };
-				nodes.set(key, node);
-				queue.push(node);
+			if (isIncluded(nx, ny)) {
+				const key = tileKey(nx, ny);
+				neighbourKeys.push(key);
+				if (!nodes.has(key)) {
+					const node = { x: nx, y: ny, z: connection.position.z };
+					nodes.set(key, node);
+					queue.push(node);
+				}
 			}
 		}
 		edges.set(currentKey, neighbourKeys);

@@ -31,11 +31,10 @@ function dedupeTiles(
 	const result: { x: number; y: number; kind: "path" | "queue" | "land" }[] = [];
 	for (const tile of tiles) {
 		const key = String(tile.x) + ":" + String(tile.y) + ":" + tile.kind;
-		if (seen.has(key)) {
-			continue;
+		if (!seen.has(key)) {
+			seen.add(key);
+			result.push(tile);
 		}
-		seen.add(key);
-		result.push(tile);
 	}
 	return result;
 }

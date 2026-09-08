@@ -24,7 +24,7 @@
     "eslint/func-names": "off",
     "eslint/no-ternary": "off",
     "eslint/max-params": "off",
-    "eslint/no-continue": "off",
+    "eslint/no-continue": "error",
     "eslint/init-declarations": "off",
     "eslint/sort-imports": "off",
     "unicorn/filename-case": "error",

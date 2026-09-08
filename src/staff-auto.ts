@@ -360,15 +360,14 @@ function handleMechanicForAdjacentExit(tx: number, ty: number): void {
 	for (const offset of ADJACENT_OFFSETS) {
 		const ex = tx + worldToTileX(offset.x);
 		const ey = ty + worldToTileX(offset.y);
-		if (!isRideExitOnTile(ex, ey)) {
-			continue;
-		}
-		if (isExitAlreadyAssigned(ex, ey)) {
+		if (isRideExitOnTile(ex, ey)) {
+			if (isExitAlreadyAssigned(ex, ey)) {
+				return;
+			}
+			// Hire one mechanic and assign (exit + this path tile).
+			hireAndAssignMechanicForExit(ex, ey, tx, ty);
 			return;
 		}
-		// Hire one mechanic and assign (exit + this path tile).
-		hireAndAssignMechanicForExit(ex, ey, tx, ty);
-		return;
 	}
 }
 

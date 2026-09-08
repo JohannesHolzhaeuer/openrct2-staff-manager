@@ -104,24 +104,23 @@ export function findParkEntranceTiles(): CoordsXY[] {
 	for (let x = 0; x < mapSize.x; x++) {
 		for (let y = 0; y < mapSize.y; y++) {
 			const tileKey = String(x) + "," + String(y);
-			if (rideEntranceExitTileKeys.has(tileKey)) {
-				continue;
-			}
-			const tile = gameMap().getTile(x, y);
-			for (let e = 0; e < tile.numElements; e++) {
-				const element = tile.getElement(e);
-				// Any "entrance" tile element left after excluding ride entrance/exit
-				// tiles (built from map.rides[*].stations[*].entrance/exit) must be a
-				// park entrance. The element's "ride" id is not a reliable sentinel,
-				// since a park entrance can share a ride id with an unrelated ride.
-				// A park entrance spans 3 tiles (two side "legs" plus a middle tile);
-				// only the middle tile (sequence 0) has the footpath that leads into
-				// the park, so only that tile is reported/used as the entrance.
-				if ("entrance" === element.type && 0 === element.sequence) {
-					parkEntranceTiles.push({ x: x, y: y });
-					// At most one park entrance element with sequence 0 can sit on a
-					// tile, so the remaining elements cannot add anything.
-					break;
+			if (!rideEntranceExitTileKeys.has(tileKey)) {
+				const tile = gameMap().getTile(x, y);
+				for (let e = 0; e < tile.numElements; e++) {
+					const element = tile.getElement(e);
+					// Any "entrance" tile element left after excluding ride entrance/exit
+					// tiles (built from map.rides[*].stations[*].entrance/exit) must be a
+					// park entrance. The element's "ride" id is not a reliable sentinel,
+					// since a park entrance can share a ride id with an unrelated ride.
+					// A park entrance spans 3 tiles (two side "legs" plus a middle tile);
+					// only the middle tile (sequence 0) has the footpath that leads into
+					// the park, so only that tile is reported/used as the entrance.
+					if ("entrance" === element.type && 0 === element.sequence) {
+						parkEntranceTiles.push({ x: x, y: y });
+						// At most one park entrance element with sequence 0 can sit on a
+						// tile, so the remaining elements cannot add anything.
+						break;
+					}
 				}
 			}
 		}
@@ -422,108 +421,107 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): {
 		}
 
 		if (
-			0 > current.x ||
-			0 > current.y ||
-			current.x >= gameMap().size.x ||
-			current.y >= gameMap().size.y
+			0 <= current.x &&
+			0 <= current.y &&
+			current.x < gameMap().size.x &&
+			current.y < gameMap().size.y
 		) {
-			continue;
-		}
+			// Tiles that are not owned by the park (or under construction rights
+			// only), e.g. the public road/path leading up to the entrance from
+			// outside the park, are not included in the resulting path/queue
+			// tile lists (so patrol areas/mowing never extend onto land the
+			// park doesn't own) - but if such a tile still has a footpath on it,
+			// the walk passes *through* it to reach further tiles beyond, since
+			// otherwise a single unowned path tile (e.g. the entrance's own
+			// approach path, which sits right between the map edge and the
+			// park's owned network) would incorrectly split the footpath
+			// network into separate "disconnected" halves, causing patrol areas
+			// built from them to leave a gap in the middle. Unowned non-path
+			// tiles (e.g. surrounding land/water) are still dead ends, so the
+			// walk doesn't spread across the whole map.
+			const footpaths = findFootpathElements(current.x, current.y);
 
-		// Tiles that are not owned by the park (or under construction rights
-		// only), e.g. the public road/path leading up to the entrance from
-		// outside the park, are not included in the resulting path/queue
-		// tile lists (so patrol areas/mowing never extend onto land the
-		// park doesn't own) - but if such a tile still has a footpath on it,
-		// the walk passes *through* it to reach further tiles beyond, since
-		// otherwise a single unowned path tile (e.g. the entrance's own
-		// approach path, which sits right between the map edge and the
-		// park's owned network) would incorrectly split the footpath
-		// network into separate "disconnected" halves, causing patrol areas
-		// built from them to leave a gap in the middle. Unowned non-path
-		// tiles (e.g. surrounding land/water) are still dead ends, so the
-		// walk doesn't spread across the whole map.
-		const footpaths = findFootpathElements(current.x, current.y);
+			for (const footpath of footpaths) {
+				// Only step onto this path if it actually meets the path we came
+				// from at the same height.
+				if (
+					undefined === current.z ||
+					footpathEdgeZ(footpath, current.fromDirection) === current.z
+				) {
+					const nodeKey =
+						String(current.x) + "," + String(current.y) + "," + String(footpath.baseZ);
+					if (!visited.has(nodeKey)) {
+						visited.add(nodeKey);
 
-		for (const footpath of footpaths) {
-			// Only step onto this path if it actually meets the path we came
-			// from at the same height.
-			if (undefined !== current.z && footpathEdgeZ(footpath, current.fromDirection) !== current.z) {
-				continue;
-			}
-
-			const nodeKey = String(current.x) + "," + String(current.y) + "," + String(footpath.baseZ);
-			if (visited.has(nodeKey)) {
-				continue;
-			}
-			visited.add(nodeKey);
-
-			const key = tileKey(current.x, current.y);
-			const ownedOrElevated =
-				isParkOwnedTile(current.x, current.y) || isElevatedFootpath(current.x, current.y, footpath);
-			let info = tilesByKey.get(key);
-			if (ownedOrElevated && !info) {
-				info = {
-					x: current.x,
-					y: current.y,
-					baseHeight: footpath.baseHeight,
-					baseZ: footpath.baseZ,
-					isQueue: footpath.isQueue,
-					neighbourKeys: [],
-				};
-				tilesByKey.set(key, info);
-				if (footpath.isQueue) {
-					queueTiles.push(info);
-				} else {
-					pathTiles.push(info);
-				}
-				allTiles.push(info);
-			}
-
-			for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
-				const offset = DIRECTION_OFFSETS[d];
-				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
-				const connects = pathTilesConnected(
-					current.x,
-					current.y,
-					footpath.baseZ,
-					neighbour.x,
-					neighbour.y,
-				);
-				if (!connects) {
-					continue;
-				}
-				const edgeZ = footpathEdgeZ(footpath, d);
-				// Record the walkable link between the two tiles (both ends,
-				// once both tiles are known to be part of the park's network).
-				// Guard by height: a tile can carry stacked footpaths at different
-				// heights (e.g. underground and overground crossing), which are separate
-				// walkable nodes. Only the node matching this tile's recorded baseZ may
-				// contribute links - otherwise a single tile whose two stacked paths belong to
-				// different networks would bridge them, merging into one unreachable area.
-				if (info !== undefined) {
-					if (info.baseZ === footpath.baseZ) {
-						const neighbourKey = tileKey(neighbour.x, neighbour.y);
-						if (!info.neighbourKeys.includes(neighbourKey)) {
-							info.neighbourKeys.push(neighbourKey);
+						const key = tileKey(current.x, current.y);
+						const ownedOrElevated =
+							isParkOwnedTile(current.x, current.y) ||
+							isElevatedFootpath(current.x, current.y, footpath);
+						let info = tilesByKey.get(key);
+						if (ownedOrElevated && !info) {
+							info = {
+								x: current.x,
+								y: current.y,
+								baseHeight: footpath.baseHeight,
+								baseZ: footpath.baseZ,
+								isQueue: footpath.isQueue,
+								neighbourKeys: [],
+							};
+							tilesByKey.set(key, info);
+							if (footpath.isQueue) {
+								queueTiles.push(info);
+							} else {
+								pathTiles.push(info);
+							}
+							allTiles.push(info);
 						}
-						const neighbourInfo = tilesByKey.get(neighbourKey);
-						if (neighbourInfo !== undefined) {
-							if (
-								neighbourInfo.baseZ === footpath.baseZ &&
-								!neighbourInfo.neighbourKeys.includes(key)
-							) {
-								neighbourInfo.neighbourKeys.push(key);
+
+						for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
+							const offset = DIRECTION_OFFSETS[d];
+							const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
+							const connects = pathTilesConnected(
+								current.x,
+								current.y,
+								footpath.baseZ,
+								neighbour.x,
+								neighbour.y,
+							);
+							if (connects) {
+								const edgeZ = footpathEdgeZ(footpath, d);
+								// Record the walkable link between the two tiles (both ends,
+								// once both tiles are known to be part of the park's network).
+								// Guard by height: a tile can carry stacked footpaths at different
+								// heights (e.g. underground and overground crossing), which are separate
+								// walkable nodes. Only the node matching this tile's recorded baseZ may
+								// contribute links - otherwise a single tile whose two stacked paths belong to
+								// different networks would bridge them, merging into one unreachable area.
+								if (info !== undefined) {
+									if (info.baseZ === footpath.baseZ) {
+										const neighbourKey = tileKey(neighbour.x, neighbour.y);
+										if (!info.neighbourKeys.includes(neighbourKey)) {
+											info.neighbourKeys.push(neighbourKey);
+										}
+										const neighbourInfo = tilesByKey.get(neighbourKey);
+										if (neighbourInfo !== undefined) {
+											if (
+												neighbourInfo.baseZ === footpath.baseZ &&
+												!neighbourInfo.neighbourKeys.includes(key)
+											) {
+												neighbourInfo.neighbourKeys.push(key);
+											}
+										}
+									}
+								}
+								stack.push({
+									x: neighbour.x,
+									y: neighbour.y,
+									z: edgeZ,
+									fromDirection: oppositeDirection(d),
+								});
 							}
 						}
 					}
 				}
-				stack.push({
-					x: neighbour.x,
-					y: neighbour.y,
-					z: edgeZ,
-					fromDirection: oppositeDirection(d),
-				});
 			}
 		}
 	}
@@ -647,47 +645,44 @@ function newGardeningSweepState(): GardeningSweepState {
 function scanGardeningColumn(x: number, state: GardeningSweepState): void {
 	const mapSize = gameMap().size;
 	for (let y = 0; y < mapSize.y; y++) {
-		if (!isParkOwnedTile(x, y)) {
-			continue;
-		}
-		state.ownedTiles++;
+		if (isParkOwnedTile(x, y)) {
+			state.ownedTiles++;
 
-		const tile = gameMap().getTile(x, y);
-		const surface = findSurfaceElement(tile);
-		const tileKeyStr = tileKey(x, y);
-		if (hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
-			continue;
-		}
-		const footpaths = findFootpathElementsOnTile(tile);
-		if (0 < footpaths.length) {
-			// An owned plain (non-queue) footpath tile is a walkable connector: it
-			// is not mowed itself, but it lets a gardener walk across it and join
-			// garden areas that a path would otherwise split. Queue tiles are NOT
-			// connectors - a queue has railing/fencing the gardener cannot step off
-			// onto the adjacent grass, so they are excluded here (and being footpaths
-			// they were never counted as garden work anyway).
-			const hasPlainPath = footpaths.some(function (fp) {
-				return !fp.isQueue;
-			});
-			if (!hasPlainPath) {
-				continue;
+			const tile = gameMap().getTile(x, y);
+			const surface = findSurfaceElement(tile);
+			const tileKeyStr = tileKey(x, y);
+			if (!hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
+				const footpaths = findFootpathElementsOnTile(tile);
+				if (0 < footpaths.length) {
+					// An owned plain (non-queue) footpath tile is a walkable connector: it
+					// is not mowed itself, but it lets a gardener walk across it and join
+					// garden areas that a path would otherwise split. Queue tiles are NOT
+					// connectors - a queue has railing/fencing the gardener cannot step off
+					// onto the adjacent grass, so they are excluded here (and being footpaths
+					// they were never counted as garden work anyway).
+					const hasPlainPath = footpaths.some(function (fp) {
+						return !fp.isQueue;
+					});
+					if (hasPlainPath) {
+						state.connectorKeys.add(tileKeyStr);
+					}
+				} else {
+					// A tile is mowable only if its surface is a grass-family style
+					// and isn't submerged under water (waterHeight === 0): a tile
+					// can be "grass" styled and still have water on top of it, but
+					// staff can't stand on water to mow/water it.
+					// grassLength itself is not tested: it is always a valid number
+					// for any surface, so the old ">= 0" check filtered nothing, and
+					// only grass surfaces actually grow long grass that needs mowing.
+					const isMowable =
+						isLandSurface(surface) && state.grassStyleIndices.has(surface.surfaceStyle);
+					const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
+					if (isMowable || isWaterable) {
+						state.gardenTiles++;
+						state.isGardenTile.add(tileKeyStr);
+					}
+				}
 			}
-			state.connectorKeys.add(tileKeyStr);
-			continue;
-		}
-
-		// A tile is mowable only if its surface is a grass-family style
-		// and isn't submerged under water (waterHeight === 0): a tile
-		// can be "grass" styled and still have water on top of it, but
-		// staff can't stand on water to mow/water it.
-		// grassLength itself is not tested: it is always a valid number
-		// for any surface, so the old ">= 0" check filtered nothing, and
-		// only grass surfaces actually grow long grass that needs mowing.
-		const isMowable = isLandSurface(surface) && state.grassStyleIndices.has(surface.surfaceStyle);
-		const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
-		if (isMowable || isWaterable) {
-			state.gardenTiles++;
-			state.isGardenTile.add(tileKeyStr);
 		}
 	}
 }
@@ -751,34 +746,32 @@ function groupGardeningTiles(state: GardeningSweepState): {
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
 				const neighbourKey = tileKey(neighbour.x, neighbour.y);
 				// Walk on to any walkable node (garden work or connector footpath tile).
-				if (!walkKeys.has(neighbourKey)) {
-					continue;
-				}
-				// Two neighbouring land tiles only belong to the same area if
-				// staff can actually walk between them: a difference of more
-				// than one height level (2 baseHeight steps, the most a
-				// sloped tile can span) means a cliff/wall of terrain that
-				// cannot be climbed, so the tiles must end up in separate
-				// areas rather than in one patrol area a handyman gets stuck
-				// in.
 				if (
-					!surfacesConnect(surface, findSurfaceElement(gameMap().getTile(neighbour.x, neighbour.y)))
+					walkKeys.has(neighbourKey) &&
+					// Two neighbouring land tiles only belong to the same area if
+					// staff can actually walk between them: a difference of more
+					// than one height level (2 baseHeight steps, the most a
+					// sloped tile can span) means a cliff/wall of terrain that
+					// cannot be climbed, so the tiles must end up in separate
+					// areas rather than in one patrol area a handyman gets stuck
+					// in.
+					surfacesConnect(
+						surface,
+						findSurfaceElement(gameMap().getTile(neighbour.x, neighbour.y)),
+					) &&
+					// A park fence or path railing on either side of the shared edge blocks
+					// walking between the two tiles, so they must remain separate areas.
+					!surfaceFenceBlocksWalking(current.x, current.y, neighbour.x, neighbour.y)
 				) {
-					continue;
-				}
-				// A park fence or path railing on either side of the shared edge blocks
-				// walking between the two tiles, so they must remain separate areas.
-				if (surfaceFenceBlocksWalking(current.x, current.y, neighbour.x, neighbour.y)) {
-					continue;
-				}
-				info.neighbourKeys.push(neighbourKey);
-				const neighbourInfo = componentByKey.get(neighbourKey);
-				if (neighbourInfo && !neighbourInfo.neighbourKeys.includes(currentKey)) {
-					neighbourInfo.neighbourKeys.push(currentKey);
-				}
-				if (!visited.has(neighbourKey)) {
-					visited.add(neighbourKey);
-					stack.push(neighbour);
+					info.neighbourKeys.push(neighbourKey);
+					const neighbourInfo = componentByKey.get(neighbourKey);
+					if (neighbourInfo && !neighbourInfo.neighbourKeys.includes(currentKey)) {
+						neighbourInfo.neighbourKeys.push(currentKey);
+					}
+					if (!visited.has(neighbourKey)) {
+						visited.add(neighbourKey);
+						stack.push(neighbour);
+					}
 				}
 			}
 		}
@@ -820,13 +813,12 @@ export function countRideExits(): number {
 	const rides = gameMap().rides;
 	let count = 0;
 	for (const ride of rides) {
-		if ("ride" !== ride.classification) {
-			continue;
-		}
-		const stations = ride.stations;
-		for (const station of stations) {
-			if (isValidStationExit(station.exit)) {
-				count++;
+		if ("ride" === ride.classification) {
+			const stations = ride.stations;
+			for (const station of stations) {
+				if (isValidStationExit(station.exit)) {
+					count++;
+				}
 			}
 		}
 	}
