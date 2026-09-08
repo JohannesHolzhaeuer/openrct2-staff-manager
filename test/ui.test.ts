@@ -26,13 +26,19 @@ const { STORE_MARKER, makeStore } = vi.hoisted(() => {
 		return {
 			[marker]: true,
 			get: (): T => value,
-			set: (next: T): void => { value = next; }
+			set: (next: T): void => {
+				value = next;
+			},
 		};
 	}
 	return { STORE_MARKER: marker, makeStore: make };
 });
 
-interface FakeStore<T> { [k: symbol]: true; get(): T; set(value: T): void }
+interface FakeStore<T> {
+	[k: symbol]: true;
+	get(): T;
+	set(value: T): void;
+}
 
 vi.mock("openrct2-flexui", () => {
 	const passthrough = (config: unknown): unknown => config;
@@ -40,7 +46,7 @@ vi.mock("openrct2-flexui", () => {
 		window: (config: unknown): { open: () => void } => ({
 			open: (): void => {
 				openedWindows.push(config);
-			}
+			},
 		}),
 		box: passthrough,
 		horizontal: passthrough,
@@ -52,19 +58,24 @@ vi.mock("openrct2-flexui", () => {
 		toggle: passthrough,
 		graphics: passthrough,
 		compute: (...args: unknown[]): unknown => {
-			const stores = args.filter((a): a is FakeStore<unknown> => "object" === typeof a && null !== a && STORE_MARKER in a);
+			const stores = args.filter(
+				(a): a is FakeStore<unknown> => "object" === typeof a && null !== a && STORE_MARKER in a,
+			);
 			const fn = args.find((a): a is (...values: unknown[]) => unknown => "function" === typeof a);
 			if (!fn) {
 				throw new Error("compute() called without a combiner function");
 			}
-			return makeStore(fn(...stores.map(s => s.get())));
+			return makeStore(fn(...stores.map((s) => s.get())));
 		},
-		isStore: (value: unknown): boolean => "object" === typeof value && null !== value && STORE_MARKER in value,
-		store: (value: unknown): FakeStore<unknown> => makeStore(value)
+		isStore: (value: unknown): boolean =>
+			"object" === typeof value && null !== value && STORE_MARKER in value,
+		store: (value: unknown): FakeStore<unknown> => makeStore(value),
 	};
 });
 
-interface TestGlobal { ui?: { width: number; height: number } }
+interface TestGlobal {
+	ui?: { width: number; height: number };
+}
 const testGlobal = globalThis as unknown as TestGlobal;
 
 let ctx: FakeContext;
@@ -94,9 +105,20 @@ describe("openWindow", () => {
 	});
 
 	it("refreshes hired/assigned staff counts", async () => {
-		setGameMap(fakeMap({ x: 1, y: 1 }, {}, [], [
-			{ id: 1, staffType: "handyman", patrolArea: { tiles: [{ x: 0, y: 0 }] } } as unknown as Staff
-		]));
+		setGameMap(
+			fakeMap(
+				{ x: 1, y: 1 },
+				{},
+				[],
+				[
+					{
+						id: 1,
+						staffType: "handyman",
+						patrolArea: { tiles: [{ x: 0, y: 0 }] },
+					} as unknown as Staff,
+				],
+			),
+		);
 
 		const { openWindow } = await import("../src/ui");
 		openWindow();

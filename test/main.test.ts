@@ -8,7 +8,10 @@ interface TestGlobal {
 	registerPlugin?: (metadata: { main: () => void }) => void;
 	ui?: { registerMenuItem: (name: string, callback: () => void) => void };
 	context?: {
-		sharedStorage: { get: (key: string, fallback: unknown) => unknown; set: (key: string, value: unknown) => void };
+		sharedStorage: {
+			get: (key: string, fallback: unknown) => unknown;
+			set: (key: string, value: unknown) => void;
+		};
 		subscribe: (hook: string, callback: (event: unknown) => void) => { dispose: () => void };
 		configuration: { get: (key: string, fallback: string) => string };
 	};
@@ -26,12 +29,18 @@ beforeEach(() => {
 	testGlobal.context = {
 		sharedStorage: {
 			get: (_key: string, fallback: unknown): unknown => fallback,
-			set: (): void => { /* no-op */ }
+			set: (): void => {
+				/* no-op */
+			},
 		},
-		subscribe: (): { dispose: () => void } => ({ dispose: (): void => { /* no-op */ } }),
+		subscribe: (): { dispose: () => void } => ({
+			dispose: (): void => {
+				/* no-op */
+			},
+		}),
 		configuration: {
-			get: (_key: string, fallback: string): string => fallback
-		}
+			get: (_key: string, fallback: string): string => fallback,
+		},
 	};
 });
 

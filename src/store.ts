@@ -1,6 +1,4 @@
-import {
-	Store, compute, store as flexStore
-} from "openrct2-flexui";
+import { Store, compute, store as flexStore } from "openrct2-flexui";
 import {
 	DEFAULT_AUTO_ENABLED,
 	DEFAULT_ENTERTAINERS_ENABLED,
@@ -12,7 +10,7 @@ import {
 	DEFAULT_HANDYMEN_ENABLED,
 	DEFAULT_HANDYMEN_MOWER_TILES_PER_STAFF,
 	DEFAULT_HANDYMEN_TILES_PER_STAFF,
-	DEFAULT_MECHANICS_ENABLED
+	DEFAULT_MECHANICS_ENABLED,
 } from "./config";
 
 // --- Raw scan-result stores -------------------------------------------------
@@ -35,9 +33,13 @@ export const ownedTilesCountStore = flexStore<number>(0);
 
 // --- User settings stores ---------------------------------------------------
 export const handymenTilesPerStaffStore = flexStore<number>(DEFAULT_HANDYMEN_TILES_PER_STAFF);
-export const handymenMowerTilesPerStaffStore = flexStore<number>(DEFAULT_HANDYMEN_MOWER_TILES_PER_STAFF);
+export const handymenMowerTilesPerStaffStore = flexStore<number>(
+	DEFAULT_HANDYMEN_MOWER_TILES_PER_STAFF,
+);
 export const guardsTilesPerStaffStore = flexStore<number>(DEFAULT_GUARDS_TILES_PER_STAFF);
-export const entertainersTilesPerStaffStore = flexStore<number>(DEFAULT_ENTERTAINERS_TILES_PER_STAFF);
+export const entertainersTilesPerStaffStore = flexStore<number>(
+	DEFAULT_ENTERTAINERS_TILES_PER_STAFF,
+);
 export const entertainersPerAreaStore = flexStore<number>(DEFAULT_ENTERTAINERS_PER_AREA);
 export const entertainersIncludeQueueStore = flexStore<boolean>(DEFAULT_ENTERTAINERS_INCLUDE_QUEUE);
 
@@ -64,7 +66,9 @@ export const mechanicsAssignedStore = flexStore<number>(0);
 // Whether the tile counts have been calculated yet. Until this is true, all
 // spinners and stat text within the staff group boxes are disabled.
 export const tilesCalculatedStore = flexStore<boolean>(false);
-export const staffControlsDisabledStore = compute(tilesCalculatedStore, function (calculated) { return !calculated; });
+export const staffControlsDisabledStore = compute(tilesCalculatedStore, function (calculated) {
+	return !calculated;
+});
 
 // Text shown at the top of the window describing where the park entrance was
 // found (only used when no entrance is found; otherwise the top row shows a
@@ -90,18 +94,22 @@ export const hasRanAdjustAndAssignStore = flexStore<boolean>(false);
 // (key "staffManager.autoEnabled") via the auto.ts module, so it survives across
 // game/plugin launches. Loaded at startup from the saved value.
 export const autoEnabledStore = flexStore<boolean>(
-	 "undefined" !== typeof context
+	"undefined" !== typeof context
 		? context.sharedStorage.get("staffManager.autoEnabled.v1", DEFAULT_AUTO_ENABLED)
-		: DEFAULT_AUTO_ENABLED
+		: DEFAULT_AUTO_ENABLED,
 );
 
 // Per-staff-type "disabled" stores for the spinners/toggles/labels within
 // each staff group box: disabled whenever the general controls are disabled
 // (tiles not yet calculated) OR the staff type's own "Enabled" toggle is off.
 function controlsDisabledFor(enabled: Store<boolean>): Store<boolean> {
-	return compute(staffControlsDisabledStore, enabled, function (controlsDisabled: boolean, isEnabled: boolean) {
-		return controlsDisabled || !isEnabled;
-	});
+	return compute(
+		staffControlsDisabledStore,
+		enabled,
+		function (controlsDisabled: boolean, isEnabled: boolean) {
+			return controlsDisabled || !isEnabled;
+		},
+	);
 }
 export const handymenControlsDisabledStore = controlsDisabledFor(handymenEnabledStore);
 export const guardsControlsDisabledStore = controlsDisabledFor(guardsEnabledStore);
@@ -120,11 +128,19 @@ export function computeNeeded(totalTiles: number, tilesPerStaff: number): number
 // to mow/water the park's garden tiles (Gardening). These are tracked as
 // separate needed counts (used when hiring/firing specialised handymen) and
 // summed for the single "Needed" row shown in the UI.
-export const handymenCleanupNeededStore = compute(pathTilesCountStore, queueTilesCountStore, handymenTilesPerStaffStore, handymenEnabledStore,
+export const handymenCleanupNeededStore = compute(
+	pathTilesCountStore,
+	queueTilesCountStore,
+	handymenTilesPerStaffStore,
+	handymenEnabledStore,
 	function (path: number, queue: number, tilesPerStaff: number, enabled: boolean) {
 		return enabled ? computeNeeded(path + queue, tilesPerStaff) : 0;
-	});
-export const handymenGardeningNeededStore = compute(gardenAreaSizesStore, handymenMowerTilesPerStaffStore, handymenEnabledStore,
+	},
+);
+export const handymenGardeningNeededStore = compute(
+	gardenAreaSizesStore,
+	handymenMowerTilesPerStaffStore,
+	handymenEnabledStore,
 	function (areaSizes: number[], mowerTilesPerStaff: number, enabled: boolean) {
 		if (!enabled) {
 			return 0;
@@ -132,33 +148,65 @@ export const handymenGardeningNeededStore = compute(gardenAreaSizesStore, handym
 		// Sum of each area's own needed count, so every disconnected area
 		// gets at least one gardener (as long as it has any tiles), rather
 		// than allocating gardeners against the grand total tile count.
-		return areaSizes.reduce(function (sum, size) { return sum + computeNeeded(size, mowerTilesPerStaff); }, 0);
-	});
-export const handymenNeededStore = compute(handymenCleanupNeededStore, handymenGardeningNeededStore,
-	function (cleanup: number, gardening: number) { return cleanup + gardening; });
+		return areaSizes.reduce(function (sum, size) {
+			return sum + computeNeeded(size, mowerTilesPerStaff);
+		}, 0);
+	},
+);
+export const handymenNeededStore = compute(
+	handymenCleanupNeededStore,
+	handymenGardeningNeededStore,
+	function (cleanup: number, gardening: number) {
+		return cleanup + gardening;
+	},
+);
 
 // Guards only patrol plain pathway tiles, not queue tiles.
-export const guardsNeededStore = compute(pathTilesCountStore, guardsTilesPerStaffStore, guardsEnabledStore,
+export const guardsNeededStore = compute(
+	pathTilesCountStore,
+	guardsTilesPerStaffStore,
+	guardsEnabledStore,
 	function (path: number, tilesPerStaff: number, enabled: boolean) {
 		return enabled ? computeNeeded(path, tilesPerStaff) : 0;
-	});
+	},
+);
 
 // Entertainers patrol path tiles (and queue tiles, if the "Queue" toggle is
 // on), but multiple entertainers can be assigned to each patrol area.
 const entertainersNeededBaseStore = compute(
-	pathTilesCountStore, queueTilesCountStore, entertainersIncludeQueueStore, entertainersTilesPerStaffStore, entertainersPerAreaStore,
-	function (path: number, queue: number, includeQueue: boolean, tilesPerStaff: number, perArea: number) {
+	pathTilesCountStore,
+	queueTilesCountStore,
+	entertainersIncludeQueueStore,
+	entertainersTilesPerStaffStore,
+	entertainersPerAreaStore,
+	function (
+		path: number,
+		queue: number,
+		includeQueue: boolean,
+		tilesPerStaff: number,
+		perArea: number,
+	) {
 		const tiles = path + (includeQueue ? queue : 0);
 		return computeNeeded(tiles, tilesPerStaff) * Math.max(perArea, 0);
-	});
-export const entertainersNeededStore = compute(entertainersNeededBaseStore, entertainersEnabledStore,
-	function (needed: number, enabled: boolean) { return enabled ? needed : 0; });
+	},
+);
+export const entertainersNeededStore = compute(
+	entertainersNeededBaseStore,
+	entertainersEnabledStore,
+	function (needed: number, enabled: boolean) {
+		return enabled ? needed : 0;
+	},
+);
 
 // One mechanic is needed per ride exit in the park.
-export const mechanicsNeededStore = compute(rideExitCountStore, mechanicsEnabledStore,
-	function (rideExits: number, enabled: boolean) { return enabled ? rideExits : 0; });
+export const mechanicsNeededStore = compute(
+	rideExitCountStore,
+	mechanicsEnabledStore,
+	function (rideExits: number, enabled: boolean) {
+		return enabled ? rideExits : 0;
+	},
+);
 
 // The "Adjust and assign" button is intentionally never disabled: even when
 // every Needed count already matches its Hired count, the player may still
 // want to rebuild the patrol areas, so the action stays available at all times.
-

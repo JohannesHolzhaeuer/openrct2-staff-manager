@@ -16,7 +16,10 @@ import { tileKey } from "../scan";
 // at least one caller (entertainer "include queue" areas, mechanic exits
 // that sit on a queue); callers that must exclude them (e.g. handyman/guard
 // zoning) filter the resulting tiles themselves via `isIncluded`.
-export const DEFAULT_PATH_OPTIONS: PathNavigationOptions = { includeQueues: true, includeWidePaths: true };
+export const DEFAULT_PATH_OPTIONS: PathNavigationOptions = {
+	includeQueues: true,
+	includeWidePaths: true,
+};
 
 export interface PathGraphNode {
 	x: number;
@@ -35,7 +38,12 @@ export interface PathGraph {
 
 // Returns every path tile directly reachable from (x, y, z) according to the
 // engine, or an empty array if there is no footpath there at all.
-export function getConnectedPaths(x: number, y: number, z: number, options: PathNavigationOptions = DEFAULT_PATH_OPTIONS): PathConnection[] {
+export function getConnectedPaths(
+	x: number,
+	y: number,
+	z: number,
+	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
+): PathConnection[] {
 	const navigator = gameMap().getPathNavigator({ x: x * 32, y: y * 32, z: z }, options);
 	if (!navigator) {
 		return [];
@@ -47,10 +55,20 @@ export function getConnectedPaths(x: number, y: number, z: number, options: Path
 // fromZ) to (toX, toY). This is the graph-based replacement for the old
 // manual baseZ/slope arithmetic: it defers entirely to the engine's own
 // notion of walkability instead of re-deriving it from tile-element fields.
-export function pathTilesConnected(fromX: number, fromY: number, fromZ: number, toX: number, toY: number, options: PathNavigationOptions = DEFAULT_PATH_OPTIONS): boolean {
+export function pathTilesConnected(
+	fromX: number,
+	fromY: number,
+	fromZ: number,
+	toX: number,
+	toY: number,
+	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
+): boolean {
 	const targetKey = tileKey(toX, toY);
 	for (const connection of getConnectedPaths(fromX, fromY, fromZ, options)) {
-		if (tileKey(Math.floor(connection.position.x / 32), Math.floor(connection.position.y / 32)) === targetKey) {
+		if (
+			tileKey(Math.floor(connection.position.x / 32), Math.floor(connection.position.y / 32)) ===
+			targetKey
+		) {
 			return true;
 		}
 	}
@@ -63,7 +81,11 @@ export function pathTilesConnected(fromX: number, fromY: number, fromZ: number, 
 // adjacency, so islands separated by height (bridges, cliffs) or missing
 // connections are never merged, and tiles unreachable from `start` are
 // simply never visited (see findUnreachableTiles below for surfacing that).
-export function buildNetwork(start: PathGraphNode, isIncluded: (x: number, y: number) => boolean, options: PathNavigationOptions = DEFAULT_PATH_OPTIONS): PathGraph {
+export function buildNetwork(
+	start: PathGraphNode,
+	isIncluded: (x: number, y: number) => boolean,
+	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
+): PathGraph {
 	const nodes = new Map<string, PathGraphNode>();
 	const edges = new Map<string, string[]>();
 	const startKey = tileKey(start.x, start.y);
@@ -178,7 +200,9 @@ export function splitIntoZones(graph: PathGraph, zoneCount: number): string[][] 
 		}
 	}
 
-	const zones: string[][] = seeds.map(function () { return []; });
+	const zones: string[][] = seeds.map(function () {
+		return [];
+	});
 	for (const entry of zoneOfKey) {
 		zones[entry[1]].push(entry[0]);
 	}
@@ -209,13 +233,20 @@ export function nearestZoneIndex(graph: PathGraph, fromKey: string, zones: strin
 // at `start`'s raw neighbours. Used to snap a staff member who is standing on
 // a tile outside the scanned network (e.g. mid-teleport) onto the nearest
 // reachable node before measuring zone distance.
-export function snapToNetwork(graph: PathGraph, start: PathGraphNode, options: PathNavigationOptions = DEFAULT_PATH_OPTIONS): string | null {
+export function snapToNetwork(
+	graph: PathGraph,
+	start: PathGraphNode,
+	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
+): string | null {
 	const startKey = tileKey(start.x, start.y);
 	if (graph.nodes.has(startKey)) {
 		return startKey;
 	}
 	for (const connection of getConnectedPaths(start.x, start.y, start.z, options)) {
-		const key = tileKey(Math.floor(connection.position.x / 32), Math.floor(connection.position.y / 32));
+		const key = tileKey(
+			Math.floor(connection.position.x / 32),
+			Math.floor(connection.position.y / 32),
+		);
 		if (graph.nodes.has(key)) {
 			return key;
 		}
@@ -257,11 +288,20 @@ export function centralTile(graph: PathGraph, keys: string[]): string | null {
 // candidate is really the path in front of the exit, so it works across
 // slopes/height offsets that a plain "is there a footpath here" check
 // cannot distinguish from an unrelated path at a different level.
-export function exitToPathTile(exitTileX: number, exitTileY: number, exitZ: number, orderedOffsets: CoordsXY[], options: PathNavigationOptions = DEFAULT_PATH_OPTIONS): PathGraphNode | null {
+export function exitToPathTile(
+	exitTileX: number,
+	exitTileY: number,
+	exitZ: number,
+	orderedOffsets: CoordsXY[],
+	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
+): PathGraphNode | null {
 	for (const offset of orderedOffsets) {
 		const candidateX = exitTileX + offset.x;
 		const candidateY = exitTileY + offset.y;
-		const navigator = gameMap().getPathNavigator({ x: candidateX * 32, y: candidateY * 32, z: exitZ }, options);
+		const navigator = gameMap().getPathNavigator(
+			{ x: candidateX * 32, y: candidateY * 32, z: exitZ },
+			options,
+		);
 		if (navigator) {
 			return { x: candidateX, y: candidateY, z: navigator.current.position.z };
 		}
@@ -290,7 +330,7 @@ const GRAPH_INVALIDATING_ACTIONS = new Set<string>([
 	"footpathadditionremove",
 	"bannerplace",
 	"bannerremove",
-	"landsetrights"
+	"landsetrights",
 ]);
 
 export function invalidatePathGraphCache(): void {
@@ -301,11 +341,14 @@ function ensureInvalidationSubscribed(): void {
 	if (invalidationSubscription) {
 		return;
 	}
-	invalidationSubscription = gameContext().subscribe("action.execute", function (event: GameActionEventArgs) {
-		if (GRAPH_INVALIDATING_ACTIONS.has(event.action)) {
-			invalidatePathGraphCache();
-		}
-	});
+	invalidationSubscription = gameContext().subscribe(
+		"action.execute",
+		function (event: GameActionEventArgs) {
+			if (GRAPH_INVALIDATING_ACTIONS.has(event.action)) {
+				invalidatePathGraphCache();
+			}
+		},
+	);
 }
 
 // Test seam only: lets tests reset the module's cache/subscription between
@@ -317,7 +360,11 @@ export function resetPathGraphCacheForTests(): void {
 
 // Returns the cached network rooted at `start`, building (and subscribing to
 // invalidating actions) it on first use or after the cache was invalidated.
-export function getCachedNetwork(start: PathGraphNode, isIncluded: (x: number, y: number) => boolean, options: PathNavigationOptions = DEFAULT_PATH_OPTIONS): PathGraph {
+export function getCachedNetwork(
+	start: PathGraphNode,
+	isIncluded: (x: number, y: number) => boolean,
+	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
+): PathGraph {
 	ensureInvalidationSubscribed();
 	cachedGraph ??= buildNetwork(start, isIncluded, options);
 	return cachedGraph;

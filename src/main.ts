@@ -3,7 +3,9 @@ import { initAuto } from "./auto";
 
 function main(): void {
 	if ("undefined" !== typeof ui) {
-		ui.registerMenuItem("Staff Manager", function () { openWindow(); });
+		ui.registerMenuItem("Staff Manager", function () {
+			openWindow();
+		});
 	}
 	initAuto();
 }
@@ -16,5 +18,5 @@ registerPlugin({
 	licence: "MIT",
 	minApiVersion: 78,
 	targetApiVersion: 78,
-	main: main
+	main: main,
 });

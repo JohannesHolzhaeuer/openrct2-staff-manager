@@ -24,7 +24,9 @@ let isWorking = false;
 // duplicate would be handled separately (and, worse, could hire a fresh staff
 // member each time). Keeping the first occurrence per tile means each distinct
 // tile is handled exactly once per batch.
-function dedupeTiles(tiles: { x: number; y: number; kind: "path" | "queue" | "land" }[]): { x: number; y: number; kind: "path" | "queue" | "land" }[] {
+function dedupeTiles(
+	tiles: { x: number; y: number; kind: "path" | "queue" | "land" }[],
+): { x: number; y: number; kind: "path" | "queue" | "land" }[] {
 	const seen = new Set<string>();
 	const result: { x: number; y: number; kind: "path" | "queue" | "land" }[] = [];
 	for (const tile of tiles) {

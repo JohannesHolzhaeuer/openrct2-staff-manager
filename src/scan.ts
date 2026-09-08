@@ -1,8 +1,14 @@
 import { t } from "./i18n";
 import { gameContext, gameMap } from "./game";
 import {
-	gardenAreaSizesStore, gardenTilesCountStore, ownedTilesCountStore, parkEntranceInfoStore,
-	pathTilesCountStore, queueTilesCountStore, rideExitCountStore, tilesCalculatedStore
+	gardenAreaSizesStore,
+	gardenTilesCountStore,
+	ownedTilesCountStore,
+	parkEntranceInfoStore,
+	pathTilesCountStore,
+	queueTilesCountStore,
+	rideExitCountStore,
+	tilesCalculatedStore,
 } from "./store";
 import { pathTilesConnected } from "./paths/pathGraph";
 
@@ -39,7 +45,7 @@ export const CARDINAL_NEIGHBOUR_OFFSETS: CoordsXY[] = [
 	{ x: 0, y: -1 },
 	{ x: 1, y: 0 },
 	{ x: 0, y: 1 },
-	{ x: -1, y: 0 }
+	{ x: -1, y: 0 },
 ];
 // OpenRCT2 stores tile-element directions as 0=-X, 1=+Y, 2=+X, 3=-Y. This
 // ordering does NOT match CARDINAL_NEIGHBOUR_OFFSETS, so a stored direction
@@ -49,7 +55,7 @@ export const DIRECTION_OFFSETS: CoordsXY[] = [
 	{ x: -1, y: 0 },
 	{ x: 0, y: 1 },
 	{ x: 1, y: 0 },
-	{ x: 0, y: -1 }
+	{ x: 0, y: -1 },
 ];
 
 // --- Park entrance detection ---------------------------------------------------
@@ -72,11 +78,17 @@ function getRideEntranceExitTileKeys(): Set<string> {
 			// be null in practice (unused station slots), so guard before reading x/y.
 			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			if (station.entrance) {
-				tileKeys.add(String(Math.floor(station.entrance.x / 32)) + "," + String(Math.floor(station.entrance.y / 32)));
+				tileKeys.add(
+					String(Math.floor(station.entrance.x / 32)) +
+						"," +
+						String(Math.floor(station.entrance.y / 32)),
+				);
 			}
 			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			if (station.exit) {
-				tileKeys.add(String(Math.floor(station.exit.x / 32)) + "," + String(Math.floor(station.exit.y / 32)));
+				tileKeys.add(
+					String(Math.floor(station.exit.x / 32)) + "," + String(Math.floor(station.exit.y / 32)),
+				);
 			}
 		}
 	}
@@ -105,7 +117,7 @@ export function findParkEntranceTiles(): CoordsXY[] {
 				// A park entrance spans 3 tiles (two side "legs" plus a middle tile);
 				// only the middle tile (sequence 0) has the footpath that leads into
 				// the park, so only that tile is reported/used as the entrance.
-				if ("entrance" === element.type && 0 === (element).sequence) {
+				if ("entrance" === element.type && 0 === element.sequence) {
 					parkEntranceTiles.push({ x: x, y: y });
 					// At most one park entrance element with sequence 0 can sit on a
 					// tile, so the remaining elements cannot add anything.
@@ -166,7 +178,7 @@ function findFootpathElementsOnTile(tile: Tile): FootpathInfo[] {
 				baseZ: footpathElement.baseZ,
 				isQueue: footpathElement.isQueue,
 				slopeDirection: footpathElement.slopeDirection,
-				isGhost: footpathElement.isGhost
+				isGhost: footpathElement.isGhost,
 			});
 		}
 	}
@@ -187,7 +199,11 @@ function findFootpathElements(x: number, y: number): FootpathInfo[] {
 // (using OpenRCT2's 0=-X, 1=+Y, 2=+X, 3=-Y direction convention). A flat
 // path is at baseZ all around; a sloped path is at baseZ on three edges and
 // one level higher on the edge it slopes up towards.
-export function footpathEdgeZ(footpath: FootpathGeometry, direction: number, slopeHeight: number = FOOTPATH_SLOPE_HEIGHT): number {
+export function footpathEdgeZ(
+	footpath: FootpathGeometry,
+	direction: number,
+	slopeHeight: number = FOOTPATH_SLOPE_HEIGHT,
+): number {
 	return footpath.slopeDirection === direction ? footpath.baseZ + slopeHeight : footpath.baseZ;
 }
 
@@ -200,7 +216,11 @@ export function oppositeDirection(direction: number): number {
 // same height on their shared edge. This is what makes a patrol area
 // genuinely walkable - x/y adjacency alone would happily join a path on a
 // bridge to the path passing underneath it.
-export function footpathsConnect(from: FootpathGeometry, to: FootpathGeometry, direction: number): boolean {
+export function footpathsConnect(
+	from: FootpathGeometry,
+	to: FootpathGeometry,
+	direction: number,
+): boolean {
 	return footpathEdgeZ(from, direction) === footpathEdgeZ(to, oppositeDirection(direction));
 }
 
@@ -232,7 +252,7 @@ export function footpathsConnectTiles(tx: number, ty: number, nx: number, ny: nu
 export function surfaceTilesConnect(tx: number, ty: number, nx: number, ny: number): boolean {
 	return surfacesConnect(
 		findSurfaceElement(gameMap().getTile(tx, ty)),
-		findSurfaceElement(gameMap().getTile(nx, ny))
+		findSurfaceElement(gameMap().getTile(nx, ny)),
 	);
 }
 
@@ -254,7 +274,11 @@ const MAX_WALKABLE_HEIGHT_DIFFERENCE = 2;
 
 // Whether staff can walk between two neighbouring land tiles, i.e. whether
 // their terrain heights are close enough not to form an unclimbable step.
-export function surfacesConnect(from: { baseHeight: number; waterHeight: number } | null, to: { baseHeight: number; waterHeight: number } | null, maxDifference: number = MAX_WALKABLE_HEIGHT_DIFFERENCE): boolean {
+export function surfacesConnect(
+	from: { baseHeight: number; waterHeight: number } | null,
+	to: { baseHeight: number; waterHeight: number } | null,
+	maxDifference: number = MAX_WALKABLE_HEIGHT_DIFFERENCE,
+): boolean {
 	if (!from || !to || 0 !== from.waterHeight || 0 !== to.waterHeight) {
 		return false;
 	}
@@ -356,7 +380,11 @@ function isElevatedFootpath(x: number, y: number, footpath: { baseZ: number }): 
 // its raised side) are correctly treated as *not* connected. Each collected
 // tile records the tiles it is genuinely walkable to, so the patrol areas
 // built from these tiles later are contiguous by construction.
-function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: PathTileInfo[]; queueTiles: PathTileInfo[]; allTiles: PathTileInfo[] } {
+function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): {
+	pathTiles: PathTileInfo[];
+	queueTiles: PathTileInfo[];
+	allTiles: PathTileInfo[];
+} {
 	const pathTiles: PathTileInfo[] = [];
 	const queueTiles: PathTileInfo[] = [];
 	const allTiles: PathTileInfo[] = [];
@@ -379,7 +407,12 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 	// Seed the search with the tiles directly next to the entrance.
 	for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
 		const offset = DIRECTION_OFFSETS[d];
-		stack.push({ x: entranceTile.x + offset.x, y: entranceTile.y + offset.y, z: null, fromDirection: oppositeDirection(d) });
+		stack.push({
+			x: entranceTile.x + offset.x,
+			y: entranceTile.y + offset.y,
+			z: null,
+			fromDirection: oppositeDirection(d),
+		});
 	}
 
 	while (0 < stack.length) {
@@ -388,7 +421,12 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 			break;
 		}
 
-		if (0 > current.x || 0 > current.y || current.x >= gameMap().size.x || current.y >= gameMap().size.y) {
+		if (
+			0 > current.x ||
+			0 > current.y ||
+			current.x >= gameMap().size.x ||
+			current.y >= gameMap().size.y
+		) {
 			continue;
 		}
 
@@ -421,7 +459,8 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 			visited.add(nodeKey);
 
 			const key = tileKey(current.x, current.y);
-			const ownedOrElevated = isParkOwnedTile(current.x, current.y) || isElevatedFootpath(current.x, current.y, footpath);
+			const ownedOrElevated =
+				isParkOwnedTile(current.x, current.y) || isElevatedFootpath(current.x, current.y, footpath);
 			let info = tilesByKey.get(key);
 			if (ownedOrElevated && !info) {
 				info = {
@@ -430,7 +469,7 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 					baseHeight: footpath.baseHeight,
 					baseZ: footpath.baseZ,
 					isQueue: footpath.isQueue,
-					neighbourKeys: []
+					neighbourKeys: [],
 				};
 				tilesByKey.set(key, info);
 				if (footpath.isQueue) {
@@ -444,7 +483,13 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 			for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
 				const offset = DIRECTION_OFFSETS[d];
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
-				const connects = pathTilesConnected(current.x, current.y, footpath.baseZ, neighbour.x, neighbour.y);
+				const connects = pathTilesConnected(
+					current.x,
+					current.y,
+					footpath.baseZ,
+					neighbour.x,
+					neighbour.y,
+				);
 				if (!connects) {
 					continue;
 				}
@@ -464,13 +509,21 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 						}
 						const neighbourInfo = tilesByKey.get(neighbourKey);
 						if (neighbourInfo !== undefined) {
-							if (neighbourInfo.baseZ === footpath.baseZ && !neighbourInfo.neighbourKeys.includes(key)) {
+							if (
+								neighbourInfo.baseZ === footpath.baseZ &&
+								!neighbourInfo.neighbourKeys.includes(key)
+							) {
 								neighbourInfo.neighbourKeys.push(key);
 							}
 						}
 					}
 				}
-				stack.push({ x: neighbour.x, y: neighbour.y, z: edgeZ, fromDirection: oppositeDirection(d) });
+				stack.push({
+					x: neighbour.x,
+					y: neighbour.y,
+					z: edgeZ,
+					fromDirection: oppositeDirection(d),
+				});
 			}
 		}
 	}
@@ -584,7 +637,7 @@ function newGardeningSweepState(): GardeningSweepState {
 		// Owned footpath tiles that act as walkable connectors between garden work
 		// tiles, so a gardener can reach (and join) grass areas split by a path.
 		connectorKeys: new Set<string>(),
-		grassStyleIndices: grassSurfaceStyleIndices()
+		grassStyleIndices: grassSurfaceStyleIndices(),
 	};
 }
 
@@ -613,7 +666,9 @@ function scanGardeningColumn(x: number, state: GardeningSweepState): void {
 			// connectors - a queue has railing/fencing the gardener cannot step off
 			// onto the adjacent grass, so they are excluded here (and being footpaths
 			// they were never counted as garden work anyway).
-			const hasPlainPath = footpaths.some(function (fp) { return !fp.isQueue; });
+			const hasPlainPath = footpaths.some(function (fp) {
+				return !fp.isQueue;
+			});
 			if (!hasPlainPath) {
 				continue;
 			}
@@ -639,7 +694,12 @@ function scanGardeningColumn(x: number, state: GardeningSweepState): void {
 
 // Groups the classified garden tiles into connected components. Runs once, after
 // the column sweep above has visited every owned tile.
-function groupGardeningTiles(state: GardeningSweepState): { gardenTiles: number; ownedTiles: number; areas: PathTileInfo[][]; workCounts: number[] } {
+function groupGardeningTiles(state: GardeningSweepState): {
+	gardenTiles: number;
+	ownedTiles: number;
+	areas: PathTileInfo[][];
+	workCounts: number[];
+} {
 	const isGardenTile = state.isGardenTile;
 	const connectorKeys = state.connectorKeys;
 	// workCounts[i] = number of mowable/waterable tiles in areas[i]; path connectors
@@ -651,7 +711,9 @@ function groupGardeningTiles(state: GardeningSweepState): { gardenTiles: number;
 	// Built once up front: it is identical for every component, so rebuilding it
 	// per component made the grouping cost O(components x garden tiles).
 	const walkKeys = new Set<string>(connectorKeys);
-	isGardenTile.forEach(function (k) { walkKeys.add(k); });
+	isGardenTile.forEach(function (k) {
+		walkKeys.add(k);
+	});
 	isGardenTile.forEach(function (key) {
 		if (visited.has(key)) {
 			return;
@@ -664,12 +726,12 @@ function groupGardeningTiles(state: GardeningSweepState): { gardenTiles: number;
 		const stack: CoordsXY[] = [{ x: startX, y: startY }];
 		visited.add(key);
 		let workTileCount = 0;
-	while (0 < stack.length) {
-		const current = stack.pop();
-		if (!current) {
-			break;
-		}
-		const currentKey = tileKey(current.x, current.y);
+		while (0 < stack.length) {
+			const current = stack.pop();
+			if (!current) {
+				break;
+			}
+			const currentKey = tileKey(current.x, current.y);
 			const surface = findSurfaceElement(gameMap().getTile(current.x, current.y));
 			const info: PathTileInfo = {
 				x: current.x,
@@ -678,7 +740,7 @@ function groupGardeningTiles(state: GardeningSweepState): { gardenTiles: number;
 				baseZ: surface ? surface.baseZ : 0,
 				isQueue: false,
 				isConnector: connectorKeys.has(currentKey),
-				neighbourKeys: []
+				neighbourKeys: [],
 			};
 			component.push(info);
 			componentByKey.set(currentKey, info);
@@ -699,7 +761,9 @@ function groupGardeningTiles(state: GardeningSweepState): { gardenTiles: number;
 				// cannot be climbed, so the tiles must end up in separate
 				// areas rather than in one patrol area a handyman gets stuck
 				// in.
-				if (!surfacesConnect(surface, findSurfaceElement(gameMap().getTile(neighbour.x, neighbour.y)))) {
+				if (
+					!surfacesConnect(surface, findSurfaceElement(gameMap().getTile(neighbour.x, neighbour.y)))
+				) {
 					continue;
 				}
 				// A park fence or path railing on either side of the shared edge blocks
@@ -722,7 +786,12 @@ function groupGardeningTiles(state: GardeningSweepState): { gardenTiles: number;
 		workCounts.push(workTileCount);
 	});
 
-	return { gardenTiles: state.gardenTiles, ownedTiles: state.ownedTiles, areas: areas, workCounts: workCounts };
+	return {
+		gardenTiles: state.gardenTiles,
+		ownedTiles: state.ownedTiles,
+		areas: areas,
+		workCounts: workCounts,
+	};
 }
 
 // --- Ride exit counting -------------------------------------------------------
@@ -783,17 +852,23 @@ export let lastGardenAreas: PathTileInfo[][] = [];
 // that only filters on footpath presence would treat the hover preview as a real
 // placement and needlessly hire/assign staff before the path is actually built.
 export function hasNonGhostFootpathElements(x: number, y: number): boolean {
-	return findFootpathElements(x, y).some(function (fp) { return !fp.isGhost; });
+	return findFootpathElements(x, y).some(function (fp) {
+		return !fp.isGhost;
+	});
 }
 
 // Whether the given tile has a plain (non-queue) footpath.
 export function isPlainPathTile(x: number, y: number): boolean {
-	return findFootpathElements(x, y).some(function (fp) { return !fp.isQueue; });
+	return findFootpathElements(x, y).some(function (fp) {
+		return !fp.isQueue;
+	});
 }
 
 // Whether the given tile has a queue footpath.
 export function isQueueTile(x: number, y: number): boolean {
-	return findFootpathElements(x, y).some(function (fp) { return fp.isQueue; });
+	return findFootpathElements(x, y).some(function (fp) {
+		return fp.isQueue;
+	});
 }
 
 // Whether the given tile is a garden tile (mowable grass or waterable scenery on
@@ -854,7 +929,12 @@ const SCAN_TICK_DELAY = 0;
 // Publishes a completed scan's results to the stores.
 function publishScanResults(
 	result: { pathTiles: PathTileInfo[]; queueTiles: PathTileInfo[]; allTiles: PathTileInfo[] },
-	gardeningResult: { gardenTiles: number; ownedTiles: number; areas: PathTileInfo[][]; workCounts: number[] }
+	gardeningResult: {
+		gardenTiles: number;
+		ownedTiles: number;
+		areas: PathTileInfo[][];
+		workCounts: number[];
+	},
 ): void {
 	pathTilesCountStore.set(result.pathTiles.length);
 	queueTilesCountStore.set(result.queueTiles.length);

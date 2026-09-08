@@ -1,21 +1,61 @@
 import {
-	Bindable, Colour, FlexiblePosition, Scale, Store, WidgetCreator, WindowTemplate, WritableStore, box, button, checkbox, compute,
+	Bindable,
+	Colour,
+	FlexiblePosition,
+	Scale,
+	Store,
+	WidgetCreator,
+	WindowTemplate,
+	WritableStore,
+	box,
+	button,
+	checkbox,
+	compute,
 	store as flexStore,
-	window as flexWindow, graphics, horizontal, isStore, label, spinner, toggle, vertical
+	window as flexWindow,
+	graphics,
+	horizontal,
+	isStore,
+	label,
+	spinner,
+	toggle,
+	vertical,
 } from "openrct2-flexui";
 import { t } from "./i18n";
 import {
-	autoEnabledStore, entertainersControlsDisabledStore, entertainersEnabledStore,
-	entertainersHiredStore, entertainersIncludeQueueStore, entertainersNeededStore, entertainersPerAreaStore, entertainersTilesPerStaffStore,
-	gardenTilesCountStore, guardsControlsDisabledStore,
-	guardsEnabledStore, guardsHiredStore, guardsNeededStore, guardsTilesPerStaffStore,
-	handymenControlsDisabledStore, handymenEnabledStore, handymenHiredStore, handymenMowerTilesPerStaffStore,
-	handymenNeededStore, handymenTilesPerStaffStore,
-	hasRanAdjustAndAssignStore, mechanicsControlsDisabledStore,
-	mechanicsEnabledStore, mechanicsHiredStore,
-	mechanicsNeededStore, ownedTilesCountStore,
-	parkEntranceInfoStore, pathTilesCountStore, progressStore, queueTilesCountStore,
-	rideExitCountStore, staffControlsDisabledStore, statusTextStore
+	autoEnabledStore,
+	entertainersControlsDisabledStore,
+	entertainersEnabledStore,
+	entertainersHiredStore,
+	entertainersIncludeQueueStore,
+	entertainersNeededStore,
+	entertainersPerAreaStore,
+	entertainersTilesPerStaffStore,
+	gardenTilesCountStore,
+	guardsControlsDisabledStore,
+	guardsEnabledStore,
+	guardsHiredStore,
+	guardsNeededStore,
+	guardsTilesPerStaffStore,
+	handymenControlsDisabledStore,
+	handymenEnabledStore,
+	handymenHiredStore,
+	handymenMowerTilesPerStaffStore,
+	handymenNeededStore,
+	handymenTilesPerStaffStore,
+	hasRanAdjustAndAssignStore,
+	mechanicsControlsDisabledStore,
+	mechanicsEnabledStore,
+	mechanicsHiredStore,
+	mechanicsNeededStore,
+	ownedTilesCountStore,
+	parkEntranceInfoStore,
+	pathTilesCountStore,
+	progressStore,
+	queueTilesCountStore,
+	rideExitCountStore,
+	staffControlsDisabledStore,
+	statusTextStore,
 } from "./store";
 import { findAndReportParkEntrance, scanFootpathNetwork } from "./scan";
 import { adjustStaffCounts, assignStaff, refreshHiredAndAssignedStaffCounts } from "./staff";
@@ -26,23 +66,38 @@ import { setAutoEnabled } from "./auto";
 // right-aligned value, e.g. "Needed        nnn".
 const STAT_ROW_HEIGHT = 12;
 
-function coloredText(colorToken: Bindable<string> | undefined, text: Bindable<string>): Bindable<string> {
+function coloredText(
+	colorToken: Bindable<string> | undefined,
+	text: Bindable<string>,
+): Bindable<string> {
 	if (!colorToken) {
 		return text;
 	}
 	if (isStore(colorToken) && isStore(text)) {
-		return compute(colorToken, text, function (token: string, t: string) { return token + t; });
+		return compute(colorToken, text, function (token: string, t: string) {
+			return token + t;
+		});
 	}
 	if (isStore(colorToken)) {
-		return compute(colorToken, function (token: string) { return token + (text as string); });
+		return compute(colorToken, function (token: string) {
+			return token + (text as string);
+		});
 	}
 	if (isStore(text)) {
-		return compute(text, function (t: string) { return colorToken + t; });
+		return compute(text, function (t: string) {
+			return colorToken + t;
+		});
 	}
 	return colorToken + text;
 }
 
-function statRow(name: string, value: Bindable<number>, tooltip: string, disabled: Bindable<boolean>, colorToken?: Bindable<string>): WidgetCreator<FlexiblePosition> {
+function statRow(
+	name: string,
+	value: Bindable<number>,
+	tooltip: string,
+	disabled: Bindable<boolean>,
+	colorToken?: Bindable<string>,
+): WidgetCreator<FlexiblePosition> {
 	const text = isStore(value) ? compute(value, String) : String(value);
 	const nameText = coloredText(colorToken, name);
 	const valueText = coloredText(colorToken, text);
@@ -50,9 +105,22 @@ function statRow(name: string, value: Bindable<number>, tooltip: string, disable
 		spacing: 4,
 		height: STAT_ROW_HEIGHT,
 		content: [
-			label({ text: nameText, width: "1w", height: STAT_ROW_HEIGHT, tooltip: tooltip, disabled: disabled }),
-			label({ text: valueText, width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred", tooltip: tooltip, disabled: disabled })
-		]
+			label({
+				text: nameText,
+				width: "1w",
+				height: STAT_ROW_HEIGHT,
+				tooltip: tooltip,
+				disabled: disabled,
+			}),
+			label({
+				text: valueText,
+				width: "1w",
+				height: STAT_ROW_HEIGHT,
+				alignment: "centred",
+				tooltip: tooltip,
+				disabled: disabled,
+			}),
+		],
 	});
 }
 
@@ -66,28 +134,44 @@ function differenceColor(d: number): string {
 	return "{BLACK}";
 }
 
-function statTable(needed: Bindable<number>, hired: Bindable<number>, disabled: Bindable<boolean>): WidgetCreator<FlexiblePosition>[] {
-	const difference = (isStore(needed) || isStore(hired))
-		? compute(
-			isStore(needed) ? needed : flexStore(needed),
-			isStore(hired) ? hired : flexStore(hired),
-			function (n: number, h: number) { return n - h; })
-		: (needed) - (hired);
+function statTable(
+	needed: Bindable<number>,
+	hired: Bindable<number>,
+	disabled: Bindable<boolean>,
+): WidgetCreator<FlexiblePosition>[] {
+	const difference =
+		isStore(needed) || isStore(hired)
+			? compute(
+					isStore(needed) ? needed : flexStore(needed),
+					isStore(hired) ? hired : flexStore(hired),
+					function (n: number, h: number) {
+						return n - h;
+					},
+				)
+			: needed - hired;
 	// The colour token forces a text colour that would otherwise override the
 	// greyed-out appearance a label gets from being disabled, so use no colour
 	// override at all (empty prefix) whenever the row is disabled.
-	const differenceColorToken: Bindable<string> = (isStore(difference) || isStore(disabled))
-		? compute(
-			isStore(difference) ? difference : flexStore(difference),
-			isStore(disabled) ? disabled : flexStore(disabled),
-			function (d: number, isDisabled: boolean) {
-				return isDisabled ? "" : differenceColor(d);
-			})
-		: differenceColor(difference);
+	const differenceColorToken: Bindable<string> =
+		isStore(difference) || isStore(disabled)
+			? compute(
+					isStore(difference) ? difference : flexStore(difference),
+					isStore(disabled) ? disabled : flexStore(disabled),
+					function (d: number, isDisabled: boolean) {
+						return isDisabled ? "" : differenceColor(d);
+					},
+				)
+			: differenceColor(difference);
 	return [
 		statRow(t("statRow.hired"), hired, t("statRow.hired.tooltip"), disabled),
 		statRow(t("statRow.needed"), needed, t("statRow.needed.tooltip"), disabled),
-		statRow(t("statRow.difference"), difference, t("statRow.difference.tooltip"), disabled, differenceColorToken)
+		statRow(
+			t("statRow.difference"),
+			difference,
+			t("statRow.difference.tooltip"),
+			disabled,
+			differenceColorToken,
+		),
 	];
 }
 
@@ -98,7 +182,10 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, disabled: 
 // tiles) line up into a compact aligned table instead of one free-form string.
 const PARK_ENTRANCE_CELL_HEIGHT = 24;
 
-function parkEntranceStatCell(name: string, value: Bindable<number>): WidgetCreator<FlexiblePosition> {
+function parkEntranceStatCell(
+	name: string,
+	value: Bindable<number>,
+): WidgetCreator<FlexiblePosition> {
 	const valueText = isStore(value) ? compute(value, String) : String(value);
 	return vertical({
 		spacing: 0,
@@ -106,8 +193,14 @@ function parkEntranceStatCell(name: string, value: Bindable<number>): WidgetCrea
 		height: PARK_ENTRANCE_CELL_HEIGHT,
 		content: [
 			label({ text: name, width: "100%", height: 12, tooltip: t("parkEntrance.tooltip") }),
-			label({ text: valueText, width: "100%", height: 12, alignment: "centred", tooltip: t("parkEntrance.tooltip") })
-		]
+			label({
+				text: valueText,
+				width: "100%",
+				height: 12,
+				alignment: "centred",
+				tooltip: t("parkEntrance.tooltip"),
+			}),
+		],
 	});
 }
 
@@ -116,14 +209,24 @@ function parkEntranceStatCell(name: string, value: Bindable<number>): WidgetCrea
 // render one of the game's named icon sprites.
 const SECTION_ICON_SIZE = 24;
 
-function sectionIcon(image: IconName, tooltip: string, rowHeight: number): WidgetCreator<FlexiblePosition> {
+function sectionIcon(
+	image: IconName,
+	tooltip: string,
+	rowHeight: number,
+): WidgetCreator<FlexiblePosition> {
 	return vertical({
 		spacing: 0,
 		width: SECTION_ICON_SIZE,
 		height: rowHeight,
 		content: [
-			button({ image: image, width: SECTION_ICON_SIZE, height: SECTION_ICON_SIZE, border: false, tooltip: tooltip })
-		]
+			button({
+				image: image,
+				width: SECTION_ICON_SIZE,
+				height: SECTION_ICON_SIZE,
+				border: false,
+				tooltip: tooltip,
+			}),
+		],
 	});
 }
 
@@ -135,31 +238,36 @@ function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
 		content: [
 			sectionIcon("map", t("parkEntrance.tooltip"), TOP_ROW_HEIGHT),
 			vertical({
-		spacing: 2,
-		width: "1w",
-		height: TOP_ROW_HEIGHT,
-		content: [
-			horizontal({
-				spacing: 6,
-				height: PARK_ENTRANCE_CELL_HEIGHT,
+				spacing: 2,
+				width: "1w",
+				height: TOP_ROW_HEIGHT,
 				content: [
-					parkEntranceStatCell(t("parkEntrance.paths"), pathTilesCountStore),
-					parkEntranceStatCell(t("parkEntrance.queues"), queueTilesCountStore),
-					parkEntranceStatCell(t("parkEntrance.garden"), gardenTilesCountStore)
-				]
+					horizontal({
+						spacing: 6,
+						height: PARK_ENTRANCE_CELL_HEIGHT,
+						content: [
+							parkEntranceStatCell(t("parkEntrance.paths"), pathTilesCountStore),
+							parkEntranceStatCell(t("parkEntrance.queues"), queueTilesCountStore),
+							parkEntranceStatCell(t("parkEntrance.garden"), gardenTilesCountStore),
+						],
+					}),
+					horizontal({
+						spacing: 6,
+						height: PARK_ENTRANCE_CELL_HEIGHT,
+						content: [
+							parkEntranceStatCell(t("parkEntrance.rideExits"), rideExitCountStore),
+							parkEntranceStatCell(t("parkEntrance.ownedTiles"), ownedTilesCountStore),
+							label({
+								text: parkEntranceInfoStore,
+								width: "1w",
+								height: PARK_ENTRANCE_CELL_HEIGHT,
+								tooltip: t("parkEntrance.tooltip"),
+							}),
+						],
+					}),
+				],
 			}),
-			horizontal({
-				spacing: 6,
-				height: PARK_ENTRANCE_CELL_HEIGHT,
-				content: [
-					parkEntranceStatCell(t("parkEntrance.rideExits"), rideExitCountStore),
-					parkEntranceStatCell(t("parkEntrance.ownedTiles"), ownedTilesCountStore),
-					label({ text: parkEntranceInfoStore, width: "1w", height: PARK_ENTRANCE_CELL_HEIGHT, tooltip: t("parkEntrance.tooltip") })
-				]
-			})
-		]
-			})
-		]
+		],
 	});
 }
 
@@ -167,7 +275,21 @@ function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, needed: Bindable<number>, hired: Bindable<number>, width: Scale, height: Scale, enabled: WritableStore<boolean>, controlsDisabled: Store<boolean>, spinnerLabel?: string, mowerTilesPerStaff?: WritableStore<number>, mowerSpinnerLabel?: string, spinnerTooltip?: string, onSettingsChanged?: () => void): WidgetCreator<FlexiblePosition> {
+function staffGroup(
+	title: string,
+	tilesPerStaff: WritableStore<number> | null,
+	needed: Bindable<number>,
+	hired: Bindable<number>,
+	width: Scale,
+	height: Scale,
+	enabled: WritableStore<boolean>,
+	controlsDisabled: Store<boolean>,
+	spinnerLabel?: string,
+	mowerTilesPerStaff?: WritableStore<number>,
+	mowerSpinnerLabel?: string,
+	spinnerTooltip?: string,
+	onSettingsChanged?: () => void,
+): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: title,
 		width: width,
@@ -175,50 +297,99 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 		content: vertical({
 			spacing: 3,
 			content: [
-				checkbox({ text: t("staffGroup.enabled"), width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, tooltip: t("staffGroup.enabledTooltip"), onChange: function  onChange(isChecked) { enabled.set(isChecked); } }),
-				...(tilesPerStaff ? [horizontal({
-					spacing: 4,
+				checkbox({
+					text: t("staffGroup.enabled"),
+					width: "100%",
 					height: 14,
-					content: [
-						label({ text: spinnerLabel ?? "", width: "2w", height: 14, padding: { top: 2 }, tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"), disabled: controlsDisabled }),
-						spinner({
-							value: tilesPerStaff,
-							minimum: 0,
-							maximum: 999,
-							width: "3w",
-							height: 14,
-							tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
-							disabled: controlsDisabled,
-							onChange: function  onChange(value) { tilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
-						})
-					]
-				})] : []),
-				...(mowerTilesPerStaff ? [horizontal({
-					spacing: 4,
-					height: 14,
-					content: [
-						label({ text: mowerSpinnerLabel ?? "", width: "2w", height: 14, padding: { top: 2 }, tooltip: t("tooltip.handymenGardeningSpinner"), disabled: controlsDisabled }),
-						spinner({
-							value: mowerTilesPerStaff,
-							minimum: 0,
-							maximum: 999,
-							width: "3w",
-							height: 14,
-							tooltip: t("tooltip.handymenGardeningSpinner"),
-							disabled: controlsDisabled,
-							onChange: function  onChange(value) { mowerTilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
-						})
-					]
-						})] : []),
-						...statTable(needed, hired, controlsDisabled)
-					]
-				})
+					isChecked: enabled,
+					disabled: staffControlsDisabledStore,
+					tooltip: t("staffGroup.enabledTooltip"),
+					onChange: function onChange(isChecked) {
+						enabled.set(isChecked);
+					},
+				}),
+				...(tilesPerStaff
+					? [
+							horizontal({
+								spacing: 4,
+								height: 14,
+								content: [
+									label({
+										text: spinnerLabel ?? "",
+										width: "2w",
+										height: 14,
+										padding: { top: 2 },
+										tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
+										disabled: controlsDisabled,
+									}),
+									spinner({
+										value: tilesPerStaff,
+										minimum: 0,
+										maximum: 999,
+										width: "3w",
+										height: 14,
+										tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
+										disabled: controlsDisabled,
+										onChange: function onChange(value) {
+											tilesPerStaff.set(value);
+											if (onSettingsChanged) {
+												onSettingsChanged();
+											}
+										},
+									}),
+								],
+							}),
+						]
+					: []),
+				...(mowerTilesPerStaff
+					? [
+							horizontal({
+								spacing: 4,
+								height: 14,
+								content: [
+									label({
+										text: mowerSpinnerLabel ?? "",
+										width: "2w",
+										height: 14,
+										padding: { top: 2 },
+										tooltip: t("tooltip.handymenGardeningSpinner"),
+										disabled: controlsDisabled,
+									}),
+									spinner({
+										value: mowerTilesPerStaff,
+										minimum: 0,
+										maximum: 999,
+										width: "3w",
+										height: 14,
+										tooltip: t("tooltip.handymenGardeningSpinner"),
+										disabled: controlsDisabled,
+										onChange: function onChange(value) {
+											mowerTilesPerStaff.set(value);
+											if (onSettingsChanged) {
+												onSettingsChanged();
+											}
+										},
+									}),
+								],
+							}),
+						]
+					: []),
+				...statTable(needed, hired, controlsDisabled),
+			],
+		}),
 	});
 }
 
 // One bordered box for entertainers: same as staffGroup plus a "Queue"
 // toggle underneath, laid out vertically like in the mockup.
-function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, width: Scale, height: Scale, enabled: WritableStore<boolean>, controlsDisabled: Store<boolean>): WidgetCreator<FlexiblePosition> {
+function entertainersGroup(
+	needed: Bindable<number>,
+	hired: Bindable<number>,
+	width: Scale,
+	height: Scale,
+	enabled: WritableStore<boolean>,
+	controlsDisabled: Store<boolean>,
+): WidgetCreator<FlexiblePosition> {
 	return box({
 		text: t("staffGroup.entertainers.title"),
 		width: width,
@@ -226,45 +397,83 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, wi
 		content: vertical({
 			spacing: 3,
 			content: [
-				checkbox({ text: t("staffGroup.enabled"), width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, tooltip: t("staffGroup.entertainers.enabledTooltip"), onChange: function  onChange(isChecked) { enabled.set(isChecked); } }),
+				checkbox({
+					text: t("staffGroup.enabled"),
+					width: "100%",
+					height: 14,
+					isChecked: enabled,
+					disabled: staffControlsDisabledStore,
+					tooltip: t("staffGroup.entertainers.enabledTooltip"),
+					onChange: function onChange(isChecked) {
+						enabled.set(isChecked);
+					},
+				}),
 				horizontal({
-						spacing: 4,
-						height: 14,
-						content: [
-							label({ text: t("spinnerLabel.tilesPerStaff"), width: "2w", height: 14, padding: { top: 2 }, tooltip: t("tooltip.entertainersTilesSpinner"), disabled: controlsDisabled }),
-							spinner({
-								value: entertainersTilesPerStaffStore,
-								minimum: 0,
-								maximum: 999,
-								width: "3w",
-								height: 14,
-								tooltip: t("tooltip.entertainersTilesSpinner"),
-								disabled: controlsDisabled,
-								onChange: function  onChange(value) { entertainersTilesPerStaffStore.set(value); }
-							})
-						]
-					}),
+					spacing: 4,
+					height: 14,
+					content: [
+						label({
+							text: t("spinnerLabel.tilesPerStaff"),
+							width: "2w",
+							height: 14,
+							padding: { top: 2 },
+							tooltip: t("tooltip.entertainersTilesSpinner"),
+							disabled: controlsDisabled,
+						}),
+						spinner({
+							value: entertainersTilesPerStaffStore,
+							minimum: 0,
+							maximum: 999,
+							width: "3w",
+							height: 14,
+							tooltip: t("tooltip.entertainersTilesSpinner"),
+							disabled: controlsDisabled,
+							onChange: function onChange(value) {
+								entertainersTilesPerStaffStore.set(value);
+							},
+						}),
+					],
+				}),
 				horizontal({
-						spacing: 4,
-						height: 14,
-						content: [
-							label({ text: t("spinnerLabel.staffPerArea"), width: "2w", height: 14, padding: { top: 2 }, tooltip: t("tooltip.entertainersPerAreaSpinner"), disabled: controlsDisabled }),
-							spinner({
-								value: entertainersPerAreaStore,
-								minimum: 0,
-								maximum: 999,
-								width: "3w",
-								height: 14,
-								tooltip: t("tooltip.entertainersPerAreaSpinner"),
-								disabled: controlsDisabled,
-								onChange: function  onChange(value) { entertainersPerAreaStore.set(value); }
-							})
-						]
-					}),
-				checkbox({ text: t("checkbox.queue"), width: "100%", height: 14, isChecked: entertainersIncludeQueueStore, disabled: controlsDisabled, tooltip: t("tooltip.entertainersQueueCheckbox"), onChange: function  onChange(isChecked) { entertainersIncludeQueueStore.set(isChecked); } }),
-						...statTable(needed, hired, controlsDisabled)
-					]
-				})
+					spacing: 4,
+					height: 14,
+					content: [
+						label({
+							text: t("spinnerLabel.staffPerArea"),
+							width: "2w",
+							height: 14,
+							padding: { top: 2 },
+							tooltip: t("tooltip.entertainersPerAreaSpinner"),
+							disabled: controlsDisabled,
+						}),
+						spinner({
+							value: entertainersPerAreaStore,
+							minimum: 0,
+							maximum: 999,
+							width: "3w",
+							height: 14,
+							tooltip: t("tooltip.entertainersPerAreaSpinner"),
+							disabled: controlsDisabled,
+							onChange: function onChange(value) {
+								entertainersPerAreaStore.set(value);
+							},
+						}),
+					],
+				}),
+				checkbox({
+					text: t("checkbox.queue"),
+					width: "100%",
+					height: 14,
+					isChecked: entertainersIncludeQueueStore,
+					disabled: controlsDisabled,
+					tooltip: t("tooltip.entertainersQueueCheckbox"),
+					onChange: function onChange(isChecked) {
+						entertainersIncludeQueueStore.set(isChecked);
+					},
+				}),
+				...statTable(needed, hired, controlsDisabled),
+			],
+		}),
 	});
 }
 
@@ -276,9 +485,9 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, wi
 const GROUP_WIDTH: Scale = "1w"; // each column takes an equal share of the available width
 const BOX_TITLE_HEIGHT = 11; // height reserved for the box's own title label
 const BOX_PADDING = 12; // 6px top + 6px bottom default box content padding
-const GROUP_CONTENT_HEIGHT = 14 + 3 + 14 + 3 + (STAT_ROW_HEIGHT * 3) + (3 * 2); // enabled toggle row + spacing + spinner row + spacing + 3 stat rows + spacing between them
+const GROUP_CONTENT_HEIGHT = 14 + 3 + 14 + 3 + STAT_ROW_HEIGHT * 3 + 3 * 2; // enabled toggle row + spacing + spinner row + spacing + 3 stat rows + spacing between them
 const GROUP_HEIGHT = BOX_TITLE_HEIGHT + BOX_PADDING + GROUP_CONTENT_HEIGHT;
-const MECHANICS_CONTENT_HEIGHT = 14 + 3 + (STAT_ROW_HEIGHT * 3) + (3 * 2); // enabled toggle row + spacing + 3 stat rows + spacing between them
+const MECHANICS_CONTENT_HEIGHT = 14 + 3 + STAT_ROW_HEIGHT * 3 + 3 * 2; // enabled toggle row + spacing + 3 stat rows + spacing between them
 const MECHANICS_HEIGHT = BOX_TITLE_HEIGHT + BOX_PADDING + MECHANICS_CONTENT_HEIGHT;
 const HANDYMEN_EXTRA_HEIGHT = 14 + 3; // extra "Mower" spinner row + spacing
 const HANDYMEN_HEIGHT = GROUP_HEIGHT + HANDYMEN_EXTRA_HEIGHT;
@@ -296,18 +505,38 @@ const APPLY_ROW_HEIGHT = 20;
 const CONTENT_SPACING = 4; // spacing between the window's top-level content rows
 const SEPARATOR_ROW_HEIGHT = 4; // horizontal divider between the window's sections
 const SEPARATOR_COUNT = 2; // statistics | configuration | progress and buttons
-const ACTIONS_ROW_HEIGHT = PROGRESS_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + CONTENT_SPACING + AUTO_ROW_HEIGHT;
+const ACTIONS_ROW_HEIGHT =
+	PROGRESS_ROW_HEIGHT +
+	CONTENT_SPACING +
+	APPLY_MESSAGE_ROW_HEIGHT +
+	CONTENT_SPACING +
+	APPLY_ROW_HEIGHT +
+	CONTENT_SPACING +
+	AUTO_ROW_HEIGHT;
 const WINDOW_CHROME_HEIGHT = 29; // title bar + top/bottom window padding
-const WINDOW_HEIGHT = TOP_ROW_HEIGHT + CONTENT_SPACING + AUTO_ROW_HEIGHT + CONTENT_SPACING + COLUMN_ROW_HEIGHT + CONTENT_SPACING + PROGRESS_ROW_HEIGHT + CONTENT_SPACING + APPLY_MESSAGE_ROW_HEIGHT + CONTENT_SPACING + APPLY_ROW_HEIGHT + (SEPARATOR_COUNT * (SEPARATOR_ROW_HEIGHT + CONTENT_SPACING)) + WINDOW_CHROME_HEIGHT;
+const WINDOW_HEIGHT =
+	TOP_ROW_HEIGHT +
+	CONTENT_SPACING +
+	AUTO_ROW_HEIGHT +
+	CONTENT_SPACING +
+	COLUMN_ROW_HEIGHT +
+	CONTENT_SPACING +
+	PROGRESS_ROW_HEIGHT +
+	CONTENT_SPACING +
+	APPLY_MESSAGE_ROW_HEIGHT +
+	CONTENT_SPACING +
+	APPLY_ROW_HEIGHT +
+	SEPARATOR_COUNT * (SEPARATOR_ROW_HEIGHT + CONTENT_SPACING) +
+	WINDOW_CHROME_HEIGHT;
 
 // A thin engraved divider drawn across the full window width.
 function separator(): WidgetCreator<FlexiblePosition> {
 	return graphics({
 		width: "100%",
 		height: SEPARATOR_ROW_HEIGHT,
-		onDraw: function  onDraw(g) {
+		onDraw: function onDraw(g) {
 			g.well(0, 1, g.width, 2);
-		}
+		},
 	});
 }
 
@@ -324,135 +553,205 @@ const PROGRESS_SEGMENT_COUNT = 40;
 const progressSegmentStores: Store<boolean>[] = [];
 for (let i = 0; i < PROGRESS_SEGMENT_COUNT; i++) {
 	const threshold = (i + 1) / PROGRESS_SEGMENT_COUNT;
-	progressSegmentStores.push(compute(progressStore, function (fraction: number) {
-		return fraction >= threshold;
-	}));
+	progressSegmentStores.push(
+		compute(progressStore, function (fraction: number) {
+			return fraction >= threshold;
+		}),
+	);
 }
 
 function staffManagerWindowTemplate(): WindowTemplate {
 	const windowWidth = 430; // 400 + room for the section icon column on the left
 	return flexWindow({
-			title: t("window.title"),
-			width: windowWidth,
-			height: WINDOW_HEIGHT,
-			position: { x: Math.round((ui.width - windowWidth) / 2), y: Math.round((ui.height - WINDOW_HEIGHT) / 2) },
-			spacing: 4,
-			content: [
-				parkEntranceStatTable(),
-				separator(),
-				horizontal({
-					spacing: 6,
-					height: COLUMN_ROW_HEIGHT,
-					content: [
-						sectionIcon("patrol", t("window.title"), COLUMN_ROW_HEIGHT),
-						vertical({
-							spacing: 4,
-							width: GROUP_WIDTH,
-							height: STACK_HEIGHT,
-							content: [
-									staffGroup(t("staffGroup.handymen.title"), handymenTilesPerStaffStore, handymenNeededStore, handymenHiredStore, "100%", HANDYMEN_HEIGHT, handymenEnabledStore, handymenControlsDisabledStore, t("spinnerLabel.cleanup"), handymenMowerTilesPerStaffStore, t("spinnerLabel.gardening"), t("tooltip.handymenCleanupSpinner")),
-											staffGroup(t("staffGroup.guards.title"), guardsTilesPerStaffStore, guardsNeededStore, guardsHiredStore, "100%", GROUP_HEIGHT, guardsEnabledStore, guardsControlsDisabledStore, t("spinnerLabel.tilesPerStaff"), undefined, undefined, t("tooltip.guardsSpinner"))
-										]
+		title: t("window.title"),
+		width: windowWidth,
+		height: WINDOW_HEIGHT,
+		position: {
+			x: Math.round((ui.width - windowWidth) / 2),
+			y: Math.round((ui.height - WINDOW_HEIGHT) / 2),
+		},
+		spacing: 4,
+		content: [
+			parkEntranceStatTable(),
+			separator(),
+			horizontal({
+				spacing: 6,
+				height: COLUMN_ROW_HEIGHT,
+				content: [
+					sectionIcon("patrol", t("window.title"), COLUMN_ROW_HEIGHT),
+					vertical({
+						spacing: 4,
+						width: GROUP_WIDTH,
+						height: STACK_HEIGHT,
+						content: [
+							staffGroup(
+								t("staffGroup.handymen.title"),
+								handymenTilesPerStaffStore,
+								handymenNeededStore,
+								handymenHiredStore,
+								"100%",
+								HANDYMEN_HEIGHT,
+								handymenEnabledStore,
+								handymenControlsDisabledStore,
+								t("spinnerLabel.cleanup"),
+								handymenMowerTilesPerStaffStore,
+								t("spinnerLabel.gardening"),
+								t("tooltip.handymenCleanupSpinner"),
+							),
+							staffGroup(
+								t("staffGroup.guards.title"),
+								guardsTilesPerStaffStore,
+								guardsNeededStore,
+								guardsHiredStore,
+								"100%",
+								GROUP_HEIGHT,
+								guardsEnabledStore,
+								guardsControlsDisabledStore,
+								t("spinnerLabel.tilesPerStaff"),
+								undefined,
+								undefined,
+								t("tooltip.guardsSpinner"),
+							),
+						],
+					}),
+					vertical({
+						spacing: 4,
+						width: GROUP_WIDTH,
+						height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
+						content: [
+							staffGroup(
+								t("staffGroup.mechanics.title"),
+								null,
+								mechanicsNeededStore,
+								mechanicsHiredStore,
+								"100%",
+								MECHANICS_HEIGHT,
+								mechanicsEnabledStore,
+								mechanicsControlsDisabledStore,
+							),
+							entertainersGroup(
+								entertainersNeededStore,
+								entertainersHiredStore,
+								"100%",
+								ENTERTAINERS_HEIGHT,
+								entertainersEnabledStore,
+								entertainersControlsDisabledStore,
+							),
+						],
+					}),
+				],
+			}),
+			separator(),
+			// Progress bar. Variable-width widgets did not work: neither a single
+			// custom-drawn widget nor two weight-bound halves were reliably
+			// re-laid out / repainted when the progress store changed, so the
+			// bar kept showing a stale width. Instead the bar is a fixed grid of
+			// equally sized segments; each segment never changes size and is
+			// either completely filled or completely empty, driven by its own
+			// bound store. That keeps every repaint correct regardless of how
+			// the engine batches invalidations.
+			horizontal({
+				spacing: 4,
+				width: "100%",
+				height: ACTIONS_ROW_HEIGHT,
+				content: [
+					sectionIcon("cheats", t("button.adjustAndAssign.tooltip"), ACTIONS_ROW_HEIGHT),
+					vertical({
+						spacing: CONTENT_SPACING,
+						width: "1w",
+						height: ACTIONS_ROW_HEIGHT,
+						content: [
+							horizontal({
+								spacing: 0,
+								width: "100%",
+								height: PROGRESS_ROW_HEIGHT,
+								content: progressSegmentStores.map(function (segmentFilledStore) {
+									// The tooltip is bound per segment on purpose: it is what makes
+									// flexui refresh this widget (and therefore call onDraw) when
+									// the segment flips between filled and empty.
+									return graphics({
+										width: "1w",
+										height: PROGRESS_ROW_HEIGHT,
+										tooltip: compute(
+											progressTooltipStore,
+											segmentFilledStore,
+											function (tooltip: string) {
+												return tooltip;
+											},
+										),
+										onDraw: function onDraw(g) {
+											if (segmentFilledStore.get()) {
+												g.colour = Colour.BrightGreen;
+												g.box(0, 0, g.width, g.height);
+											} else {
+												g.well(0, 0, g.width, g.height);
+											}
+										},
+									});
+								}),
+							}),
+							label({
+								text: statusTextStore,
+								width: "100%",
+								height: APPLY_MESSAGE_ROW_HEIGHT,
+								alignment: "centred",
+								tooltip: t("applyMessage.tooltip"),
+							}),
+							horizontal({
+								spacing: 4,
+								width: "100%",
+								height: APPLY_ROW_HEIGHT,
+								content: [
+									button({
+										text: t("button.adjustAndAssign"),
+										width: "100%",
+										height: APPLY_ROW_HEIGHT,
+										tooltip: t("button.adjustAndAssign.tooltip"),
+										onClick: function onClick() {
+											hasRanAdjustAndAssignStore.set(true);
+											progressStore.set(0);
+											statusTextStore.set("");
+											adjustStaffCounts(assignStaff);
+										},
 									}),
-								vertical({
-									spacing: 4,
-									width: GROUP_WIDTH,
-									height: MECHANICS_ENTERTAINERS_STACK_HEIGHT,
-									content: [
-											staffGroup(t("staffGroup.mechanics.title"), null, mechanicsNeededStore, mechanicsHiredStore, "100%", MECHANICS_HEIGHT, mechanicsEnabledStore, mechanicsControlsDisabledStore),
-											entertainersGroup(entertainersNeededStore, entertainersHiredStore, "100%", ENTERTAINERS_HEIGHT, entertainersEnabledStore, entertainersControlsDisabledStore)
-								]
-						})
-					]
-				}),
-				separator(),
-				// Progress bar. Variable-width widgets did not work: neither a single
-				// custom-drawn widget nor two weight-bound halves were reliably
-				// re-laid out / repainted when the progress store changed, so the
-				// bar kept showing a stale width. Instead the bar is a fixed grid of
-				// equally sized segments; each segment never changes size and is
-				// either completely filled or completely empty, driven by its own
-				// bound store. That keeps every repaint correct regardless of how
-				// the engine batches invalidations.
-				horizontal({
-					spacing: 4,
-					width: "100%",
-					height: ACTIONS_ROW_HEIGHT,
-					content: [
-						sectionIcon("cheats", t("button.adjustAndAssign.tooltip"), ACTIONS_ROW_HEIGHT),
-						vertical({
-							spacing: CONTENT_SPACING,
-							width: "1w",
-							height: ACTIONS_ROW_HEIGHT,
-							content: [
-				horizontal({
-					spacing: 0,
-					width: "100%",
-					height: PROGRESS_ROW_HEIGHT,
-					content: progressSegmentStores.map(function (segmentFilledStore) {
-						// The tooltip is bound per segment on purpose: it is what makes
-						// flexui refresh this widget (and therefore call onDraw) when
-						// the segment flips between filled and empty.
-						return graphics({
-							width: "1w",
-							height: PROGRESS_ROW_HEIGHT,
-							tooltip: compute(progressTooltipStore, segmentFilledStore, function (tooltip: string) {
-								return tooltip;
+								],
 							}),
-							onDraw: function  onDraw(g) {
-								if (segmentFilledStore.get()) {
-									g.colour = Colour.BrightGreen;
-									g.box(0, 0, g.width, g.height);
-								} else {
-									g.well(0, 0, g.width, g.height);
-								}
-							}
-						});
-					})
-				}),
-				label({ text: statusTextStore, width: "100%", height: APPLY_MESSAGE_ROW_HEIGHT, alignment: "centred", tooltip: t("applyMessage.tooltip") }),
-				horizontal({
-					spacing: 4,
-					width: "100%",
-					height: APPLY_ROW_HEIGHT,
-					content: [
-					button({
-						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), onClick: function  onClick() { hasRanAdjustAndAssignStore.set(true); progressStore.set(0); statusTextStore.set(""); adjustStaffCounts(assignStaff); }
-					})
-					]
-				}),
-				horizontal({
-					spacing: 4,
-					width: "100%",
-					height: AUTO_ROW_HEIGHT,
-					content: [
-						graphics({
-							width: AUTO_ROW_HEIGHT,
-							height: AUTO_ROW_HEIGHT,
-							onDraw: function  onDraw(g) {
-								const on = autoEnabledStore.get();
-								g.colour = on ? Colour.BrightGreen : Colour.SaturatedRed;
-								g.box(2, 2, AUTO_ROW_HEIGHT - 4, AUTO_ROW_HEIGHT - 4);
-							}
-						}),
-						toggle({
-							text: compute(autoEnabledStore, function (on) {
-								return on ? t("auto.on") : t("auto.off");
+							horizontal({
+								spacing: 4,
+								width: "100%",
+								height: AUTO_ROW_HEIGHT,
+								content: [
+									graphics({
+										width: AUTO_ROW_HEIGHT,
+										height: AUTO_ROW_HEIGHT,
+										onDraw: function onDraw(g) {
+											const on = autoEnabledStore.get();
+											g.colour = on ? Colour.BrightGreen : Colour.SaturatedRed;
+											g.box(2, 2, AUTO_ROW_HEIGHT - 4, AUTO_ROW_HEIGHT - 4);
+										},
+									}),
+									toggle({
+										text: compute(autoEnabledStore, function (on) {
+											return on ? t("auto.on") : t("auto.off");
+										}),
+										width: "1w",
+										height: AUTO_ROW_HEIGHT,
+										isPressed: autoEnabledStore,
+										tooltip: t("auto.tooltip"),
+										disabled: compute(hasRanAdjustAndAssignStore, function (hasRun) {
+											return !hasRun;
+										}),
+										onChange: function onChange(pressed) {
+											setAutoEnabled(pressed);
+										},
+									}),
+								],
 							}),
-							width: "1w",
-							height: AUTO_ROW_HEIGHT,
-							isPressed: autoEnabledStore,
-							tooltip: t("auto.tooltip"),
-							disabled: compute(hasRanAdjustAndAssignStore, function (hasRun) { return !hasRun; }),
-							onChange: function  onChange(pressed) { setAutoEnabled(pressed); }
-						})
-					]
-				})
-							]
-						})
-					]
-				})
-			]
+						],
+					}),
+				],
+			}),
+		],
 	});
 }
 
