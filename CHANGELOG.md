@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.14.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.13.0...v0.14.0) (2026-09-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* requires OpenRCT2 >= 0.5.5 (PathNavigator/PathConnection API); minApiVersion/targetApiVersion bumped to 78. No backward compatibility with older OpenRCT2 builds is provided.
+
+### Features
+
+* use PathNavigator/PathConnection graph API for zoning and mechanic exits ([#67](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/67)) ([4220cb1](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/4220cb1a9e86797de74fdfe942e69b24b37677d1))
+
+
+### Code Refactoring
+
+* enable curated oxlint restriction rules ([#70](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/70)) ([60de066](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/60de0667d7ed1f2b081078d1578ebb6ea075368e))
+* enable oxlint perf category ([#69](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/69)) ([fc35520](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/fc35520578fa89d5188e06e11214847a864d4bdf))
+
+
+### Documentation
+
+* merge notes and limitations, remove changelog from README ([#58](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/58)) ([c6149ee](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/c6149ee4301adbf9c63ff3989a3248f2f85a0a48))
+
 ## [0.13.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.12.0...v0.13.0) (2026-09-04)
 
 
