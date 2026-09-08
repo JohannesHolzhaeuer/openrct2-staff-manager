@@ -1,7 +1,7 @@
-import { autoEnabledStore } from "./store";
-import { hasNonGhostFootpathElements, isQueueTile, worldToTile } from "./scan";
 import { handleBoughtLandTile, handlePlacedPathTile } from "./staff-auto";
+import { hasNonGhostFootpathElements, isQueueTile, worldToTile } from "./scan";
 import { BATCH_TICK_DELAY } from "./staff";
+import { autoEnabledStore } from "./store";
 import { gameContext } from "./game";
 
 // The storage key backing the persisted auto flag. Versioned so an earlier

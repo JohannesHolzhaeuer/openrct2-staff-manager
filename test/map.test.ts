@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { resetGameMap, setGameMap } from "../src/game";
 import {
 	footpathsConnectTiles,
 	isValidStationExit,
 	surfaceFenceBlocksWalking,
 	surfaceTilesConnect,
 } from "../src/scan";
+import { resetGameMap, setGameMap } from "../src/game";
 import { fakeMap } from "./fake-map";
 
 afterEach(() => {

@@ -21,7 +21,7 @@ import {
 	toggle,
 	vertical,
 } from "openrct2-flexui";
-import { t } from "./i18n";
+import { adjustStaffCounts, assignStaff, refreshHiredAndAssignedStaffCounts } from "./staff";
 import {
 	autoEnabledStore,
 	entertainersControlsDisabledStore,
@@ -58,8 +58,8 @@ import {
 	statusTextStore,
 } from "./store";
 import { findAndReportParkEntrance, scanFootpathNetwork } from "./scan";
-import { adjustStaffCounts, assignStaff, refreshHiredAndAssignedStaffCounts } from "./staff";
 import { setAutoEnabled } from "./auto";
+import { t } from "./i18n";
 
 // --- Staff stat table ---------------------------------------------------------
 // A single row of the per-staff-type table: a left-aligned name and a

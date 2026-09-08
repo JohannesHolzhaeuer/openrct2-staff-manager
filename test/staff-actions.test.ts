@@ -1,13 +1,3 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-	resetGameContext,
-	resetGameMap,
-	resetGameObjects,
-	setGameContext,
-	setGameMap,
-	setGameObjects,
-} from "../src/game";
-import { fakeMap, fakeStaff } from "./fake-map";
 import { FakeContext, fakeObjects } from "./fake-context";
 import {
 	HANDYMAN_ORDERS_CLEANUP,
@@ -16,6 +6,16 @@ import {
 	hireStaff,
 	teleportStaffToTile,
 } from "../src/staff";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { fakeMap, fakeStaff } from "./fake-map";
+import {
+	resetGameContext,
+	resetGameMap,
+	resetGameObjects,
+	setGameContext,
+	setGameMap,
+	setGameObjects,
+} from "../src/game";
 
 let ctx: FakeContext = new FakeContext();
 

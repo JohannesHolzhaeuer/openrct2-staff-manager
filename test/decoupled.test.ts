@@ -1,12 +1,12 @@
-import { describe, expect, it } from "vitest";
 import {
+	type PathTileInfo,
 	footpathEdgeZ,
 	footpathsConnect,
 	oppositeDirection,
 	surfacesConnect,
-	type PathTileInfo,
 } from "../src/scan";
 import { chunkTilesForStaffCount, decideAreaAction, isStandingOnTile } from "../src/staff";
+import { describe, expect, it } from "vitest";
 
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
 

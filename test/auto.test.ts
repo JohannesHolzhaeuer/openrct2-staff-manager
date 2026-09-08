@@ -1,4 +1,6 @@
+import { FakeContext, fakeObjects } from "./fake-context";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { initAuto, setAutoEnabled } from "../src/auto";
 import {
 	resetGameContext,
 	resetGameMap,
@@ -7,10 +9,8 @@ import {
 	setGameMap,
 	setGameObjects,
 } from "../src/game";
-import { initAuto, setAutoEnabled } from "../src/auto";
 import { autoEnabledStore } from "../src/store";
 import { fakeMap } from "./fake-map";
-import { FakeContext, fakeObjects } from "./fake-context";
 
 let ctx: FakeContext = new FakeContext();
 

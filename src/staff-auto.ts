@@ -1,26 +1,4 @@
 import {
-	entertainersEnabledStore,
-	entertainersIncludeQueueStore,
-	entertainersTilesPerStaffStore,
-	guardsEnabledStore,
-	guardsTilesPerStaffStore,
-	handymenEnabledStore,
-	handymenMowerTilesPerStaffStore,
-	handymenTilesPerStaffStore,
-	mechanicsEnabledStore,
-} from "./store";
-import {
-	PathTileInfo,
-	footpathsConnectTiles,
-	isGardenTile,
-	isQueueTile,
-	isValidStationExit,
-	surfaceBaseZAt,
-	surfaceTilesConnect,
-	tileKey,
-} from "./scan";
-import { gameMap } from "./game";
-import {
 	ADJACENT_OFFSETS,
 	HANDYMAN_ORDERS_CLEANUP,
 	HANDYMAN_ORDERS_GARDENING,
@@ -40,6 +18,28 @@ import {
 	teleportStaffToTile,
 	worldToTileX,
 } from "./staff";
+import {
+	PathTileInfo,
+	footpathsConnectTiles,
+	isGardenTile,
+	isQueueTile,
+	isValidStationExit,
+	surfaceBaseZAt,
+	surfaceTilesConnect,
+	tileKey,
+} from "./scan";
+import {
+	entertainersEnabledStore,
+	entertainersIncludeQueueStore,
+	entertainersTilesPerStaffStore,
+	guardsEnabledStore,
+	guardsTilesPerStaffStore,
+	handymenEnabledStore,
+	handymenMowerTilesPerStaffStore,
+	handymenTilesPerStaffStore,
+	mechanicsEnabledStore,
+} from "./store";
+import { gameMap } from "./game";
 
 // --- Incremental automatic helpers (single-tile) ---------------------------------
 //

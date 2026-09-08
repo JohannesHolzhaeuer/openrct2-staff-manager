@@ -1,6 +1,3 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { resetGameMap, setGameMap } from "../src/game";
-import { fakeMap, fakeStaff } from "./fake-map";
 import {
 	HANDYMAN_ORDERS_CLEANUP,
 	HANDYMAN_ORDERS_GARDENING,
@@ -9,6 +6,9 @@ import {
 	getStaffByType,
 	isPeepPlaceableTile,
 } from "../src/staff";
+import { afterEach, describe, expect, it } from "vitest";
+import { fakeMap, fakeStaff } from "./fake-map";
+import { resetGameMap, setGameMap } from "../src/game";
 import type { PathTileInfo } from "../src/scan";
 
 afterEach(() => {
