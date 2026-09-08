@@ -24,7 +24,7 @@
     "@commitlint/config-conventional": "^21.2.2",
     "@commitlint/types": "^21.2.0",
     "@eslint/js": "^10.0.1",
-    "@openrct2/types": "^0.5.4",
+    "@openrct2/types": "^0.5.5",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^26.4.0",
     "@vitest/coverage-v8": "^5.0.0",

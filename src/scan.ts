@@ -5,6 +5,7 @@ import {
 	pathTilesCountStore, queueTilesCountStore, gardenTilesCountStore, gardenAreaSizesStore,
 	rideExitCountStore, ownedTilesCountStore, tilesCalculatedStore, parkEntranceInfoStore
 } from "./store";
+import { pathTilesConnected } from "./paths/pathGraph";
 
 // A single visited path/queue tile: its tile coordinates plus the base height of
 // the footpath element that was found on it.
@@ -205,36 +206,22 @@ export function footpathsConnect(from: FootpathGeometry, to: FootpathGeometry, d
 }
 
 // Whether staff can walk between two neighbouring tiles' *footpath* elements. Unlike
-// plain x/y adjacency, this resolves height: a path on a bridge and a path passing
-// beneath it at a different height are NOT considered connected, and two inclined ways
-// meet only if their shared edge is at the same height. This is the shared
-// connectivity primitive used by both the manual scan (to build patrol areas) and
-// auto mode (to decide enlarge-vs-hire), so the two never disagree about whether two
-// tiles belong in one reachable area.
+// plain x/y adjacency, this defers to the engine's own PathNavigator/PathConnection
+// graph (see src/paths/pathGraph.ts) instead of re-deriving height/slope rules by
+// hand: a path on a bridge and a path passing beneath it at a different height are
+// NOT considered connected, and two inclined ways meet only if the engine actually
+// reports a PathConnection between them. This is the shared connectivity primitive
+// used by both the manual scan (to build patrol areas) and auto mode (to decide
+// enlarge-vs-hire), so the two never disagree about whether two tiles belong in one
+// reachable area.
 export function footpathsConnectTiles(tx: number, ty: number, nx: number, ny: number): boolean {
 	if (tx === nx && ty === ny) {
 		return false;
 	}
-	const dx = nx - tx;
-	const dy = ny - ty;
-	let direction = -1;
-	for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
-		if (DIRECTION_OFFSETS[d].x === dx && DIRECTION_OFFSETS[d].y === dy) {
-			direction = d;
-			break;
-		}
-	}
-	if (direction < 0) {
-		// Not a cardinal neighbour: never directly walkable between the two tiles.
-		return false;
-	}
 	const froms = findFootpathElements(tx, ty);
-	const tos = findFootpathElements(nx, ny);
 	for (const from of froms) {
-		for (const to of tos) {
-			if (footpathsConnect(from, to, direction)) {
-				return true;
-			}
+		if (pathTilesConnected(tx, ty, from.baseZ, nx, ny)) {
+			return true;
 		}
 	}
 	return false;
@@ -458,12 +445,11 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 			for (let d = 0; d < DIRECTION_OFFSETS.length; d++) {
 				const offset = DIRECTION_OFFSETS[d];
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
-				const edgeZ = footpathEdgeZ(footpath, d);
-				const neighbourFootpaths = findFootpathElements(neighbour.x, neighbour.y);
-				const connects = neighbourFootpaths.some((neighbourFootpath) => footpathsConnect(footpath, neighbourFootpath, d));
+				const connects = pathTilesConnected(current.x, current.y, footpath.baseZ, neighbour.x, neighbour.y);
 				if (!connects) {
 					continue;
 				}
+				const edgeZ = footpathEdgeZ(footpath, d);
 				// Record the walkable link between the two tiles (both ends,
 				// once both tiles are known to be part of the park's network).
 				// Guard by height: a tile can carry stacked footpaths at different

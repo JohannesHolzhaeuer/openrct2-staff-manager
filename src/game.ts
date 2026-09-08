@@ -9,6 +9,10 @@ export interface GameMap {
     readonly rides: Ride[];
     getTile(x: number, y: number): Tile;
     getAllEntities(type: "staff"): Staff[];
+    // Exposes the footpath network as a graph (OpenRCT2 >= 0.5.5). Returns
+    // null when there is no footpath at the given position, matching the
+    // real API's contract.
+    getPathNavigator(position: CoordsXYZ, options?: PathNavigationOptions): PathNavigator | null;
 }
 
 // Delegates to the real global. Kept lazy: the global does not exist while the
@@ -25,6 +29,9 @@ const realGameMap: GameMap = {
     },
     getAllEntities(type: "staff"): Staff[] {
         return map.getAllEntities(type);
+    },
+    getPathNavigator(position: CoordsXYZ, options?: PathNavigationOptions): PathNavigator | null {
+        return map.getPathNavigator(position, options);
     }
 };
 
