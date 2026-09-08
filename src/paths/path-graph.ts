@@ -237,7 +237,7 @@ export function snapToNetwork(
 	graph: PathGraph,
 	start: PathGraphNode,
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
-): string | null {
+): string | undefined {
 	const startKey = tileKey(start.x, start.y);
 	if (graph.nodes.has(startKey)) {
 		return startKey;
@@ -251,16 +251,16 @@ export function snapToNetwork(
 			return key;
 		}
 	}
-	return null;
+	return undefined;
 }
 
 // The most graph-central node among `keys`
 // hop distance to every other tile in the set), used to place staff "in the
 // middle" of their zone instead of at its geometric centroid, which can fall
 // on an unreachable or off-network tile for an L-shaped or branching zone.
-export function centralTile(graph: PathGraph, keys: string[]): string | null {
+export function centralTile(graph: PathGraph, keys: string[]): string | undefined {
 	if (0 === keys.length) {
-		return null;
+		return undefined;
 	}
 	let bestKey = keys[0];
 	let bestMaxDistance = Infinity;
@@ -294,7 +294,7 @@ export function exitToPathTile(
 	exitZ: number,
 	orderedOffsets: CoordsXY[],
 	options: PathNavigationOptions = DEFAULT_PATH_OPTIONS,
-): PathGraphNode | null {
+): PathGraphNode | undefined {
 	for (const offset of orderedOffsets) {
 		const candidateX = exitTileX + offset.x;
 		const candidateY = exitTileY + offset.y;
@@ -306,7 +306,7 @@ export function exitToPathTile(
 			return { x: candidateX, y: candidateY, z: navigator.current.position.z };
 		}
 	}
-	return null;
+	return undefined;
 }
 
 // --- Cache -----------------------------------------------------------------
@@ -316,8 +316,8 @@ export function exitToPathTile(
 // within that window; it is invalidated lazily (nulled out, rebuilt on next
 // use) rather than rebuilt eagerly, so a burst of path edits only costs one
 // rebuild when the graph is actually queried again.
-let cachedGraph: PathGraph | null = null;
-let invalidationSubscription: IDisposable | null = null;
+let cachedGraph: PathGraph | undefined = undefined;
+let invalidationSubscription: IDisposable | undefined = undefined;
 
 // Game actions that can change the footpath graph's shape: placing/removing
 // paths changes edges directly, additions (banners) change which edges are
@@ -334,7 +334,7 @@ const GRAPH_INVALIDATING_ACTIONS = new Set<string>([
 ]);
 
 export function invalidatePathGraphCache(): void {
-	cachedGraph = null;
+	cachedGraph = undefined;
 }
 
 function ensureInvalidationSubscribed(): void {
@@ -354,8 +354,8 @@ function ensureInvalidationSubscribed(): void {
 // Test seam only: lets tests reset the module's cache/subscription between
 // runs without needing a real game context.
 export function resetPathGraphCacheForTests(): void {
-	cachedGraph = null;
-	invalidationSubscription = null;
+	cachedGraph = undefined;
+	invalidationSubscription = undefined;
 }
 
 // Returns the cached network rooted at `start`, building (and subscribing to

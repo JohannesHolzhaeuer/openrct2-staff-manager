@@ -13,8 +13,8 @@ const AUTO_STORAGE_KEY = "staffManager.autoEnabled.v1";
 // batch, but never performs a full map rescan.
 const DEBOUNCE_MS = 250;
 
-let actionSubscription: IDisposable | null = null;
-let pendingTimer: number | null = null;
+let actionSubscription: IDisposable | undefined = undefined;
+let pendingTimer: number | undefined = undefined;
 let pendingTiles: { x: number; y: number; kind: "path" | "queue" | "land" }[] = [];
 let isWorking = false;
 
@@ -48,14 +48,14 @@ const TILES_PER_TICK = 16;
 export function setAutoEnabled(enabled: boolean): void {
 	autoEnabledStore.set(enabled);
 	gameContext().setSetting(AUTO_STORAGE_KEY, enabled);
-	if (null !== pendingTimer) {
+	if (undefined !== pendingTimer) {
 		gameContext().clearTimeout(pendingTimer);
-		pendingTimer = null;
+		pendingTimer = undefined;
 	}
 	pendingTiles = [];
 	if (actionSubscription) {
 		actionSubscription.dispose();
-		actionSubscription = null;
+		actionSubscription = undefined;
 	}
 	if (enabled) {
 		actionSubscription = gameContext().subscribe("action.execute", onAction);
@@ -147,11 +147,11 @@ function queueTileIfPlacedPath(x: number, y: number): void {
 
 // Debounce: coalesce a burst of tile placements into one grouped processing pass.
 function schedule(): void {
-	if (null !== pendingTimer) {
+	if (undefined !== pendingTimer) {
 		gameContext().clearTimeout(pendingTimer);
 	}
 	pendingTimer = gameContext().setTimeout(function () {
-		pendingTimer = null;
+		pendingTimer = undefined;
 		processPending();
 	}, DEBOUNCE_MS);
 }
@@ -196,7 +196,7 @@ function processPending(): void {
 // Initialises automatic mode from the persisted setting. Safe to call more than once
 // (only subscribes when the flag is true and no subscription exists yet).
 export function initAuto(): void {
-	if (autoEnabledStore.get() && null === actionSubscription) {
+	if (autoEnabledStore.get() && undefined === actionSubscription) {
 		actionSubscription = gameContext().subscribe("action.execute", onAction);
 	}
 }

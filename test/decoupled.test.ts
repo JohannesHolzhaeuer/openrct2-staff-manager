@@ -93,9 +93,9 @@ describe("footpathsConnect", () => {
 });
 
 describe("surfacesConnect", () => {
-	it("null surfaces never connect", () => {
-		expect(surfacesConnect(null, null)).toBe(false);
-		expect(surfacesConnect({ baseHeight: 5, waterHeight: 0 }, null)).toBe(false);
+	it("undefined surfaces never connect", () => {
+		expect(surfacesConnect(undefined, undefined)).toBe(false);
+		expect(surfacesConnect({ baseHeight: 5, waterHeight: 0 }, undefined)).toBe(false);
 	});
 	it("water blocks walking", () => {
 		expect(

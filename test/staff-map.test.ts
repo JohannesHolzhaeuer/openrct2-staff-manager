@@ -147,7 +147,7 @@ describe("findNearestPathInOrderedTiles", () => {
 		expect([found?.x, found?.y]).toEqual([2, 2]);
 	});
 
-	it("returns null when no candidate is placeable", () => {
+	it("returns undefined when no candidate is placeable", () => {
 		setGameMap(
 			fakeMap(
 				{ x: 8, y: 8 },
@@ -156,6 +156,6 @@ describe("findNearestPathInOrderedTiles", () => {
 				},
 			),
 		);
-		expect(findNearestPathInOrderedTiles([pathTile(1, 1)], 0, 0)).toBeNull();
+		expect(findNearestPathInOrderedTiles([pathTile(1, 1)], 0, 0)).toBeUndefined();
 	});
 });

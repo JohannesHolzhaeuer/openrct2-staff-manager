@@ -56,7 +56,7 @@ import {
 // hired member gets the tiles accumulated for it assigned patched onto its real
 // patrol area once the hire completes.
 interface AutoArea {
-	member: Staff | null;
+	member: Staff | undefined;
 	// Tile keys (see tileKey) of tiles assigned to this area, world-coordinate
 	// lists of the patrol area tile targets for TeleportStoredTile are kept in
 	// tileKeys for coverage/adjacency checks.
@@ -160,7 +160,7 @@ function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
 		return false;
 	}
 	areas.push({
-		member: null,
+		member: undefined,
 		tileKeys: new Set([tileKey(tx, ty)]),
 		coords: [{ x: tx * 32, y: ty * 32 }],
 	});
@@ -263,9 +263,9 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 	});
 }
 
-function getLastStaffOfType(staffType: StaffType): Staff | null {
+function getLastStaffOfType(staffType: StaffType): Staff | undefined {
 	const members = getStaffByType(staffType);
-	return 0 < members.length ? members[members.length - 1] : null;
+	return 0 < members.length ? members[members.length - 1] : undefined;
 }
 
 // The baseZ of the footpath on a tile, if any (used as a teleport height).

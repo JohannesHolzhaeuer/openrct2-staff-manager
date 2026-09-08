@@ -501,14 +501,14 @@ export function chunkTilesForStaffCount(
 	let scanIndex = 0;
 
 	while (0 < remaining.size) {
-		let startKey: string | null = null;
+		let startKey: string | undefined = undefined;
 		for (; scanIndex < order.length; scanIndex++) {
 			if (remaining.has(order[scanIndex])) {
 				startKey = order[scanIndex];
 				break;
 			}
 		}
-		if (null === startKey) {
+		if (undefined === startKey) {
 			break;
 		}
 
@@ -783,7 +783,7 @@ export function isPeepPlaceableTile(x: number, y: number): boolean {
 		return false;
 	}
 	const tile = gameMap().getTile(x, y);
-	let footpath: FootpathElement | null = null;
+	let footpath: FootpathElement | undefined = undefined;
 	let hasSurface = false;
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
@@ -800,7 +800,7 @@ export function isPeepPlaceableTile(x: number, y: number): boolean {
 			hasSurface = true;
 		}
 	}
-	return null !== footpath || hasSurface;
+	return undefined !== footpath || hasSurface;
 }
 
 // Returns the given tiles ordered by Manhattan distance from (x, y), nearest
@@ -826,13 +826,13 @@ function tilesByDistance(tiles: PathTileInfo[], x: number, y: number): PathTileI
 // `map.getTile` plus an element scan) meant one engine query per path tile in
 // the park *per staff member*, which was a major source of stutter while
 // patrol areas were being assigned.
-function findNearestPathTile(x: number, y: number): PathTileInfo | null {
+function findNearestPathTile(x: number, y: number): PathTileInfo | undefined {
 	for (const tile of tilesByDistance(lastAllPathTiles, x, y)) {
 		if (isPeepPlaceableTile(tile.x, tile.y)) {
 			return tile;
 		}
 	}
-	return null;
+	return undefined;
 }
 
 // Finds the walkable footpath tile closest to (x, y) among only the given
@@ -843,7 +843,7 @@ export function findNearestPathInOrderedTiles(
 	tiles: PathTileInfo[],
 	x: number,
 	y: number,
-): PathTileInfo | null {
+): PathTileInfo | undefined {
 	const inBounds = tiles.filter(function (tile) {
 		return 0 <= tile.x && 0 <= tile.y && tile.x < gameMap().size.x && tile.y < gameMap().size.y;
 	});
@@ -1214,14 +1214,14 @@ function assignEntertainerAreas(
 }
 
 // Finds the footpath element on a tile, if any (mirrors findSurfaceElement).
-function findFootpathElement(tile: Tile): FootpathElement | null {
+function findFootpathElement(tile: Tile): FootpathElement | undefined {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if ("footpath" === element.type) {
 			return element;
 		}
 	}
-	return null;
+	return undefined;
 }
 
 // Whether a mechanic can safely be teleported: the API doesn't expose
@@ -1232,7 +1232,7 @@ function findFootpathElement(tile: Tile): FootpathElement | null {
 export function canTeleportMechanic(member: Staff): boolean {
 	const tileX = Math.floor(member.x / 32);
 	const tileY = Math.floor(member.y / 32);
-	return null !== findFootpathElement(gameMap().getTile(tileX, tileY));
+	return undefined !== findFootpathElement(gameMap().getTile(tileX, tileY));
 }
 
 // Assigns mechanics to ride exits: each patrol area consists of just the
@@ -1269,7 +1269,7 @@ function assignMechanics(onComplete: () => void): void {
 	const tasks: {
 		member: Staff;
 		patrolTiles: CoordsXY[];
-		teleportTarget: { x: number; y: number; z: number } | null;
+		teleportTarget: { x: number; y: number; z: number } | undefined;
 	}[] = [];
 	let mechanicIndex = 0;
 	for (let i = 0; i < rides.length && mechanicIndex < mechanics.length; i++) {
@@ -1286,9 +1286,9 @@ function assignMechanics(onComplete: () => void): void {
 			const exitTileX = Math.floor(exit.x / 32);
 			const exitTileY = Math.floor(exit.y / 32);
 
-			let frontTileX: number | null = null;
-			let frontTileY: number | null = null;
-			let frontZ: number | null = null;
+			let frontTileX: number | undefined = undefined;
+			let frontTileY: number | undefined = undefined;
+			let frontZ: number | undefined = undefined;
 
 			// The "front" tile is the footpath the exit actually leads onto.
 			// Prefer the exit's stored facing direction (mapped through
@@ -1309,7 +1309,7 @@ function assignMechanics(onComplete: () => void): void {
 				}),
 			];
 			const frontTile = exitToPathTile(exitTileX, exitTileY, exit.z, candidateOffsets);
-			if (null !== frontTile) {
+			if (undefined !== frontTile) {
 				frontTileX = frontTile.x;
 				frontTileY = frontTile.y;
 				frontZ = frontTile.z;
@@ -1324,7 +1324,7 @@ function assignMechanics(onComplete: () => void): void {
 			// away from the ride.
 			const member = mechanics[mechanicIndex];
 			const patrolTiles: CoordsXY[] = [tileToWorldXY(exitTileX, exitTileY)];
-			if (null !== frontTileX && null !== frontTileY) {
+			if (undefined !== frontTileX && undefined !== frontTileY) {
 				patrolTiles.push(tileToWorldXY(frontTileX, frontTileY));
 			}
 
@@ -1333,19 +1333,19 @@ function assignMechanics(onComplete: () => void): void {
 			// for "currently servicing a ride") keeps its correct new patrol
 			// area from above but is not physically dragged off mid-repair; it
 			// will walk to its assigned area once it finishes its current job.
-			let teleportTarget: { x: number; y: number; z: number } | null = null;
+			let teleportTarget: { x: number; y: number; z: number } | undefined = undefined;
 			if (canTeleportMechanic(member)) {
 				// Prefer standing on the front tile, but only if a peep can
 				// actually be placed there (it may carry a bench/lamp/bin);
 				// otherwise drop the mechanic on the nearest placeable footpath.
 				// The patrol area still stays on the real front tile regardless
 				// of where the mechanic is physically placed.
-				let teleportTileX: number | null = null;
-				let teleportTileY: number | null = null;
-				let teleportZ: number | null = null;
+				let teleportTileX: number | undefined = undefined;
+				let teleportTileY: number | undefined = undefined;
+				let teleportZ: number | undefined = undefined;
 				if (
-					null !== frontTileX &&
-					null !== frontTileY &&
+					undefined !== frontTileX &&
+					undefined !== frontTileY &&
 					isPeepPlaceableTile(frontTileX, frontTileY)
 				) {
 					teleportTileX = frontTileX;
@@ -1359,7 +1359,7 @@ function assignMechanics(onComplete: () => void): void {
 						teleportZ = nearestPathTile.baseZ;
 					}
 				}
-				if (null !== teleportTileX && null !== teleportTileY) {
+				if (undefined !== teleportTileX && undefined !== teleportTileY) {
 					teleportTarget = {
 						x: teleportTileX * 32 + 16,
 						y: teleportTileY * 32 + 16,
@@ -1433,7 +1433,7 @@ function getStaffedRideExitFronts(): StaffedRideExit[] {
 				const candidateX = exitTileX + offset.x;
 				const candidateY = exitTileY + offset.y;
 				const footpath = findFootpathElement(gameMap().getTile(candidateX, candidateY));
-				if (null !== footpath) {
+				if (undefined !== footpath) {
 					result.push({
 						exitTileX: exitTileX,
 						exitTileY: exitTileY,

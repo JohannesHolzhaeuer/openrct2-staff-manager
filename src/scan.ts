@@ -257,14 +257,14 @@ export function surfaceTilesConnect(tx: number, ty: number, nx: number, ny: numb
 }
 
 // Finds the surface element on a tile, if any.
-function findSurfaceElement(tile: Tile): SurfaceElement | null {
+function findSurfaceElement(tile: Tile): SurfaceElement | undefined {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if ("surface" === element.type) {
 			return element;
 		}
 	}
-	return null;
+	return undefined;
 }
 
 // The maximum difference in surface baseHeight between two neighbouring land
@@ -275,8 +275,8 @@ const MAX_WALKABLE_HEIGHT_DIFFERENCE = 2;
 // Whether staff can walk between two neighbouring land tiles, i.e. whether
 // their terrain heights are close enough not to form an unclimbable step.
 export function surfacesConnect(
-	from: { baseHeight: number; waterHeight: number } | null,
-	to: { baseHeight: number; waterHeight: number } | null,
+	from: { baseHeight: number; waterHeight: number } | undefined,
+	to: { baseHeight: number; waterHeight: number } | undefined,
 	maxDifference: number = MAX_WALKABLE_HEIGHT_DIFFERENCE,
 ): boolean {
 	if (!from || !to || 0 !== from.waterHeight || 0 !== to.waterHeight) {
@@ -326,7 +326,7 @@ export function surfaceFenceBlocksWalking(x1: number, y1: number, x2: number, y2
 // submerged. Handymen (mowing/watering) must never be sent onto such tiles -
 // they can't stand on water - so this must be checked in addition to the
 // surface style.
-function isLandSurface(surface: SurfaceElement | null): surface is SurfaceElement {
+function isLandSurface(surface: SurfaceElement | undefined): surface is SurfaceElement {
 	return 0 === surface?.waterHeight;
 }
 
@@ -399,7 +399,7 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): {
 	interface PendingStep {
 		x: number;
 		y: number;
-		z: number | null;
+		z: number | undefined;
 		fromDirection: number;
 	}
 	const stack: PendingStep[] = [];
@@ -410,7 +410,7 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): {
 		stack.push({
 			x: entranceTile.x + offset.x,
 			y: entranceTile.y + offset.y,
-			z: null,
+			z: undefined,
 			fromDirection: oppositeDirection(d),
 		});
 	}
@@ -448,7 +448,7 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): {
 		for (const footpath of footpaths) {
 			// Only step onto this path if it actually meets the path we came
 			// from at the same height.
-			if (null !== current.z && footpathEdgeZ(footpath, current.fromDirection) !== current.z) {
+			if (undefined !== current.z && footpathEdgeZ(footpath, current.fromDirection) !== current.z) {
 				continue;
 			}
 
@@ -896,7 +896,7 @@ export function surfaceBaseZAt(x: number, y: number): number {
 	return surface ? surface.baseZ : 0;
 }
 
-let cachedGrassSurfaceStyleIndices: Set<number> | null = null;
+let cachedGrassSurfaceStyleIndices: Set<number> | undefined = undefined;
 
 function grassSurfaceStyleIndices(): Set<number> {
 	cachedGrassSurfaceStyleIndices ??= findGrassSurfaceStyleIndices();
@@ -908,7 +908,7 @@ function grassSurfaceStyleIndices(): Set<number> {
 // scans (e.g. loading a different park), and the cache was previously never
 // invalidated, so a stale set could misclassify mowable tiles.
 export function invalidateGrassSurfaceStyleCache(): void {
-	cachedGrassSurfaceStyleIndices = null;
+	cachedGrassSurfaceStyleIndices = undefined;
 }
 
 // The world-to-tile coordinate of the tile containing the given world coordinate.
