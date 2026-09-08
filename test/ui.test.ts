@@ -21,7 +21,7 @@ const openedWindows: unknown[] = [];
 // close over must be defined via vi.hoisted rather than as a plain const.
 const { STORE_MARKER, makeStore } = vi.hoisted(() => {
 	const marker = Symbol("store");
-	function make<T>(initial: T): { [k: symbol]: true; get(): T; set(value: T): void } {
+	const make = function make<T>(initial: T): { [k: symbol]: true; get(): T; set(value: T): void } {
 		let value = initial;
 		return {
 			[marker]: true,
@@ -30,7 +30,7 @@ const { STORE_MARKER, makeStore } = vi.hoisted(() => {
 				value = next;
 			},
 		};
-	}
+	};
 	return { STORE_MARKER: marker, makeStore: make };
 });
 

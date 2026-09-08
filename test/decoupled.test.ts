@@ -10,20 +10,20 @@ import { describe, expect, it } from "vitest";
 
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
 
-function fp(
+const fp = function fp(
 	baseZ: number,
 	slopeDirection: number | null = null,
 ): { baseZ: number; slopeDirection: number | null } {
 	return { baseZ: baseZ, slopeDirection: slopeDirection };
-}
+};
 
-function alwaysConnected(): boolean {
+const alwaysConnected = function alwaysConnected(): boolean {
 	return true;
-}
+};
 
-function neverConnected(): boolean {
+const neverConnected = function neverConnected(): boolean {
 	return false;
-}
+};
 
 describe("footpathEdgeZ", () => {
 	it("flat footpath is at baseZ on every edge", () => {
@@ -146,7 +146,7 @@ describe("isStandingOnTile", () => {
 	});
 });
 
-function chain(xs: number[], ys: number[]): PathTileInfo[] {
+const chain = function chain(xs: number[], ys: number[]): PathTileInfo[] {
 	return xs.map((x, i) => ({
 		x: x,
 		y: ys[i],
@@ -155,7 +155,7 @@ function chain(xs: number[], ys: number[]): PathTileInfo[] {
 		isQueue: false,
 		neighbourKeys: [] as string[],
 	}));
-}
+};
 
 describe("chunkTilesForStaffCount", () => {
 	it("returns no chunks for no staff or no tiles", () => {
@@ -312,9 +312,9 @@ describe("chunkTilesForStaffCount", () => {
 
 // Helper: convert a list of tile-coordinate pairs into world-coordinate areas (the
 // form decideAreaAction expects - each tile is {x*32, y*32}).
-function areaTiles(...tiles: [number, number][]): CoordsXY[] {
+const areaTiles = function areaTiles(...tiles: [number, number][]): CoordsXY[] {
 	return tiles.map(([tx, ty]) => ({ x: tx * 32, y: ty * 32 }));
-}
+};
 
 describe("decideAreaAction", () => {
 	it("returns covered when the tile is already in an area", () => {

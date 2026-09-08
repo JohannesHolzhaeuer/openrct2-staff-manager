@@ -100,7 +100,7 @@ export class FakeContext implements GameContext {
 }
 
 // Costume objects for hire tests. Only `index` and `identifier` are read.
-export function fakeObjects(identifiers: string[]): GameObjects {
+export const fakeObjects = function fakeObjects(identifiers: string[]): GameObjects {
 	return {
 		getAllObjects(): LoadedObject[] {
 			return identifiers.map((identifier, index) => {
@@ -108,4 +108,4 @@ export function fakeObjects(identifiers: string[]): GameObjects {
 			});
 		},
 	};
-}
+};

@@ -15,9 +15,9 @@ afterEach(() => {
 	resetGameMap();
 });
 
-function pathTile(x: number, y: number): PathTileInfo {
+const pathTile = function pathTile(x: number, y: number): PathTileInfo {
 	return { x: x, y: y, baseHeight: 20, baseZ: 160, isQueue: false, neighbourKeys: [] };
-}
+};
 
 describe("getStaffByType", () => {
 	it("returns only the staff of the requested type", () => {

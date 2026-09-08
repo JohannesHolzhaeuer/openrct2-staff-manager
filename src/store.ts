@@ -96,18 +96,18 @@ export const hasRanAdjustAndAssignStore = flexStore<boolean>(false);
 // Whether automatic adjust+assign is enabled. Persisted in context.sharedStorage
 // (key "staffManager.autoEnabled") via the auto.ts module, so it survives across
 // game/plugin launches. Loaded at startup from the saved value.
-function initialAutoEnabled(): boolean {
+const initialAutoEnabled = function initialAutoEnabled(): boolean {
 	if ("undefined" !== typeof context) {
 		return context.sharedStorage.get("staffManager.autoEnabled.v1", DEFAULT_AUTO_ENABLED);
 	}
 	return DEFAULT_AUTO_ENABLED;
-}
+};
 export const autoEnabledStore = flexStore<boolean>(initialAutoEnabled());
 
 // Per-staff-type "disabled" stores for the spinners/toggles/labels within
 // each staff group box: disabled whenever the general controls are disabled
 // (tiles not yet calculated) OR the staff type's own "Enabled" toggle is off.
-function controlsDisabledFor(enabled: Store<boolean>): Store<boolean> {
+const controlsDisabledFor = function controlsDisabledFor(enabled: Store<boolean>): Store<boolean> {
 	return compute(
 		staffControlsDisabledStore,
 		enabled,
@@ -115,19 +115,22 @@ function controlsDisabledFor(enabled: Store<boolean>): Store<boolean> {
 			return controlsDisabled || !isEnabled;
 		},
 	);
-}
+};
 export const handymenControlsDisabledStore = controlsDisabledFor(handymenEnabledStore);
 export const guardsControlsDisabledStore = controlsDisabledFor(guardsEnabledStore);
 export const entertainersControlsDisabledStore = controlsDisabledFor(entertainersEnabledStore);
 export const mechanicsControlsDisabledStore = controlsDisabledFor(mechanicsEnabledStore);
 
 // --- Needed staff computations ------------------------------------------------
-export function computeNeeded(totalTiles: number, tilesPerStaff: number): number {
+export const computeNeeded = function computeNeeded(
+	totalTiles: number,
+	tilesPerStaff: number,
+): number {
 	if (0 >= tilesPerStaff || 0 >= totalTiles) {
 		return 0;
 	}
 	return Math.ceil(totalTiles / tilesPerStaff);
-}
+};
 
 // Handymen are needed both to clean up the path/queue network (Cleanup) and
 // to mow/water the park's garden tiles (Gardening). These are tracked as

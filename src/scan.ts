@@ -36,9 +36,9 @@ export interface PathTileInfo {
 	neighbourKeys: string[];
 }
 
-export function tileKey(x: number, y: number): string {
+export const tileKey = function tileKey(x: number, y: number): string {
 	return String(x) + "," + String(y);
-}
+};
 
 // Cardinal neighbour offsets used to walk the footpath network tile by tile.
 export const CARDINAL_NEIGHBOUR_OFFSETS: CoordsXY[] = [
@@ -63,7 +63,7 @@ export const DIRECTION_OFFSETS: CoordsXY[] = [
 // by a real ride entrance or exit, so they can be excluded when looking for the
 // park entrance. A park entrance can share a "ride" id with an unrelated ride,
 // so ride ids on entrance tile elements cannot be used to tell them apart.
-function getRideEntranceExitTileKeys(): Set<string> {
+const getRideEntranceExitTileKeys = function getRideEntranceExitTileKeys(): Set<string> {
 	const tileKeys = new Set<string>();
 	const rides = gameMap().rides;
 	for (const ride of rides) {
@@ -93,11 +93,11 @@ function getRideEntranceExitTileKeys(): Set<string> {
 		}
 	}
 	return tileKeys;
-}
+};
 
 // Scans the whole map for "entrance" tile elements that are not a ride entrance
 // or exit; the remaining entrance element(s) are the park entrance(s).
-export function findParkEntranceTiles(): CoordsXY[] {
+export const findParkEntranceTiles = function findParkEntranceTiles(): CoordsXY[] {
 	const rideEntranceExitTileKeys = getRideEntranceExitTileKeys();
 	const mapSize = gameMap().size;
 	const parkEntranceTiles: CoordsXY[] = [];
@@ -126,18 +126,18 @@ export function findParkEntranceTiles(): CoordsXY[] {
 		}
 	}
 	return parkEntranceTiles;
-}
+};
 
 // Finds the park entrance tile(s) and logs the result. Returns the tiles so
 // callers (like the footpath scan) can reuse them without scanning twice.
-export function findAndReportParkEntrance(): CoordsXY[] {
+export const findAndReportParkEntrance = function findAndReportParkEntrance(): CoordsXY[] {
 	const parkEntranceTiles = findParkEntranceTiles();
 	if (0 === parkEntranceTiles.length) {
 		parkEntranceInfoStore.set(t("parkEntrance.notFound"));
 		return parkEntranceTiles;
 	}
 	return parkEntranceTiles;
-}
+};
 
 // --- Footpath network scan -------------------------------------------------
 // A footpath element on a tile, reduced to what is needed to reason about
@@ -166,7 +166,7 @@ interface FootpathGeometry {
 // Collects every footpath element on a tile that has already been fetched.
 // Split out from findFootpathElements so callers that already hold a Tile
 // don't pay for a second map.getTile plus a second pass over its elements.
-function findFootpathElementsOnTile(tile: Tile): FootpathInfo[] {
+const findFootpathElementsOnTile = function findFootpathElementsOnTile(tile: Tile): FootpathInfo[] {
 	const result: FootpathInfo[] = [];
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
@@ -182,23 +182,23 @@ function findFootpathElementsOnTile(tile: Tile): FootpathInfo[] {
 		}
 	}
 	return result;
-}
+};
 
 // Collects every footpath element on a tile. A tile can carry more than one
 // (e.g. a path on a bridge above another path), and they are at different
 // heights, so they must be treated as separate walkable nodes.
-function findFootpathElements(x: number, y: number): FootpathInfo[] {
+const findFootpathElements = function findFootpathElements(x: number, y: number): FootpathInfo[] {
 	if (0 > x || 0 > y || x >= gameMap().size.x || y >= gameMap().size.y) {
 		return [];
 	}
 	return findFootpathElementsOnTile(gameMap().getTile(x, y));
-}
+};
 
 // The world height of a footpath at the edge facing the given direction
 // (using OpenRCT2's 0=-X, 1=+Y, 2=+X, 3=-Y direction convention). A flat
 // path is at baseZ all around; a sloped path is at baseZ on three edges and
 // one level higher on the edge it slopes up towards.
-export function footpathEdgeZ(
+export const footpathEdgeZ = function footpathEdgeZ(
 	footpath: FootpathGeometry,
 	direction: number,
 	slopeHeight: number = FOOTPATH_SLOPE_HEIGHT,
@@ -207,24 +207,24 @@ export function footpathEdgeZ(
 		return footpath.baseZ + slopeHeight;
 	}
 	return footpath.baseZ;
-}
+};
 
-export function oppositeDirection(direction: number): number {
+export const oppositeDirection = function oppositeDirection(direction: number): number {
 	return (direction + 2) % 4;
-}
+};
 
 // Whether staff can step from the given footpath onto a footpath on the
 // neighbouring tile in the given direction: the two paths must meet at the
 // same height on their shared edge. This is what makes a patrol area
 // genuinely walkable - x/y adjacency alone would happily join a path on a
 // bridge to the path passing underneath it.
-export function footpathsConnect(
+export const footpathsConnect = function footpathsConnect(
 	from: FootpathGeometry,
 	to: FootpathGeometry,
 	direction: number,
 ): boolean {
 	return footpathEdgeZ(from, direction) === footpathEdgeZ(to, oppositeDirection(direction));
-}
+};
 
 // Whether staff can walk between two neighbouring tiles' *footpath* elements. Unlike
 // plain x/y adjacency, this defers to the engine's own PathNavigator/PathConnection
@@ -235,7 +235,10 @@ export function footpathsConnect(
 // used by both the manual scan (to build patrol areas) and auto mode (to decide
 // enlarge-vs-hire), so the two never disagree about whether two tiles belong in one
 // reachable area.
-export function footpathsConnectTiles(from: CoordsXY, to: CoordsXY): boolean {
+export const footpathsConnectTiles = function footpathsConnectTiles(
+	from: CoordsXY,
+	to: CoordsXY,
+): boolean {
 	if (from.x === to.x && from.y === to.y) {
 		return false;
 	}
@@ -246,20 +249,23 @@ export function footpathsConnectTiles(from: CoordsXY, to: CoordsXY): boolean {
 		}
 	}
 	return false;
-}
+};
 
 // Whether staff can walk between two neighbouring *land* tiles (used for gardening
 // areas): their terrain heights must be close enough not to form an unclimbable step,
 // and neither may be water. Shared by the manual garden-area scan and auto mode.
-export function surfaceTilesConnect(from: CoordsXY, to: CoordsXY): boolean {
+export const surfaceTilesConnect = function surfaceTilesConnect(
+	from: CoordsXY,
+	to: CoordsXY,
+): boolean {
 	return surfacesConnect(
 		findSurfaceElement(gameMap().getTile(from.x, from.y)),
 		findSurfaceElement(gameMap().getTile(to.x, to.y)),
 	);
-}
+};
 
 // Finds the surface element on a tile, if any.
-function findSurfaceElement(tile: Tile): SurfaceElement | undefined {
+const findSurfaceElement = function findSurfaceElement(tile: Tile): SurfaceElement | undefined {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if ("surface" === element.type) {
@@ -267,23 +273,25 @@ function findSurfaceElement(tile: Tile): SurfaceElement | undefined {
 		}
 	}
 	return undefined;
-}
+};
 
 // The baseZ of a (possibly missing) surface element, or 0 if there is none.
-function surfaceBaseZOr0(surface: SurfaceElement | undefined): number {
+const surfaceBaseZOr0 = function surfaceBaseZOr0(surface: SurfaceElement | undefined): number {
 	if (surface) {
 		return surface.baseZ;
 	}
 	return 0;
-}
+};
 
 // The baseHeight of a (possibly missing) surface element, or 0 if there is none.
-function surfaceBaseHeightOr0(surface: SurfaceElement | undefined): number {
+const surfaceBaseHeightOr0 = function surfaceBaseHeightOr0(
+	surface: SurfaceElement | undefined,
+): number {
 	if (surface) {
 		return surface.baseHeight;
 	}
 	return 0;
-}
+};
 
 // The maximum difference in surface baseHeight between two neighbouring land
 // tiles that staff can still walk across. A sloped tile spans exactly one
@@ -292,7 +300,7 @@ const MAX_WALKABLE_HEIGHT_DIFFERENCE = 2;
 
 // Whether staff can walk between two neighbouring land tiles, i.e. whether
 // their terrain heights are close enough not to form an unclimbable step.
-export function surfacesConnect(
+export const surfacesConnect = function surfacesConnect(
 	from: { baseHeight: number; waterHeight: number } | undefined,
 	to: { baseHeight: number; waterHeight: number } | undefined,
 	maxDifference: number = MAX_WALKABLE_HEIGHT_DIFFERENCE,
@@ -301,7 +309,7 @@ export function surfacesConnect(
 		return false;
 	}
 	return Math.abs(from.baseHeight - to.baseHeight) <= maxDifference;
-}
+};
 
 // Fence bit for each cardinal direction, matching OpenRCT2's parkFences layout
 // (bit set means the neighbour in that cardinal direction is in the park, so a fence
@@ -313,7 +321,10 @@ const FENCE_BIT_BY_DIRECTION = [0x4, 0x2, 0x1, 0x8];
 // neighbouring tiles across their shared edge. A park fence on a surface (parkFences),
 // or a path edge/railing (FootpathElement.edges), physically bars walking, so fenced
 // tiles must not be merged into the same patrol area.
-export function surfaceFenceBlocksWalking(from: CoordsXY, to: CoordsXY): boolean {
+export const surfaceFenceBlocksWalking = function surfaceFenceBlocksWalking(
+	from: CoordsXY,
+	to: CoordsXY,
+): boolean {
 	const dx = to.x - from.x;
 	const dy = to.y - from.y;
 	let direction = -1;
@@ -336,7 +347,7 @@ export function surfaceFenceBlocksWalking(from: CoordsXY, to: CoordsXY): boolean
 		return true;
 	}
 	return false;
-}
+};
 
 // Whether a surface tile is dry land rather than water. In OpenRCT2, water is
 // not a separate tile/element type: it's stored as a waterHeight on the
@@ -344,21 +355,23 @@ export function surfaceFenceBlocksWalking(from: CoordsXY, to: CoordsXY): boolean
 // submerged. Handymen (mowing/watering) must never be sent onto such tiles -
 // they can't stand on water - so this must be checked in addition to the
 // surface style.
-function isLandSurface(surface: SurfaceElement | undefined): surface is SurfaceElement {
+const isLandSurface = function isLandSurface(
+	surface: SurfaceElement | undefined,
+): surface is SurfaceElement {
 	return 0 === surface?.waterHeight;
-}
+};
 
 // Whether a tile is actually owned by the park. Deliberately excludes tiles
 // that only have construction rights (no ownership): those don't belong to
 // the park, so staff patrol areas (and gardening tiles) must not include
 // them, even though the footpath on them may still be walkable.
-function isParkOwnedTile(x: number, y: number): boolean {
+const isParkOwnedTile = function isParkOwnedTile(x: number, y: number): boolean {
 	const surface = findSurfaceElement(gameMap().getTile(x, y));
 	if (!surface) {
 		return false;
 	}
 	return surface.hasOwnership;
-}
+};
 
 // How many height levels (~16 Z units each) a footpath must clear the ground surface
 // below it to be considered a bridge/overpass rather than a ground-level path.
@@ -368,9 +381,12 @@ export const ELEVATED_FOOTPATH_LEVELS = 2;
 // or overpass when its baseZ is at least ELEVATED_FOOTPATH_LEVELS height levels
 // (~32 Z units) above the given ground surface baseZ. Extracted from the map-reading
 // isElevatedFootpath so it can be unit-tested without OpenRCT2 access.
-export function footpathIsElevated(footpathBaseZ: number, surfaceBaseZ: number): boolean {
+export const footpathIsElevated = function footpathIsElevated(
+	footpathBaseZ: number,
+	surfaceBaseZ: number,
+): boolean {
 	return footpathBaseZ >= surfaceBaseZ + ELEVATED_FOOTPATH_LEVELS * 16;
-}
+};
 
 // Whether a footpath is elevated well above the surface below it (a bridge or
 // overpass). In OpenRCT2 the surface's baseZ is the ground level, and a path a
@@ -378,13 +394,17 @@ export function footpathIsElevated(footpathBaseZ: number, surfaceBaseZ: number):
 // park doesn't own. Such an elevated path is still a real park path staff can patrol,
 // unlike a ground-level public road on unowned land, which the scan only walks *through*
 // without including.
-function isElevatedFootpath(x: number, y: number, footpath: { baseZ: number }): boolean {
+const isElevatedFootpath = function isElevatedFootpath(
+	x: number,
+	y: number,
+	footpath: { baseZ: number },
+): boolean {
 	const surface = findSurfaceElement(gameMap().getTile(x, y));
 	if (!surface) {
 		return false;
 	}
 	return footpathIsElevated(footpath.baseZ, surface.baseZ);
-}
+};
 
 // Starting from the park entrance, walks the connected footpath network in all
 // directions (depth-first, so consecutive tiles in the resulting list stay
@@ -398,7 +418,9 @@ function isElevatedFootpath(x: number, y: number, footpath: { baseZ: number }): 
 // its raised side) are correctly treated as *not* connected. Each collected
 // tile records the tiles it is genuinely walkable to, so the patrol areas
 // built from these tiles later are contiguous by construction.
-function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): {
+const scanFootpathNetworkFromEntrance = function scanFootpathNetworkFromEntrance(
+	entranceTile: CoordsXY,
+): {
 	pathTiles: PathTileInfo[];
 	queueTiles: PathTileInfo[];
 	allTiles: PathTileInfo[];
@@ -543,20 +565,20 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): {
 	}
 
 	return { pathTiles: pathTiles, queueTiles: queueTiles, allTiles: allTiles };
-}
+};
 
 // --- Gardening tile scan --------------------------------------------------------
 // Whether a tile has a footpath element on it. Tiles covered by a footpath are
 // not gardening tiles: guests/staff can't walk on grass/scenery hidden
 // underneath a path.
-function hasFootpathElement(tile: Tile): boolean {
+const hasFootpathElement = function hasFootpathElement(tile: Tile): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
 		if ("footpath" === tile.getElement(e).type) {
 			return true;
 		}
 	}
 	return false;
-}
+};
 
 // Whether a tile carries an element that physically blocks a walking person at
 // the surface's standing height, so staff can't stand on the tile to mow/water
@@ -568,7 +590,7 @@ function hasFootpathElement(tile: Tile): boolean {
 // treated as a blocker. Small scenery (flowers/gardens) and walls/banners are
 // never blockers - flowers are the very thing being watered, and walls/banners
 // don't prevent standing on the tile.
-function hasBlockingElement(tile: Tile, surfaceBaseZ: number): boolean {
+const hasBlockingElement = function hasBlockingElement(tile: Tile, surfaceBaseZ: number): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		const type = element.type;
@@ -581,7 +603,7 @@ function hasBlockingElement(tile: Tile, surfaceBaseZ: number): boolean {
 		}
 	}
 	return false;
-}
+};
 
 // The small scenery object flag bit that marks an item as "can be watered"
 // (SMALL_SCENERY_FLAG_CAN_BE_WATERED in the OpenRCT2 source, SmallSceneryEntry.h).
@@ -593,7 +615,7 @@ const SMALL_SCENERY_FLAG_CAN_BE_WATERED = 1 << 5;
 // handymen water. Not every small scenery item needs watering (e.g. trees,
 // lamps, benches don't), so the scenery object's flags are checked for the
 // "can be watered" bit.
-function hasWaterableSceneryElement(tile: Tile): boolean {
+const hasWaterableSceneryElement = function hasWaterableSceneryElement(tile: Tile): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		if ("small_scenery" === element.type) {
@@ -605,14 +627,14 @@ function hasWaterableSceneryElement(tile: Tile): boolean {
 		}
 	}
 	return false;
-}
+};
 
 // Finds all loaded terrain_surface object indices that are grass-family
 // surfaces (e.g. "grass", "grass_clumps"), as opposed to sand, dirt, rock,
 // ice, martian, chequerboard, etc. Only grass can actually grow, so a
 // tile's grassLength is meaningless (and shouldn't count as mowable) unless
 // its surface style is one of these.
-function findGrassSurfaceStyleIndices(): Set<number> {
+const findGrassSurfaceStyleIndices = function findGrassSurfaceStyleIndices(): Set<number> {
 	const surfaceObjects = objectManager.getAllObjects("terrain_surface");
 	const result = new Set<number>();
 	for (const surfaceObject of surfaceObjects) {
@@ -622,7 +644,7 @@ function findGrassSurfaceStyleIndices(): Set<number> {
 		}
 	}
 	return result;
-}
+};
 
 // Scans every tile owned by the park (or under construction rights) and counts
 // how many are "garden tiles": tiles that either have mowable grass or
@@ -643,7 +665,7 @@ interface GardeningSweepState {
 	grassStyleIndices: Set<number>;
 }
 
-function newGardeningSweepState(): GardeningSweepState {
+const newGardeningSweepState = function newGardeningSweepState(): GardeningSweepState {
 	return {
 		gardenTiles: 0,
 		ownedTiles: 0,
@@ -653,12 +675,15 @@ function newGardeningSweepState(): GardeningSweepState {
 		connectorKeys: new Set<string>(),
 		grassStyleIndices: grassSurfaceStyleIndices(),
 	};
-}
+};
 
 // Classifies every owned tile in a single map column. Extracted from the old
 // nested x/y loop so the sweep can be spread over several game ticks instead of
 // scanning the whole map in one blocking pass.
-function scanGardeningColumn(x: number, state: GardeningSweepState): void {
+const scanGardeningColumn = function scanGardeningColumn(
+	x: number,
+	state: GardeningSweepState,
+): void {
 	const mapSize = gameMap().size;
 	for (let y = 0; y < mapSize.y; y++) {
 		if (isParkOwnedTile(x, y)) {
@@ -701,11 +726,11 @@ function scanGardeningColumn(x: number, state: GardeningSweepState): void {
 			}
 		}
 	}
-}
+};
 
 // Groups the classified garden tiles into connected components. Runs once, after
 // the column sweep above has visited every owned tile.
-function groupGardeningTiles(state: GardeningSweepState): {
+const groupGardeningTiles = function groupGardeningTiles(state: GardeningSweepState): {
 	gardenTiles: number;
 	ownedTiles: number;
 	areas: PathTileInfo[][];
@@ -801,7 +826,7 @@ function groupGardeningTiles(state: GardeningSweepState): {
 		areas: areas,
 		workCounts: workCounts,
 	};
-}
+};
 
 // --- Ride exit counting -------------------------------------------------------
 // Whether a station's exit coordinate is a real, in-use exit rather than an
@@ -809,14 +834,16 @@ function groupGardeningTiles(state: GardeningSweepState): {
 // RideStation.exit/entrance (they're never actually null despite existing
 // checks against falsy values), so unused slots must instead be detected by
 // their coordinates falling outside the map bounds.
-export function isValidStationExit(exit: CoordsXYZD | null | undefined): exit is CoordsXYZD {
+export const isValidStationExit = function isValidStationExit(
+	exit: CoordsXYZD | null | undefined,
+): exit is CoordsXYZD {
 	if (!exit) {
 		return false;
 	}
 	const tileX = Math.floor(exit.x / 32);
 	const tileY = Math.floor(exit.y / 32);
 	return 0 <= tileX && 0 <= tileY && tileX < gameMap().size.x && tileY < gameMap().size.y;
-}
+};
 
 // Counts the number of ride exits in the park; one mechanic is needed per
 // ride exit. Only actual rides count - shops/stalls and facilities (e.g. a
@@ -825,7 +852,7 @@ export function isValidStationExit(exit: CoordsXYZD | null | undefined): exit is
 // "stations" array can be longer than its actual station count) report an
 // exit at a sentinel/out-of-bounds coordinate rather than null, so those are
 // filtered out by checking the resulting tile is within the map.
-export function countRideExits(): number {
+export const countRideExits = function countRideExits(): number {
 	const rides = gameMap().rides;
 	let count = 0;
 	for (const ride of rides) {
@@ -839,7 +866,7 @@ export function countRideExits(): number {
 		}
 	}
 	return count;
-}
+};
 
 // --- Cached scan results (for Assign) ---------------------------------------------
 // The most recent footpath/queue tiles (in BFS visitation order, so slicing
@@ -859,30 +886,33 @@ export let lastGardenAreas: PathTileInfo[][] = [];
 // too (the tile is briefly added then removed as the cursor hovers), so a check
 // that only filters on footpath presence would treat the hover preview as a real
 // placement and needlessly hire/assign staff before the path is actually built.
-export function hasNonGhostFootpathElements(x: number, y: number): boolean {
+export const hasNonGhostFootpathElements = function hasNonGhostFootpathElements(
+	x: number,
+	y: number,
+): boolean {
 	return findFootpathElements(x, y).some(function isNotGhost(fp) {
 		return !fp.isGhost;
 	});
-}
+};
 
 // Whether the given tile has a plain (non-queue) footpath.
-export function isPlainPathTile(x: number, y: number): boolean {
+export const isPlainPathTile = function isPlainPathTile(x: number, y: number): boolean {
 	return findFootpathElements(x, y).some(function isNonQueueFootpath(fp) {
 		return !fp.isQueue;
 	});
-}
+};
 
 // Whether the given tile has a queue footpath.
-export function isQueueTile(x: number, y: number): boolean {
+export const isQueueTile = function isQueueTile(x: number, y: number): boolean {
 	return findFootpathElements(x, y).some(function isQueueFootpath(fp) {
 		return fp.isQueue;
 	});
-}
+};
 
 // Whether the given tile is a garden tile (mowable grass or waterable scenery on
 // dry, owned land with no footpath covering it). Mirrors the logic of
 // scanGardeningTiles for a single tile.
-export function isGardenTile(x: number, y: number): boolean {
+export const isGardenTile = function isGardenTile(x: number, y: number): boolean {
 	if (!isParkOwnedTile(x, y)) {
 		return false;
 	}
@@ -894,35 +924,35 @@ export function isGardenTile(x: number, y: number): boolean {
 	const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices().has(surface.surfaceStyle);
 	const isWaterable = isLandSurface(surface) && hasWaterableSceneryElement(tile);
 	return isMowable || isWaterable;
-}
+};
 
 // The baseZ of the surface on a tile (the height a gardener stands on to mow/
 // water), or 0 if there is no surface element. Used as a teleport height for
 // gardening handymen (unlike footpathBaseZAt, which is 0 on grass-only tiles).
-export function surfaceBaseZAt(x: number, y: number): number {
+export const surfaceBaseZAt = function surfaceBaseZAt(x: number, y: number): number {
 	const surface = findSurfaceElement(gameMap().getTile(x, y));
 	return surfaceBaseZOr0(surface);
-}
+};
 
 let cachedGrassSurfaceStyleIndices: Set<number> | undefined = undefined;
 
-function grassSurfaceStyleIndices(): Set<number> {
+const grassSurfaceStyleIndices = function grassSurfaceStyleIndices(): Set<number> {
 	cachedGrassSurfaceStyleIndices ??= findGrassSurfaceStyleIndices();
 	return cachedGrassSurfaceStyleIndices;
-}
+};
 
 // Drops the memoised grass surface-style lookup so the next scan re-reads it
 // from the object manager. The installed surface objects can change between
 // scans (e.g. loading a different park), and the cache was previously never
 // invalidated, so a stale set could misclassify mowable tiles.
-export function invalidateGrassSurfaceStyleCache(): void {
+export const invalidateGrassSurfaceStyleCache = function invalidateGrassSurfaceStyleCache(): void {
 	cachedGrassSurfaceStyleIndices = undefined;
-}
+};
 
 // The world-to-tile coordinate of the tile containing the given world coordinate.
-export function worldToTile(x: number, y: number): CoordsXY {
+export const worldToTile = function worldToTile(x: number, y: number): CoordsXY {
 	return { x: Math.floor(x / 32), y: Math.floor(y / 32) };
-}
+};
 
 // How many map columns of the gardening sweep to classify per game tick. The
 // sweep touches every owned tile, so on a large map doing it in one pass
@@ -935,7 +965,7 @@ const COLUMNS_PER_TICK = 16;
 const SCAN_TICK_DELAY = 0;
 
 // Publishes a completed scan's results to the stores.
-function publishScanResults(
+const publishScanResults = function publishScanResults(
 	result: { pathTiles: PathTileInfo[]; queueTiles: PathTileInfo[]; allTiles: PathTileInfo[] },
 	gardeningResult: {
 		gardenTiles: number;
@@ -957,7 +987,7 @@ function publishScanResults(
 	tilesCalculatedStore.set(true);
 
 	parkEntranceInfoStore.set("");
-}
+};
 
 // Finds the park entrance, then walks the footpath network from it, and scans
 // the park's owned tiles for gardening tiles. Stores the resulting
@@ -965,7 +995,7 @@ function publishScanResults(
 //
 // The gardening sweep is spread across game ticks so a large map doesn't block
 // the game loop; `onComplete` (if given) fires once the results are published.
-export function scanFootpathNetwork(onComplete?: () => void): void {
+export const scanFootpathNetwork = function scanFootpathNetwork(onComplete?: () => void): void {
 	// A full rescan is the point at which the park's installed surface objects
 	// may have changed, so drop the memoised grass-style set first.
 	invalidateGrassSurfaceStyleCache();
@@ -983,7 +1013,7 @@ export function scanFootpathNetwork(onComplete?: () => void): void {
 	const mapSize = gameMap().size;
 	let x = 0;
 
-	function step(): void {
+	const step = function step(): void {
 		const end = Math.min(mapSize.x, x + COLUMNS_PER_TICK);
 		for (; x < end; x++) {
 			scanGardeningColumn(x, state);
@@ -996,7 +1026,7 @@ export function scanFootpathNetwork(onComplete?: () => void): void {
 		if (onComplete) {
 			onComplete();
 		}
-	}
+	};
 
 	step();
-}
+};

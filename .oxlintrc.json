@@ -19,7 +19,7 @@
     "unicorn/no-anonymous-default-export": "error",
     "unicorn/no-process-exit": "error",
     "eslint/no-magic-numbers": "off",
-    "eslint/func-style": "off",
+    "eslint/func-style": "error",
     "eslint/sort-keys": "off",
     "eslint/func-names": "error",
     "eslint/no-ternary": "error",

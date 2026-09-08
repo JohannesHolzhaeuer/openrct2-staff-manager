@@ -24,7 +24,7 @@ let isWorking = false;
 // duplicate would be handled separately (and, worse, could hire a fresh staff
 // member each time). Keeping the first occurrence per tile means each distinct
 // tile is handled exactly once per batch.
-function dedupeTiles(
+const dedupeTiles = function dedupeTiles(
 	tiles: { x: number; y: number; kind: "path" | "queue" | "land" }[],
 ): { x: number; y: number; kind: "path" | "queue" | "land" }[] {
 	const seen = new Set<string>();
@@ -37,14 +37,14 @@ function dedupeTiles(
 		}
 	}
 	return result;
-}
+};
 
 // How many pending tiles to handle per game tick. Processing is chunked and
 // re-scheduled with context.setTimeout so a large burst of queued tiles (e.g. a
 // long path drag) never blocks the game loop in one tick (which froze the game).
 const TILES_PER_TICK = 16;
 
-export function setAutoEnabled(enabled: boolean): void {
+export const setAutoEnabled = function setAutoEnabled(enabled: boolean): void {
 	autoEnabledStore.set(enabled);
 	gameContext().setSetting(AUTO_STORAGE_KEY, enabled);
 	if (undefined !== pendingTimer) {
@@ -59,19 +59,19 @@ export function setAutoEnabled(enabled: boolean): void {
 	if (enabled) {
 		actionSubscription = gameContext().subscribe("action.execute", onAction);
 	}
-}
+};
 
 // Called for every executed game action while auto is on.
-function onAction(e: GameActionEventArgs): void {
+const onAction = function onAction(e: GameActionEventArgs): void {
 	// Ignore actions fired by this plugin itself (hires/teleports/patrol-area).
 	if (isWorking) {
 		return;
 	}
 	collectFromAction(e);
-}
+};
 
 // Extracts the affected tile(s) from a relevant action and queues them.
-function collectFromAction(e: GameActionEventArgs): void {
+const collectFromAction = function collectFromAction(e: GameActionEventArgs): void {
 	const action = e.action;
 
 	if ("footpathplace" === action || "footpathremove" === action) {
@@ -127,7 +127,7 @@ function collectFromAction(e: GameActionEventArgs): void {
 		}
 		return;
 	}
-}
+};
 
 // Queues a freshly placed path/queue tile, but only if it now actually holds a
 // real (non-ghost) footpath. Hovering the path tool fires repeated
@@ -135,7 +135,7 @@ function collectFromAction(e: GameActionEventArgs): void {
 // non-ghost check, every hover tile would be queued and then classified as
 // "land", hiring a staff member (or reassigning one) for a tile no path was
 // ever built on.
-function queueTileIfPlacedPath(x: number, y: number): void {
+const queueTileIfPlacedPath = function queueTileIfPlacedPath(x: number, y: number): void {
 	if (!hasNonGhostFootpathElements(x, y)) {
 		return;
 	}
@@ -145,10 +145,10 @@ function queueTileIfPlacedPath(x: number, y: number): void {
 	}
 	pendingTiles.push({ x: x, y: y, kind: kind });
 	schedule();
-}
+};
 
 // Debounce: coalesce a burst of tile placements into one grouped processing pass.
-function schedule(): void {
+const schedule = function schedule(): void {
 	if (undefined !== pendingTimer) {
 		gameContext().clearTimeout(pendingTimer);
 	}
@@ -156,12 +156,12 @@ function schedule(): void {
 		pendingTimer = undefined;
 		processPending();
 	}, DEBOUNCE_MS);
-}
+};
 
 // Processes all queued tiles in one batch per tick (still only touching affected
 // tiles, no full map scan), chunking the work across ticks so a large burst
 // (e.g. a long path drag) doesn't block the game loop.
-function processPending(): void {
+const processPending = function processPending(): void {
 	const tiles = dedupeTiles(pendingTiles);
 	pendingTiles = [];
 	if (0 === tiles.length) {
@@ -172,7 +172,7 @@ function processPending(): void {
 	}
 	isWorking = true;
 	let index = 0;
-	function step(): void {
+	const step = function step(): void {
 		const end = Math.min(tiles.length, index + TILES_PER_TICK);
 		try {
 			for (; index < end; index++) {
@@ -191,14 +191,14 @@ function processPending(): void {
 		} else {
 			isWorking = false;
 		}
-	}
+	};
 	step();
-}
+};
 
 // Initialises automatic mode from the persisted setting. Safe to call more than once
 // (only subscribes when the flag is true and no subscription exists yet).
-export function initAuto(): void {
+export const initAuto = function initAuto(): void {
 	if (autoEnabledStore.get() && undefined === actionSubscription) {
 		actionSubscription = gameContext().subscribe("action.execute", onAction);
 	}
-}
+};

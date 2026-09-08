@@ -66,7 +66,7 @@ import { t } from "./i18n";
 // right-aligned value, e.g. "Needed        nnn".
 const STAT_ROW_HEIGHT = 12;
 
-function coloredText(
+const coloredText = function coloredText(
 	colorToken: Bindable<string> | undefined,
 	text: Bindable<string>,
 ): Bindable<string> {
@@ -89,16 +89,16 @@ function coloredText(
 		});
 	}
 	return colorToken + text;
-}
+};
 
-function textOf(value: Bindable<number>): Bindable<string> {
+const textOf = function textOf(value: Bindable<number>): Bindable<string> {
 	if (isStore(value)) {
 		return compute(value, String);
 	}
 	return String(value);
-}
+};
 
-function statRow(options: {
+const statRow = function statRow(options: {
 	name: string;
 	value: Bindable<number>;
 	tooltip: string;
@@ -130,9 +130,9 @@ function statRow(options: {
 			}),
 		],
 	});
-}
+};
 
-function differenceColor(d: number): string {
+const differenceColor = function differenceColor(d: number): string {
 	if (0 < d) {
 		return "{GREEN}";
 	}
@@ -140,16 +140,19 @@ function differenceColor(d: number): string {
 		return "{RED}";
 	}
 	return "{BLACK}";
-}
+};
 
-function toStore<T>(value: Bindable<T>): Store<T> {
+const toStore = function toStore<T>(value: Bindable<T>): Store<T> {
 	if (isStore(value)) {
 		return value;
 	}
 	return flexStore(value);
-}
+};
 
-function computeDifference(needed: Bindable<number>, hired: Bindable<number>): Bindable<number> {
+const computeDifference = function computeDifference(
+	needed: Bindable<number>,
+	hired: Bindable<number>,
+): Bindable<number> {
 	if (isStore(needed) || isStore(hired)) {
 		return compute(
 			toStore(needed),
@@ -160,9 +163,9 @@ function computeDifference(needed: Bindable<number>, hired: Bindable<number>): B
 		);
 	}
 	return needed - hired;
-}
+};
 
-function computeDifferenceColorToken(
+const computeDifferenceColorToken = function computeDifferenceColorToken(
 	difference: Bindable<number>,
 	disabled: Bindable<boolean>,
 ): Bindable<string> {
@@ -179,9 +182,9 @@ function computeDifferenceColorToken(
 		);
 	}
 	return differenceColor(difference);
-}
+};
 
-function statTable(
+const statTable = function statTable(
 	needed: Bindable<number>,
 	hired: Bindable<number>,
 	disabled: Bindable<boolean>,
@@ -212,7 +215,7 @@ function statTable(
 			colorToken: differenceColorToken,
 		}),
 	];
-}
+};
 
 // --- Park entrance tile-count table -------------------------------------------
 // One cell of the top status table: a left-aligned name and a right-aligned
@@ -221,7 +224,7 @@ function statTable(
 // tiles) line up into a compact aligned table instead of one free-form string.
 const PARK_ENTRANCE_CELL_HEIGHT = 24;
 
-function parkEntranceStatCell(
+const parkEntranceStatCell = function parkEntranceStatCell(
 	name: string,
 	value: Bindable<number>,
 ): WidgetCreator<FlexiblePosition> {
@@ -241,14 +244,14 @@ function parkEntranceStatCell(
 			}),
 		],
 	});
-}
+};
 
 // A small decorative icon shown to the left of a section. It is a border-less
 // button without a click handler, because that is the only widget that can
 // render one of the game's named icon sprites.
 const SECTION_ICON_SIZE = 24;
 
-function sectionIcon(
+const sectionIcon = function sectionIcon(
 	image: IconName,
 	tooltip: string,
 	rowHeight: number,
@@ -267,9 +270,9 @@ function sectionIcon(
 			}),
 		],
 	});
-}
+};
 
-function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
+const parkEntranceStatTable = function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
 	return horizontal({
 		spacing: 4,
 		width: "100%",
@@ -308,13 +311,13 @@ function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
 			}),
 		],
 	});
-}
+};
 
 // --- Staff group widget ------------------------------------------------------
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
-function tilesPerStaffRow(options: {
+const tilesPerStaffRow = function tilesPerStaffRow(options: {
 	tilesPerStaff: WritableStore<number> | undefined;
 	spinnerLabel: string | undefined;
 	spinnerTooltip: string | undefined;
@@ -357,9 +360,9 @@ function tilesPerStaffRow(options: {
 			],
 		}),
 	];
-}
+};
 
-function mowerTilesPerStaffRow(options: {
+const mowerTilesPerStaffRow = function mowerTilesPerStaffRow(options: {
 	mowerTilesPerStaff: WritableStore<number> | undefined;
 	mowerSpinnerLabel: string | undefined;
 	controlsDisabled: Store<boolean>;
@@ -400,9 +403,9 @@ function mowerTilesPerStaffRow(options: {
 			],
 		}),
 	];
-}
+};
 
-function staffGroup(options: {
+const staffGroup = function staffGroup(options: {
 	title: string;
 	tilesPerStaff: WritableStore<number> | undefined;
 	needed: Bindable<number>;
@@ -467,11 +470,11 @@ function staffGroup(options: {
 			],
 		}),
 	});
-}
+};
 
 // One bordered box for entertainers: same as staffGroup plus a "Queue"
 // toggle underneath, laid out vertically like in the mockup.
-function entertainersGroup(options: {
+const entertainersGroup = function entertainersGroup(options: {
 	needed: Bindable<number>;
 	hired: Bindable<number>;
 	width: Scale;
@@ -565,7 +568,7 @@ function entertainersGroup(options: {
 			],
 		}),
 	});
-}
+};
 
 // --- Window ------------------------------------------------------------------
 // Not cached: the template embeds plain (non-reactive) translated strings
@@ -620,7 +623,7 @@ const WINDOW_HEIGHT =
 	WINDOW_CHROME_HEIGHT;
 
 // A thin engraved divider drawn across the full window width.
-function separator(): WidgetCreator<FlexiblePosition> {
+const separator = function separator(): WidgetCreator<FlexiblePosition> {
 	return graphics({
 		width: "100%",
 		height: SEPARATOR_ROW_HEIGHT,
@@ -628,7 +631,7 @@ function separator(): WidgetCreator<FlexiblePosition> {
 			g.well(0, 1, g.width, 2);
 		},
 	});
-}
+};
 
 // Tooltip shared by both halves of the progress bar, so hovering anywhere over
 // the bar shows the same percentage.
@@ -650,7 +653,7 @@ for (let i = 0; i < PROGRESS_SEGMENT_COUNT; i++) {
 	);
 }
 
-function staffManagerWindowTemplate(): WindowTemplate {
+const staffManagerWindowTemplate = function staffManagerWindowTemplate(): WindowTemplate {
 	const windowWidth = 430; // 400 + room for the section icon column on the left
 	return flexWindow({
 		title: t("window.title"),
@@ -851,11 +854,11 @@ function staffManagerWindowTemplate(): WindowTemplate {
 			}),
 		],
 	});
-}
+};
 
-export function openWindow(): void {
+export const openWindow = function openWindow(): void {
 	staffManagerWindowTemplate().open();
 	refreshHiredAndAssignedStaffCounts();
 	findAndReportParkEntrance();
 	scanFootpathNetwork();
-}
+};
