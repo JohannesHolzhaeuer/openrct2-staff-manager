@@ -1,21 +1,21 @@
 import {
-    handymenTilesPerStaffStore, handymenMowerTilesPerStaffStore,
-    guardsTilesPerStaffStore, entertainersTilesPerStaffStore,
-    handymenEnabledStore, guardsEnabledStore, entertainersEnabledStore,
-    mechanicsEnabledStore, entertainersIncludeQueueStore
+    entertainersEnabledStore, entertainersIncludeQueueStore,
+    entertainersTilesPerStaffStore, guardsEnabledStore,
+    guardsTilesPerStaffStore, handymenEnabledStore, handymenMowerTilesPerStaffStore,
+    handymenTilesPerStaffStore, mechanicsEnabledStore
 } from "./store";
 import {
-    isValidStationExit, tileKey, PathTileInfo, isGardenTile, isQueueTile,
-    footpathsConnectTiles, surfaceTilesConnect, surfaceBaseZAt
+    PathTileInfo, footpathsConnectTiles, isGardenTile, isQueueTile, isValidStationExit,
+    surfaceBaseZAt, surfaceTilesConnect, tileKey
 } from "./scan";
 import { gameMap } from "./game";
 import {
-    STAFF_TYPE_ID_HANDYMAN, STAFF_TYPE_ID_SECURITY, STAFF_TYPE_ID_ENTERTAINER,
-    STAFF_TYPE_ID_MECHANIC, HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING,
-    MECHANIC_ORDERS_DEFAULT, ADJACENT_OFFSETS,
-    getStaffByType, decideAreaAction, teleportStaffToTile, isPeepPlaceableTile,
-    hireStaff, worldToTileX, refreshHiredAndAssignedStaffCounts,
-    canTeleportMechanic, findNearestPathInOrderedTiles, isExitAlreadyAssigned
+    ADJACENT_OFFSETS, HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING,
+    MECHANIC_ORDERS_DEFAULT, STAFF_TYPE_ID_ENTERTAINER, STAFF_TYPE_ID_HANDYMAN,
+    STAFF_TYPE_ID_MECHANIC, STAFF_TYPE_ID_SECURITY,
+    canTeleportMechanic, decideAreaAction, findNearestPathInOrderedTiles, getStaffByType,
+    hireStaff, isExitAlreadyAssigned, isPeepPlaceableTile,
+    refreshHiredAndAssignedStaffCounts, teleportStaffToTile, worldToTileX
 } from "./staff";
 
 // --- Incremental automatic helpers (single-tile) ---------------------------------
@@ -85,7 +85,7 @@ function autoAreas(group: AutoGroup): AutoArea[] {
 	if (!list) {
 		list = [];
 		for (const m of getStaffByType(group.staffType)) {
-			const coords = m.patrolArea.tiles.slice();
+			const coords = [...m.patrolArea.tiles];
 			const keys = new Set<string>();
 			for (const t of coords) {
 				keys.add(tileKey(worldToTileX(t.x), worldToTileX(t.y)));
@@ -110,10 +110,10 @@ function handleTileForGroup(group: AutoGroup, tx: number, ty: number): boolean {
 	const areas = autoAreas(group);
 	const list = autoAreasAsCoords(group);
 	const decision = decideAreaAction(list, { x: tx, y: ty }, group.getMaxSize(), group.connect);
-	if (decision.action === "covered") {
+	if ("covered" === decision.action) {
 		return false;
 	}
-	if (decision.action === "enlarge") {
+	if ("enlarge" === decision.action) {
 		autoAddTileToArea(group, decision.areaIndex, tx, ty);
 		applyAutoAreasToLive(group);
 		return false;
@@ -145,12 +145,12 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 		const member = getLastStaffOfType(group.staffType);
 		if (member) {
 			const area = autoAreas(group)[autoAreas(group).length - 1];
-			if (group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING && (member as Handyman).orders !== HANDYMAN_ORDERS_GARDENING) {
+			if ("handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING && (member as Handyman).orders !== HANDYMAN_ORDERS_GARDENING) {
 				(member as Handyman).orders = HANDYMAN_ORDERS_GARDENING;
 			}
 			area.member = member;
 			member.patrolArea.add(area.coords);
-			const z = group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING
+			const z = "handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
 				? surfaceBaseZAt(tx, ty)
 				: footpathBaseZAt(tx, ty);
 			// For a gardening area, avoid dropping the handyman onto a queue/fenced
@@ -159,7 +159,7 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			let teleportX = tx;
 			let teleportY = ty;
 			let teleportZ = z;
-			if (group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING && isQueueTile(tx, ty)) {
+			if ("handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING && isQueueTile(tx, ty)) {
 				const workTile = area.coords.find(function (c) {
 					const wx = Math.floor(c.x / 32);
 					const wy = Math.floor(c.y / 32);
@@ -187,7 +187,7 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 				if (fallback) {
 					teleportX = fallback.x;
 					teleportY = fallback.y;
-					teleportZ = group.staffType === "handyman" && group.orders === HANDYMAN_ORDERS_GARDENING
+					teleportZ = "handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
 						? surfaceBaseZAt(teleportX, teleportY)
 						: footpathBaseZAt(teleportX, teleportY);
 				}
@@ -200,7 +200,7 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 
 function getLastStaffOfType(staffType: StaffType): Staff | null {
 	const members = getStaffByType(staffType);
-	return members.length > 0 ? members[members.length - 1] : null;
+	return 0 < members.length ? members[members.length - 1] : null;
 }
 
 // The baseZ of the footpath on a tile, if any (used as a teleport height).
@@ -217,7 +217,7 @@ function getFootpathBaseZFromTile(tile: Tile): number[] {
 	const result: number[] = [];
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
-		if (element.type === "footpath") {
+		if ("footpath" === element.type) {
 			result.push(element.baseZ);
 		}
 	}
@@ -240,10 +240,10 @@ function handlePathTileForType(
 
 // Maps a staff type + orders to its persistent auto-mode group.
 function groupForPathTile(staffType: StaffType, orders: number): AutoGroup {
-	if (staffType === "handyman") {
+	if ("handyman" === staffType) {
 		return orders === HANDYMAN_ORDERS_GARDENING ? AUTO_GROUP_GARDENING : AUTO_GROUP_CLEANUP;
 	}
-	if (staffType === "security") {
+	if ("security" === staffType) {
 		return AUTO_GROUP_GUARD;
 	}
 	return AUTO_GROUP_ENTERTAINER;
@@ -334,7 +334,7 @@ function isRideExitOnTile(tx: number, ty: number): boolean {
 function hireAndAssignMechanicForExit(ex: number, ey: number, fx: number, fy: number): void {
 	hireStaff(STAFF_TYPE_ID_MECHANIC, MECHANIC_ORDERS_DEFAULT, 1, function () {
 		const mechanics = getStaffByType("mechanic");
-		if (mechanics.length === 0) {
+		if (0 === mechanics.length) {
 			return;
 		}
 		const member = mechanics[mechanics.length - 1];

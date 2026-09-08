@@ -1,8 +1,8 @@
-import { describe, it, expect, afterEach, beforeEach } from "vitest";
-import { setGameMap, resetGameMap, setGameContext, resetGameContext, setGameObjects, resetGameObjects } from "../src/game";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetGameContext, resetGameMap, resetGameObjects, setGameContext, setGameMap, setGameObjects } from "../src/game";
 import { fakeMap, fakeStaff } from "./fake-map";
 import { FakeContext, fakeObjects } from "./fake-context";
-import { hireStaff, teleportStaffToTile, STAFF_TYPE_ID_HANDYMAN, STAFF_TYPE_ID_ENTERTAINER, HANDYMAN_ORDERS_CLEANUP } from "../src/staff";
+import { HANDYMAN_ORDERS_CLEANUP, STAFF_TYPE_ID_ENTERTAINER, STAFF_TYPE_ID_HANDYMAN, hireStaff, teleportStaffToTile } from "../src/staff";
 
 let ctx: FakeContext;
 
@@ -98,7 +98,7 @@ describe("hire batching across ticks", () => {
         // batching entirely (see BATCH_TICK_DELAY).
         hireStaff(STAFF_TYPE_ID_HANDYMAN, 0, 8, () => { /* noop */ });
         expect(ctx.delays.length).toBeGreaterThan(0);
-        expect(ctx.delays.every(d => d > 0)).toBe(true);
+        expect(ctx.delays.every(d => 0 < d)).toBe(true);
     });
 });
 

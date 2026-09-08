@@ -1,7 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { footpathEdgeZ, oppositeDirection, footpathsConnect, surfacesConnect } from "../src/scan";
-import type { PathTileInfo } from "../src/scan";
-import { chunkTilesForStaffCount, isStandingOnTile, decideAreaAction } from "../src/staff";
+import { describe, expect, it } from "vitest";
+import { footpathEdgeZ, footpathsConnect, oppositeDirection, surfacesConnect, type PathTileInfo } from "../src/scan";
+import { chunkTilesForStaffCount, decideAreaAction, isStandingOnTile } from "../src/staff";
 
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
 
@@ -134,10 +133,10 @@ describe("chunkTilesForStaffCount", () => {
 		const tiles = chain([0, 1, 2, 3, 4, 5], [0, 0, 0, 0, 0, 0]);
 		for (const t of tiles) {
 			const i = t.x;
-			if (i > 0) {
+			if (0 < i) {
 				t.neighbourKeys.push(`${i - 1},0`);
 			}
-			if (i < 5) {
+			if (5 > i) {
 				t.neighbourKeys.push(`${i + 1},0`);
 			}
 		}
@@ -159,29 +158,29 @@ describe("chunkTilesForStaffCount", () => {
 		// like a path and a queue connected at one end on a bridge: every chunk
 		// must remain one contiguous piece (the merge step must not drop it).
 		const tiles: PathTileInfo[] = [];
-		const mk = (x: number, y: number) => ({ x, y, baseHeight: 0, baseZ: 0, isQueue: x >= 3, neighbourKeys: [] as string[] });
-		for (let x = 0; x <= 4; x++) {
+		const mk = (x: number, y: number) => ({ x, y, baseHeight: 0, baseZ: 0, isQueue: 3 <= x , neighbourKeys: [] as string[] });
+		for (let x = 0; 4 >= x; x++) {
 			tiles.push(mk(x, 0));
 		}
-		for (let x = 0; x <= 4; x++) {
+		for (let x = 0; 4 >= x; x++) {
 			tiles.push(mk(x, 2));
 		}
 		// mid connector at x=0..2 joins both rows at each x
-		for (let x = 0; x <= 2; x++) {
+		for (let x = 0; 2 >= x; x++) {
 			tiles.push(mk(x, 1));
 		}
 		const key = (x: number, y: number) => `${x},${y}`;
-		const t = {} as Record<string, PathTileInfo>;
+		const t = {} as { [key: string]: PathTileInfo };
 		for (const tile of tiles) { t[key(tile.x, tile.y)] = tile; }
 		const link = (x1: number, y1: number, x2: number, y2: number) => {
 			t[key(x1, y1)].neighbourKeys.push(key(x2, y2));
 		};
 		// horizontal links row 0
-		for (let x = 0; x < 4; x++) { link(x, 0, x + 1, 0); }
+		for (let x = 0; 4 > x; x++) { link(x, 0, x + 1, 0); }
 		// horizontal links row 2
-		for (let x = 0; x < 4; x++) { link(x, 2, x + 1, 2); }
+		for (let x = 0; 4 > x; x++) { link(x, 2, x + 1, 2); }
 		// vertical connectors
-		for (let x = 0; x <= 2; x++) { link(x, 0, x, 1); link(x, 1, x, 0); link(x, 1, x, 2); link(x, 2, x, 1); }
+		for (let x = 0; 2 >= x; x++) { link(x, 0, x, 1); link(x, 1, x, 0); link(x, 1, x, 2); link(x, 2, x, 1); }
 		const chunks = chunkTilesForStaffCount(tiles, 1);
 		expect(chunks.length).toBe(1);
 		expect(chunks[0].length).toBe(tiles.length);
@@ -198,13 +197,13 @@ describe("chunkTilesForStaffCount", () => {
 		// they must cover every tile exactly once (no orphan/connection loss).
 		const tiles: PathTileInfo[] = [];
 		const mk = (x: number, y: number) => ({ x, y, baseHeight: 0, baseZ: 0, isQueue: false, neighbourKeys: [] as string[] });
-		for (let y = 0; y <= 4; y++) {
-			for (let x = 0; x <= 4; x++) {
+		for (let y = 0; 4 >= y; y++) {
+			for (let x = 0; 4 >= x; x++) {
 				tiles.push(mk(x, y));
 			}
 		}
 		const key = (x: number, y: number) => `${x},${y}`;
-		const t = {} as Record<string, PathTileInfo>;
+		const t = {} as { [key: string]: PathTileInfo };
 		for (const tile of tiles) { t[key(tile.x, tile.y)] = tile; }
 		for (const tile of tiles) {
 			const { x, y } = tile;

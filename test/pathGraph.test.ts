@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setGameMap, resetGameMap, setGameContext, resetGameContext } from "../src/game";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetGameContext, resetGameMap, setGameContext, setGameMap } from "../src/game";
 import { fakeMap } from "./fake-map";
 import { FakeContext } from "./fake-context";
 import {
-	buildNetwork, graphDistance, splitIntoZones, nearestZoneIndex, centralTile,
-	exitToPathTile, pathTilesConnected, getCachedNetwork, invalidatePathGraphCache,
-	resetPathGraphCacheForTests
+	buildNetwork, centralTile, exitToPathTile, getCachedNetwork, graphDistance,
+	invalidatePathGraphCache, nearestZoneIndex, pathTilesConnected, resetPathGraphCacheForTests,
+	splitIntoZones
 } from "../src/paths/pathGraph";
 
 let ctx: FakeContext;
-const isIncluded = function (): boolean { return true; };
+const isIncluded = function  isIncluded(): boolean { return true; };
 
 beforeEach(() => {
 	ctx = new FakeContext();
@@ -59,7 +59,7 @@ describe("buildNetwork", () => {
 			"6,6": { footpaths: [{ baseZ: 100 }] }
 		}));
 		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function () { return true; });
-		expect(Array.from(graph.nodes.keys()).sort()).toEqual(["1,1", "2,1", "3,1"]);
+		expect([...graph.nodes.keys()].sort()).toEqual(["1,1", "2,1", "3,1"]);
 	});
 
 	it("respects the isIncluded filter (e.g. excluding queue tiles)", () => {
@@ -68,7 +68,7 @@ describe("buildNetwork", () => {
 			"2,1": { footpaths: [{ baseZ: 100, isQueue: true }] },
 			"3,1": { footpaths: [{ baseZ: 100 }] }
 		}));
-		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function (x, y) { return !(x === 2 && y === 1); });
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function (x, y) { return !(2 === x && 1 === y); });
 		expect(graph.nodes.has("2,1")).toBe(false);
 	});
 });

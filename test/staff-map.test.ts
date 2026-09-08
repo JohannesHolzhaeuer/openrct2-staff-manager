@@ -1,9 +1,9 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { setGameMap, resetGameMap } from "../src/game";
+import { afterEach, describe, expect, it } from "vitest";
+import { resetGameMap, setGameMap } from "../src/game";
 import { fakeMap, fakeStaff } from "./fake-map";
 import {
-    getStaffByType, getHandymenByPurpose, isPeepPlaceableTile, findNearestPathInOrderedTiles,
-    HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING
+    HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING, findNearestPathInOrderedTiles, getHandymenByPurpose,
+    getStaffByType, isPeepPlaceableTile
 } from "../src/staff";
 import type { PathTileInfo } from "../src/scan";
 

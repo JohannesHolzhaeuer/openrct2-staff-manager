@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // main.ts registers the plugin as a side effect of being imported, and calls
 // registerPlugin({ ... main: main }) at module scope. To exercise main()

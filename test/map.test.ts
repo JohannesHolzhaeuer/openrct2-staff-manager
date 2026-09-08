@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { setGameMap, resetGameMap } from "../src/game";
-import { footpathsConnectTiles, surfaceTilesConnect, surfaceFenceBlocksWalking, isValidStationExit } from "../src/scan";
+import { afterEach, describe, expect, it } from "vitest";
+import { resetGameMap, setGameMap } from "../src/game";
+import { footpathsConnectTiles, isValidStationExit, surfaceFenceBlocksWalking, surfaceTilesConnect } from "../src/scan";
 import { fakeMap } from "./fake-map";
 
 afterEach(() => {
@@ -119,8 +119,8 @@ describe("surfaceFenceBlocksWalking", () => {
 
     it("reports no blocking for non-cardinal neighbours", () => {
         setGameMap(fakeMap({ x: 8, y: 8 }, {
-            "1,1": { surface: { baseHeight: 20, parkFences: 0xf } },
-            "2,2": { surface: { baseHeight: 20, parkFences: 0xf } }
+            "1,1": { surface: { baseHeight: 20, parkFences: 0xF } },
+            "2,2": { surface: { baseHeight: 20, parkFences: 0xF } }
         }));
         expect(surfaceFenceBlocksWalking(1, 1, 2, 2)).toBe(false);
     });
@@ -134,6 +134,6 @@ describe("isValidStationExit", () => {
 
     it("rejects an unused station slot pointing outside the map", () => {
         setGameMap(fakeMap({ x: 8, y: 8 }));
-        expect(isValidStationExit({ x: 32000, y: 32000, z: 0, direction: 0 })).toBe(false);
+        expect(isValidStationExit({ x: 32_000, y: 32_000, z: 0, direction: 0 })).toBe(false);
     });
 });

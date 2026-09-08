@@ -1,18 +1,18 @@
 import {
-	store as flexStore, compute, Store
+	Store, compute, store as flexStore
 } from "openrct2-flexui";
 import {
-	DEFAULT_HANDYMEN_TILES_PER_STAFF,
-	DEFAULT_HANDYMEN_MOWER_TILES_PER_STAFF,
-	DEFAULT_GUARDS_TILES_PER_STAFF,
-	DEFAULT_ENTERTAINERS_TILES_PER_STAFF,
-	DEFAULT_ENTERTAINERS_PER_AREA,
-	DEFAULT_ENTERTAINERS_INCLUDE_QUEUE,
-	DEFAULT_HANDYMEN_ENABLED,
-	DEFAULT_GUARDS_ENABLED,
+	DEFAULT_AUTO_ENABLED,
 	DEFAULT_ENTERTAINERS_ENABLED,
-	DEFAULT_MECHANICS_ENABLED,
-	DEFAULT_AUTO_ENABLED
+	DEFAULT_ENTERTAINERS_INCLUDE_QUEUE,
+	DEFAULT_ENTERTAINERS_PER_AREA,
+	DEFAULT_ENTERTAINERS_TILES_PER_STAFF,
+	DEFAULT_GUARDS_ENABLED,
+	DEFAULT_GUARDS_TILES_PER_STAFF,
+	DEFAULT_HANDYMEN_ENABLED,
+	DEFAULT_HANDYMEN_MOWER_TILES_PER_STAFF,
+	DEFAULT_HANDYMEN_TILES_PER_STAFF,
+	DEFAULT_MECHANICS_ENABLED
 } from "./config";
 
 // --- Raw scan-result stores -------------------------------------------------
@@ -90,7 +90,7 @@ export const hasRanAdjustAndAssignStore = flexStore<boolean>(false);
 // (key "staffManager.autoEnabled") via the auto.ts module, so it survives across
 // game/plugin launches. Loaded at startup from the saved value.
 export const autoEnabledStore = flexStore<boolean>(
-	typeof context !== "undefined"
+	 "undefined" !== typeof context
 		? context.sharedStorage.get("staffManager.autoEnabled.v1", DEFAULT_AUTO_ENABLED)
 		: DEFAULT_AUTO_ENABLED
 );
@@ -110,7 +110,7 @@ export const mechanicsControlsDisabledStore = controlsDisabledFor(mechanicsEnabl
 
 // --- Needed staff computations ------------------------------------------------
 export function computeNeeded(totalTiles: number, tilesPerStaff: number): number {
-	if (tilesPerStaff <= 0 || totalTiles <= 0) {
+	if (0 >= tilesPerStaff || 0 >= totalTiles) {
 		return 0;
 	}
 	return Math.ceil(totalTiles / tilesPerStaff);

@@ -3,7 +3,8 @@
   "categories": {
     "correctness": "error",
     "suspicious": "error",
-    "perf": "error"
+    "perf": "error",
+    "style": "error"
   },
   "rules": {
     "eslint/no-var": "error",
@@ -16,7 +17,18 @@
     "typescript/no-namespace": "error",
     "typescript/no-non-null-assertion": "error",
     "unicorn/no-anonymous-default-export": "error",
-    "unicorn/no-process-exit": "error"
+    "unicorn/no-process-exit": "error",
+    "eslint/no-magic-numbers": "off",
+    "eslint/func-style": "off",
+    "eslint/sort-keys": "off",
+    "eslint/func-names": "off",
+    "eslint/no-ternary": "off",
+    "eslint/max-params": "off",
+    "eslint/no-continue": "off",
+    "eslint/init-declarations": "off",
+    "eslint/sort-imports": "off",
+    "unicorn/filename-case": "off",
+    "unicorn/no-null": "off"
   },
   "env": {
     "es2023": true,

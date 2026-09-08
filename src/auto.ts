@@ -1,6 +1,6 @@
 import { autoEnabledStore } from "./store";
-import { isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
-import { handlePlacedPathTile, handleBoughtLandTile } from "./staff-auto";
+import { hasNonGhostFootpathElements, isQueueTile, worldToTile } from "./scan";
+import { handleBoughtLandTile, handlePlacedPathTile } from "./staff-auto";
 import { BATCH_TICK_DELAY } from "./staff";
 import { gameContext } from "./game";
 
@@ -46,7 +46,7 @@ const TILES_PER_TICK = 16;
 export function setAutoEnabled(enabled: boolean): void {
 	autoEnabledStore.set(enabled);
 	gameContext().setSetting(AUTO_STORAGE_KEY, enabled);
-	if (pendingTimer !== null) {
+	if (null !== pendingTimer) {
 		gameContext().clearTimeout(pendingTimer);
 		pendingTimer = null;
 	}
@@ -73,18 +73,18 @@ function onAction(e: GameActionEventArgs): void {
 function collectFromAction(e: GameActionEventArgs): void {
 	const action = e.action;
 
-	if (action === "footpathplace" || action === "footpathremove") {
+	if ("footpathplace" === action || "footpathremove" === action) {
 		const args = e.args as { x: number; y: number };
 		const tile = worldToTile(args.x, args.y);
 		// Removing a path can't change need upward (staff aren't going to need more of
 		// a removed tile), so only handle placements.
-		if (action === "footpathplace") {
+		if ("footpathplace" === action) {
 			queueTileIfPlacedPath(tile.x, tile.y);
 		}
 		return;
 	}
 
-	if (action === "footpathlayoutplace") {
+	if ("footpathlayoutplace" === action) {
 		const args = e.args as { x: number; y: number; slope: number };
 		const centre = worldToTile(args.x, args.y);
 		// A layout place can add the centre and (via the slope edges bitmask)
@@ -95,10 +95,10 @@ function collectFromAction(e: GameActionEventArgs): void {
 		return;
 	}
 
-	if (action === "landbuyrights") {
+	if ("landbuyrights" === action) {
 		const args = e.args as { x1: number; y1: number; x2: number; y2: number; setting: number };
 		// Only buying LAND (setting 0), not construction rights.
-		if (args.setting !== 0) {
+		if (0 !== args.setting) {
 			return;
 		}
 		const bx1 = Math.floor(Math.min(args.x1, args.x2) / 32);
@@ -117,7 +117,7 @@ function collectFromAction(e: GameActionEventArgs): void {
 	// rideentranceexitplace: an exit placed next to an existing path should get a
 	// mechanic. We treat the placed exit tile as a "path-like" tile so the mechanic
 	// adjacency check runs.
-	if (action === "rideentranceexitplace") {
+	if ("rideentranceexitplace" === action) {
 		const args = e.args as { x: number; y: number; isExit: boolean };
 		if (args.isExit) {
 			const tile = worldToTile(args.x, args.y);
@@ -145,7 +145,7 @@ function queueTileIfPlacedPath(x: number, y: number): void {
 
 // Debounce: coalesce a burst of tile placements into one grouped processing pass.
 function schedule(): void {
-	if (pendingTimer !== null) {
+	if (null !== pendingTimer) {
 		gameContext().clearTimeout(pendingTimer);
 	}
 	pendingTimer = gameContext().setTimeout(function () {
@@ -160,7 +160,7 @@ function schedule(): void {
 function processPending(): void {
 	const tiles = dedupeTiles(pendingTiles);
 	pendingTiles = [];
-	if (tiles.length === 0) {
+	if (0 === tiles.length) {
 		return;
 	}
 	if (isWorking) {
@@ -173,10 +173,10 @@ function processPending(): void {
 		try {
 			for (; index < end; index++) {
 				const t = tiles[index];
-				if (t.kind === "land") {
+				if ("land" === t.kind) {
 					handleBoughtLandTile(t.x, t.y);
 				} else {
-					handlePlacedPathTile(t.x, t.y, t.kind === "queue");
+					handlePlacedPathTile(t.x, t.y, "queue" === t.kind);
 				}
 			}
 		} catch {
@@ -194,7 +194,7 @@ function processPending(): void {
 // Initialises automatic mode from the persisted setting. Safe to call more than once
 // (only subscribes when the flag is true and no subscription exists yet).
 export function initAuto(): void {
-	if (autoEnabledStore.get() && actionSubscription === null) {
+	if (autoEnabledStore.get() && null === actionSubscription) {
 		actionSubscription = gameContext().subscribe("action.execute", onAction);
 	}
 }

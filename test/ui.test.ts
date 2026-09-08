@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { setGameContext, resetGameContext, setGameMap, resetGameMap } from "../src/game";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetGameContext, resetGameMap, setGameContext, setGameMap } from "../src/game";
 import { FakeContext } from "./fake-context";
 import { fakeMap } from "./fake-map";
-import { handymenHiredStore, handymenAssignedStore, parkEntranceInfoStore } from "../src/store";
+import { handymenAssignedStore, handymenHiredStore, parkEntranceInfoStore } from "../src/store";
 
 // ui.ts builds its window purely with openrct2-flexui widget factories. The
 // real factories need a live OpenRCT2 `ui` global to actually render
@@ -52,14 +52,14 @@ vi.mock("openrct2-flexui", () => {
 		toggle: passthrough,
 		graphics: passthrough,
 		compute: (...args: unknown[]): unknown => {
-			const stores = args.filter((a): a is FakeStore<unknown> => typeof a === "object" && a !== null && STORE_MARKER in a);
-			const fn = args.find((a): a is (...values: unknown[]) => unknown => typeof a === "function");
+			const stores = args.filter((a): a is FakeStore<unknown> => "object" === typeof a && null !== a && STORE_MARKER in a);
+			const fn = args.find((a): a is (...values: unknown[]) => unknown => "function" === typeof a);
 			if (!fn) {
 				throw new Error("compute() called without a combiner function");
 			}
 			return makeStore(fn(...stores.map(s => s.get())));
 		},
-		isStore: (value: unknown): boolean => typeof value === "object" && value !== null && STORE_MARKER in value,
+		isStore: (value: unknown): boolean => "object" === typeof value && null !== value && STORE_MARKER in value,
 		store: (value: unknown): FakeStore<unknown> => makeStore(value)
 	};
 });

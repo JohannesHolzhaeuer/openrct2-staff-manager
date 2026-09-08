@@ -55,9 +55,9 @@ function toElements(spec: FakeTileSpec): TileElement[] {    const elements: Tile
 // Builds a GameMap backed by a plain "x,y" -> tile-spec dictionary, so the
 // scanning helpers can be exercised without the OpenRCT2 globals. Tiles that
 // were not specified come back empty.
-export function fakeMap(size: CoordsXY, tiles: Record<string, FakeTileSpec> = {}, rides: Ride[] = [], staff: Staff[] = []): GameMap {
+export function fakeMap(size: CoordsXY, tiles: { [key: string]: FakeTileSpec } = {}, rides: Ride[] = [], staff: Staff[] = []): GameMap {
     function footpathsAt(x: number, y: number): FakeFootpath[] {
-        const spec = (tiles as Record<string, FakeTileSpec | undefined>)[String(x) + "," + String(y)];
+        const spec = (tiles as { [key: string]: FakeTileSpec | undefined })[String(x) + "," + String(y)];
         return spec?.footpaths ?? [];
     }
 
@@ -95,7 +95,7 @@ export function fakeMap(size: CoordsXY, tiles: Record<string, FakeTileSpec> = {}
                             position: { x: nx * 32, y: ny * 32, z: neighbourFootpath.baseZ },
                             elementIndex: 0,
                             direction: d,
-                            isSloped: neighbourFootpath.slopeDirection !== null,
+                            isSloped: null !== neighbourFootpath.slopeDirection,
                             slopeDirection: neighbourFootpath.slopeDirection ?? null,
                             isQueue: neighbourFootpath.isQueue ?? false,
                             isWide: false,
@@ -112,7 +112,7 @@ export function fakeMap(size: CoordsXY, tiles: Record<string, FakeTileSpec> = {}
                 position: { x: x * 32, y: y * 32, z: here.baseZ },
                 elementIndex: 0,
                 direction: null,
-                isSloped: here.slopeDirection !== null,
+                isSloped: null !== here.slopeDirection,
                 slopeDirection: here.slopeDirection ?? null,
                 isQueue: here.isQueue ?? false,
                 isWide: false,

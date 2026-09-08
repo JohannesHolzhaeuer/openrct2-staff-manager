@@ -2,7 +2,7 @@ import type { GameContext, GameObjects } from "../src/game";
 
 export interface RecordedAction {
     action: string;
-    args: Record<string, unknown>;
+    args: { [key: string]: unknown };
 }
 
 // A GameContext that never actually schedules anything: timers are collected
@@ -41,7 +41,7 @@ export class FakeContext implements GameContext {
     }
 
     executeAction(action: string, args: object, callback: (result: GameActionResult) => void): void {
-        this.actions.push({ action: action, args: args as Record<string, unknown> });
+        this.actions.push({ action: action, args: args as { [key: string]: unknown } });
         // Single-player executes actions synchronously, so mirror that here.
         callback(this.actionResult);
     }
@@ -71,7 +71,7 @@ export class FakeContext implements GameContext {
     // Runs every currently pending timer once. Callbacks that schedule further
     // work are NOT run in the same pass, so each call represents one tick.
     runPendingTimers(): void {
-        const due = Array.from(this.timers.entries());
+        const due = [...this.timers.entries()];
         this.timers.clear();
         for (const [, callback] of due) {
             callback();
@@ -82,7 +82,7 @@ export class FakeContext implements GameContext {
     // runaway reschedule fails the test instead of hanging it.
     runAllTimers(maxTicks = 1000): number {
         let ticks = 0;
-        while (this.timers.size > 0) {
+        while (0 < this.timers.size) {
             if (++ticks > maxTicks) {
                 throw new Error("timer queue did not drain within " + String(maxTicks) + " ticks");
             }

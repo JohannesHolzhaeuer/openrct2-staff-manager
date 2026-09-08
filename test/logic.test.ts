@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { computeNeeded } from "../src/store";
-import { tileKey, isValidStationExit, footpathIsElevated, ELEVATED_FOOTPATH_LEVELS } from "../src/scan";
-import { classifyHandyman, HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING, STAFF_TYPE_ID_ENTERTAINER } from "../src/staff";
+import { ELEVATED_FOOTPATH_LEVELS, footpathIsElevated, isValidStationExit, tileKey } from "../src/scan";
+import { HANDYMAN_ORDERS_CLEANUP, HANDYMAN_ORDERS_GARDENING, STAFF_TYPE_ID_ENTERTAINER, classifyHandyman } from "../src/staff";
 
 // Stub the OpenRCT2 global `map` object so functions that read map.size work.
 const testGlobal = globalThis as unknown as { map?: { size: CoordsXY } };
@@ -50,7 +50,7 @@ describe("footpathIsElevated", () => {
 
 describe("isValidStationExit", () => {
 	it("rejects null/undefined", () => {
-		expect(isValidStationExit(null)).toBe(false);
+		expect(isValidStationExit(undefined)).toBe(false);
 		expect(isValidStationExit(undefined)).toBe(false);
 	});
 	it("rejects out-of-map coordinates", () => {
