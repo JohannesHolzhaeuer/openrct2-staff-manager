@@ -181,6 +181,16 @@ function applyAutoAreasToLive(group: AutoGroup): void {
 	}
 }
 
+// The teleport height for a member of the given auto group at (tx, ty):
+// surface height for gardening handymen (so they land on the grass to mow),
+// or footpath height otherwise.
+function teleportZForGroup(group: AutoGroup, tx: number, ty: number): number {
+	if ("handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING) {
+		return surfaceBaseZAt(tx, ty);
+	}
+	return footpathBaseZAt(tx, ty);
+}
+
 function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 	if (autoHireForPurpose.get(group.purpose)) {
 		return;
@@ -200,10 +210,7 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 			}
 			area.member = member;
 			member.patrolArea.add(area.coords);
-			const z =
-				"handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
-					? surfaceBaseZAt(tx, ty)
-					: footpathBaseZAt(tx, ty);
+			const z = teleportZForGroup(group, tx, ty);
 			// For a gardening area, avoid dropping the handyman onto a queue/fenced
 			// footpath (which now only occurs as a possible teleport tile when the tile
 			// itself is a path), so they can actually step onto the grass they are to mow.
@@ -218,7 +225,10 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 				const workTile = area.coords.find(function (c) {
 					const wx = Math.floor(c.x / 32);
 					const wy = Math.floor(c.y / 32);
-					return wx === tx && wy === ty ? false : !isQueueTile(wx, wy);
+					if (wx === tx && wy === ty) {
+						return false;
+					}
+					return !isQueueTile(wx, wy);
 				});
 				if (workTile) {
 					teleportX = Math.floor(workTile.x / 32);
@@ -250,10 +260,7 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 				if (fallback) {
 					teleportX = fallback.x;
 					teleportY = fallback.y;
-					teleportZ =
-						"handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
-							? surfaceBaseZAt(teleportX, teleportY)
-							: footpathBaseZAt(teleportX, teleportY);
+					teleportZ = teleportZForGroup(group, teleportX, teleportY);
 				}
 			}
 			teleportStaffToTile(member, { x: teleportX, y: teleportY, z: teleportZ });
@@ -264,7 +271,10 @@ function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
 
 function getLastStaffOfType(staffType: StaffType): Staff | undefined {
 	const members = getStaffByType(staffType);
-	return 0 < members.length ? members[members.length - 1] : undefined;
+	if (0 < members.length) {
+		return members[members.length - 1];
+	}
+	return undefined;
 }
 
 // The baseZ of the footpath on a tile, if any (used as a teleport height).
@@ -300,7 +310,10 @@ function handlePathTileForType(staffType: StaffType, orders: number, tile: Coord
 // Maps a staff type + orders to its persistent auto-mode group.
 function groupForPathTile(staffType: StaffType, orders: number): AutoGroup {
 	if ("handyman" === staffType) {
-		return orders === HANDYMAN_ORDERS_GARDENING ? AUTO_GROUP_GARDENING : AUTO_GROUP_CLEANUP;
+		if (orders === HANDYMAN_ORDERS_GARDENING) {
+			return AUTO_GROUP_GARDENING;
+		}
+		return AUTO_GROUP_CLEANUP;
 	}
 	if ("security" === staffType) {
 		return AUTO_GROUP_GUARD;

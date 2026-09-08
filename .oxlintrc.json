@@ -22,7 +22,7 @@
     "eslint/func-style": "off",
     "eslint/sort-keys": "off",
     "eslint/func-names": "off",
-    "eslint/no-ternary": "off",
+    "eslint/no-ternary": "error",
     "eslint/max-params": "error",
     "eslint/no-continue": "error",
     "eslint/init-declarations": "error",
