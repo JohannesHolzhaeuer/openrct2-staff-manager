@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_ENTERTAINERS_ENABLED,
 	DEFAULT_ENTERTAINERS_INCLUDE_QUEUE,
@@ -11,6 +10,7 @@ import {
 	DEFAULT_HANDYMEN_TILES_PER_STAFF,
 	DEFAULT_MECHANICS_ENABLED,
 } from "../src/config";
+import { describe, expect, it } from "vitest";
 
 describe("config defaults", () => {
 	it("handymen tiles per staff", () => {

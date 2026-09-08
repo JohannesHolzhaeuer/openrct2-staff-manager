@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { handymenAssignedStore, handymenHiredStore, parkEntranceInfoStore } from "../src/store";
 import { resetGameContext, resetGameMap, setGameContext, setGameMap } from "../src/game";
 import { FakeContext } from "./fake-context";
 import { fakeMap } from "./fake-map";
-import { handymenAssignedStore, handymenHiredStore, parkEntranceInfoStore } from "../src/store";
 
 // ui.ts builds its window purely with openrct2-flexui widget factories. The
 // real factories need a live OpenRCT2 `ui` global to actually render

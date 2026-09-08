@@ -1,5 +1,5 @@
-import { openWindow } from "./ui";
 import { initAuto } from "./auto";
+import { openWindow } from "./ui";
 
 function main(): void {
 	if ("undefined" !== typeof ui) {

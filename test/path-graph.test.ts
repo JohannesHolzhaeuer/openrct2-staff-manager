@@ -1,7 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resetGameContext, resetGameMap, setGameContext, setGameMap } from "../src/game";
-import { fakeMap } from "./fake-map";
-import { FakeContext } from "./fake-context";
 import {
 	buildNetwork,
 	centralTile,
@@ -14,6 +11,9 @@ import {
 	resetPathGraphCacheForTests,
 	splitIntoZones,
 } from "../src/paths/path-graph";
+import { resetGameContext, resetGameMap, setGameContext, setGameMap } from "../src/game";
+import { FakeContext } from "./fake-context";
+import { fakeMap } from "./fake-map";
 
 let ctx: FakeContext = new FakeContext();
 const isIncluded = function isIncluded(): boolean {

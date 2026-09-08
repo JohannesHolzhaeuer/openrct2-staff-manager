@@ -1,4 +1,13 @@
 import {
+	CARDINAL_NEIGHBOUR_OFFSETS,
+	DIRECTION_OFFSETS,
+	PathTileInfo,
+	isValidStationExit,
+	lastAllPathTiles,
+	lastGardenAreas,
+	tileKey,
+} from "./scan";
+import {
 	computeNeeded,
 	entertainersAssignedStore,
 	entertainersEnabledStore,
@@ -23,17 +32,8 @@ import {
 	progressStore,
 	statusTextStore,
 } from "./store";
-import {
-	CARDINAL_NEIGHBOUR_OFFSETS,
-	DIRECTION_OFFSETS,
-	PathTileInfo,
-	isValidStationExit,
-	lastAllPathTiles,
-	lastGardenAreas,
-	tileKey,
-} from "./scan";
-import { exitToPathTile } from "./paths/path-graph";
 import { gameContext, gameMap, gameObjects } from "./game";
+import { exitToPathTile } from "./paths/path-graph";
 import { t } from "./i18n";
 
 // --- Handyman orders bitmasks ------------------------------------------------

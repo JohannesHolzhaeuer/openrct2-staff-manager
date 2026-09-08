@@ -1,4 +1,3 @@
-import { t } from "./i18n";
 import { gameContext, gameMap } from "./game";
 import {
 	gardenAreaSizesStore,
@@ -11,6 +10,7 @@ import {
 	tilesCalculatedStore,
 } from "./store";
 import { pathTilesConnected } from "./paths/path-graph";
+import { t } from "./i18n";
 
 // A single visited path/queue tile: its tile coordinates plus the base height of
 // the footpath element that was found on it.

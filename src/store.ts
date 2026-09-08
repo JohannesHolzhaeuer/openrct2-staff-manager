@@ -1,4 +1,3 @@
-import { Store, compute, store as flexStore } from "openrct2-flexui";
 import {
 	DEFAULT_AUTO_ENABLED,
 	DEFAULT_ENTERTAINERS_ENABLED,
@@ -12,6 +11,7 @@ import {
 	DEFAULT_HANDYMEN_TILES_PER_STAFF,
 	DEFAULT_MECHANICS_ENABLED,
 } from "./config";
+import { Store, compute, store as flexStore } from "openrct2-flexui";
 
 // --- Raw scan-result stores -------------------------------------------------
 // Raw tile/entity counts produced by the scan functions. Needed staff counts

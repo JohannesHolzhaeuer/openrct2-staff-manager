@@ -1,5 +1,5 @@
-import type { GameMap } from "../src/game";
 import { CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, footpathsConnect } from "../src/scan";
+import type { GameMap } from "../src/game";
 
 export interface FakeSurface {
 	baseHeight: number;

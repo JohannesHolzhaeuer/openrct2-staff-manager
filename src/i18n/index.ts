@@ -1,6 +1,6 @@
 import { TranslationKey, Translations } from "./types";
-import { enGB } from "./en-gb";
 import { deDE } from "./de-de";
+import { enGB } from "./en-gb";
 
 // Language code -> dictionary. Add a new language by copying en-GB.ts,
 // translating every value, and registering it here.

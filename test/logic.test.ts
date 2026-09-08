@@ -1,5 +1,3 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { computeNeeded } from "../src/store";
 import {
 	ELEVATED_FOOTPATH_LEVELS,
 	footpathIsElevated,
@@ -12,6 +10,8 @@ import {
 	STAFF_TYPE_ID_ENTERTAINER,
 	classifyHandyman,
 } from "../src/staff";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { computeNeeded } from "../src/store";
 
 // Stub the OpenRCT2 global `map` object so functions that read map.size work.
 const testGlobal = globalThis as unknown as { map?: { size: CoordsXY } };
