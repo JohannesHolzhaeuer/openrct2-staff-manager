@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { setGameMap, resetGameMap, setGameContext, resetGameContext } from "../src/game";
 import { fakeMap } from "./fake-map";

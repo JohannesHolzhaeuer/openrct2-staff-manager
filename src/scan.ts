@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import { t } from "./i18n";
 import { gameMap, gameContext } from "./game";
 import {

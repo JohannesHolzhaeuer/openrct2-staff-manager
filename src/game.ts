@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 
 // The (very small) part of the OpenRCT2 `map` global that the scanning code
 // actually needs. Going through this interface instead of the global keeps the

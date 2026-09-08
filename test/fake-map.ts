@@ -1,4 +1,3 @@
-/// <reference path="../node_modules/@openrct2/types/openrct2.d.ts" />
 import type { GameMap } from "../src/game";
 import { CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, footpathsConnect } from "../src/scan";
 

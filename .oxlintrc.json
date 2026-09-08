@@ -4,9 +4,7 @@
     "correctness": "error",
     "suspicious": "error"
   },
-  "rules": {
-    "typescript/triple-slash-reference": "off"
-  },
+  "rules": {},
   "env": {
     "es2023": true,
     "node": true
