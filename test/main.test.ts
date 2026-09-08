@@ -19,7 +19,7 @@ interface TestGlobal {
 
 const testGlobal = globalThis as unknown as TestGlobal;
 
-let capturedMain: (() => void) | undefined;
+let capturedMain: (() => void) | undefined = undefined;
 
 beforeEach(() => {
 	capturedMain = undefined;
