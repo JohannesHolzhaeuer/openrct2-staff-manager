@@ -1,10 +1,10 @@
-import { Translations, TranslationKey } from "./types";
+import { TranslationKey, Translations } from "./types";
 import { enGB } from "./en-GB";
 import { deDE } from "./de-DE";
 
 // Language code -> dictionary. Add a new language by copying en-GB.ts,
 // translating every value, and registering it here.
-export const translations: Record<string, Translations> = {
+export const translations: { [key: string]: Translations } = {
 	"en-GB": enGB,
 	"de-DE": deDE
 };

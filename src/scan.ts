@@ -1,8 +1,8 @@
 import { t } from "./i18n";
-import { gameMap, gameContext } from "./game";
+import { gameContext, gameMap } from "./game";
 import {
-	pathTilesCountStore, queueTilesCountStore, gardenTilesCountStore, gardenAreaSizesStore,
-	rideExitCountStore, ownedTilesCountStore, tilesCalculatedStore, parkEntranceInfoStore
+	gardenAreaSizesStore, gardenTilesCountStore, ownedTilesCountStore, parkEntranceInfoStore,
+	pathTilesCountStore, queueTilesCountStore, rideExitCountStore, tilesCalculatedStore
 } from "./store";
 import { pathTilesConnected } from "./paths/pathGraph";
 
@@ -105,7 +105,7 @@ export function findParkEntranceTiles(): CoordsXY[] {
 				// A park entrance spans 3 tiles (two side "legs" plus a middle tile);
 				// only the middle tile (sequence 0) has the footpath that leads into
 				// the park, so only that tile is reported/used as the entrance.
-				if (element.type === "entrance" && (element).sequence === 0) {
+				if ("entrance" === element.type && 0 === (element).sequence) {
 					parkEntranceTiles.push({ x: x, y: y });
 					// At most one park entrance element with sequence 0 can sit on a
 					// tile, so the remaining elements cannot add anything.
@@ -121,7 +121,7 @@ export function findParkEntranceTiles(): CoordsXY[] {
 // callers (like the footpath scan) can reuse them without scanning twice.
 export function findAndReportParkEntrance(): CoordsXY[] {
 	const parkEntranceTiles = findParkEntranceTiles();
-	if (parkEntranceTiles.length === 0) {
+	if (0 === parkEntranceTiles.length) {
 		parkEntranceInfoStore.set(t("parkEntrance.notFound"));
 		return parkEntranceTiles;
 	}
@@ -159,7 +159,7 @@ function findFootpathElementsOnTile(tile: Tile): FootpathInfo[] {
 	const result: FootpathInfo[] = [];
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
-		if (element.type === "footpath") {
+		if ("footpath" === element.type) {
 			const footpathElement = element;
 			result.push({
 				baseHeight: footpathElement.baseHeight,
@@ -177,7 +177,7 @@ function findFootpathElementsOnTile(tile: Tile): FootpathInfo[] {
 // (e.g. a path on a bridge above another path), and they are at different
 // heights, so they must be treated as separate walkable nodes.
 function findFootpathElements(x: number, y: number): FootpathInfo[] {
-	if (x < 0 || y < 0 || x >= gameMap().size.x || y >= gameMap().size.y) {
+	if (0 > x || 0 > y || x >= gameMap().size.x || y >= gameMap().size.y) {
 		return [];
 	}
 	return findFootpathElementsOnTile(gameMap().getTile(x, y));
@@ -240,7 +240,7 @@ export function surfaceTilesConnect(tx: number, ty: number, nx: number, ny: numb
 function findSurfaceElement(tile: Tile): SurfaceElement | null {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
-		if (element.type === "surface") {
+		if ("surface" === element.type) {
 			return element;
 		}
 	}
@@ -255,7 +255,7 @@ const MAX_WALKABLE_HEIGHT_DIFFERENCE = 2;
 // Whether staff can walk between two neighbouring land tiles, i.e. whether
 // their terrain heights are close enough not to form an unclimbable step.
 export function surfacesConnect(from: { baseHeight: number; waterHeight: number } | null, to: { baseHeight: number; waterHeight: number } | null, maxDifference: number = MAX_WALKABLE_HEIGHT_DIFFERENCE): boolean {
-	if (!from || !to || from.waterHeight !== 0 || to.waterHeight !== 0) {
+	if (!from || !to || 0 !== from.waterHeight || 0 !== to.waterHeight) {
 		return false;
 	}
 	return Math.abs(from.baseHeight - to.baseHeight) <= maxDifference;
@@ -281,16 +281,16 @@ export function surfaceFenceBlocksWalking(x1: number, y1: number, x2: number, y2
 			break;
 		}
 	}
-	if (direction < 0) {
+	if (0 > direction) {
 		return false;
 	}
 	const inverse = oppositeDirection(direction);
 	const surfaceA = findSurfaceElement(gameMap().getTile(x1, y1));
 	const surfaceB = findSurfaceElement(gameMap().getTile(x2, y2));
-	if (surfaceA && (surfaceA.parkFences & FENCE_BIT_BY_DIRECTION[direction]) !== 0) {
+	if (surfaceA && 0 !== (surfaceA.parkFences & FENCE_BIT_BY_DIRECTION[direction])) {
 		return true;
 	}
-	if (surfaceB && (surfaceB.parkFences & FENCE_BIT_BY_DIRECTION[inverse]) !== 0) {
+	if (surfaceB && 0 !== (surfaceB.parkFences & FENCE_BIT_BY_DIRECTION[inverse])) {
 		return true;
 	}
 	return false;
@@ -303,7 +303,7 @@ export function surfaceFenceBlocksWalking(x1: number, y1: number, x2: number, y2
 // they can't stand on water - so this must be checked in addition to the
 // surface style.
 function isLandSurface(surface: SurfaceElement | null): surface is SurfaceElement {
-	return surface?.waterHeight === 0;
+	return 0 === surface?.waterHeight;
 }
 
 // Whether a tile is actually owned by the park. Deliberately excludes tiles
@@ -382,13 +382,13 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 		stack.push({ x: entranceTile.x + offset.x, y: entranceTile.y + offset.y, z: null, fromDirection: oppositeDirection(d) });
 	}
 
-	while (stack.length > 0) {
+	while (0 < stack.length) {
 		const current = stack.pop();
 		if (!current) {
 			break;
 		}
 
-		if (current.x < 0 || current.y < 0 || current.x >= gameMap().size.x || current.y >= gameMap().size.y) {
+		if (0 > current.x || 0 > current.y || current.x >= gameMap().size.x || current.y >= gameMap().size.y) {
 			continue;
 		}
 
@@ -410,7 +410,7 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 		for (const footpath of footpaths) {
 			// Only step onto this path if it actually meets the path we came
 			// from at the same height.
-			if (current.z !== null && footpathEdgeZ(footpath, current.fromDirection) !== current.z) {
+			if (null !== current.z && footpathEdgeZ(footpath, current.fromDirection) !== current.z) {
 				continue;
 			}
 
@@ -484,7 +484,7 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): { pathTiles: P
 // underneath a path.
 function hasFootpathElement(tile: Tile): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
-		if (tile.getElement(e).type === "footpath") {
+		if ("footpath" === tile.getElement(e).type) {
 			return true;
 		}
 	}
@@ -505,7 +505,7 @@ function hasBlockingElement(tile: Tile, surfaceBaseZ: number): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
 		const type = element.type;
-		if (type === "large_scenery" || type === "entrance" || type === "track") {
+		if ("large_scenery" === type || "entrance" === type || "track" === type) {
 			// Only block when the element occupies the gardener's standing column:
 			// its base is no higher than one height level (~16 Z) above the surface.
 			if (element.baseZ <= surfaceBaseZ + 16) {
@@ -529,10 +529,10 @@ const SMALL_SCENERY_FLAG_CAN_BE_WATERED = 1 << 5;
 function hasWaterableSceneryElement(tile: Tile): boolean {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
-		if (element.type === "small_scenery") {
+		if ("small_scenery" === element.type) {
 			const sceneryElement = element;
 			const sceneryObject = objectManager.getObject("small_scenery", sceneryElement.object);
-			if ((sceneryObject.flags & SMALL_SCENERY_FLAG_CAN_BE_WATERED) !== 0) {
+			if (0 !== (sceneryObject.flags & SMALL_SCENERY_FLAG_CAN_BE_WATERED)) {
 				return true;
 			}
 		}
@@ -606,7 +606,7 @@ function scanGardeningColumn(x: number, state: GardeningSweepState): void {
 			continue;
 		}
 		const footpaths = findFootpathElementsOnTile(tile);
-		if (footpaths.length > 0) {
+		if (0 < footpaths.length) {
 			// An owned plain (non-queue) footpath tile is a walkable connector: it
 			// is not mowed itself, but it lets a gardener walk across it and join
 			// garden areas that a path would otherwise split. Queue tiles are NOT
@@ -664,7 +664,7 @@ function groupGardeningTiles(state: GardeningSweepState): { gardenTiles: number;
 		const stack: CoordsXY[] = [{ x: startX, y: startY }];
 		visited.add(key);
 		let workTileCount = 0;
-	while (stack.length > 0) {
+	while (0 < stack.length) {
 		const current = stack.pop();
 		if (!current) {
 			break;
@@ -737,7 +737,7 @@ export function isValidStationExit(exit: CoordsXYZD | null | undefined): exit is
 	}
 	const tileX = Math.floor(exit.x / 32);
 	const tileY = Math.floor(exit.y / 32);
-	return tileX >= 0 && tileY >= 0 && tileX < gameMap().size.x && tileY < gameMap().size.y;
+	return 0 <= tileX && 0 <= tileY && tileX < gameMap().size.x && tileY < gameMap().size.y;
 }
 
 // Counts the number of ride exits in the park; one mechanic is needed per
@@ -751,7 +751,7 @@ export function countRideExits(): number {
 	const rides = gameMap().rides;
 	let count = 0;
 	for (const ride of rides) {
-		if (ride.classification !== "ride") {
+		if ("ride" !== ride.classification) {
 			continue;
 		}
 		const stations = ride.stations;
@@ -882,7 +882,7 @@ export function scanFootpathNetwork(onComplete?: () => void): void {
 	// may have changed, so drop the memoised grass-style set first.
 	invalidateGrassSurfaceStyleCache();
 	const parkEntranceTiles = findParkEntranceTiles();
-	if (parkEntranceTiles.length === 0) {
+	if (0 === parkEntranceTiles.length) {
 		if (onComplete) {
 			onComplete();
 		}

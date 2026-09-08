@@ -1,4 +1,4 @@
-import { gameMap, gameContext } from "../game";
+import { gameContext, gameMap } from "../game";
 import { tileKey } from "../scan";
 
 // --- Path graph layer ------------------------------------------------------
@@ -130,9 +130,9 @@ export function graphDistance(graph: PathGraph, fromKey: string, toKey: string):
 // walkable in one piece; unreachable tiles are never included since they are
 // never part of `graph` in the first place (see buildNetwork).
 export function splitIntoZones(graph: PathGraph, zoneCount: number): string[][] {
-	const keys = Array.from(graph.nodes.keys());
-	if (zoneCount <= 1 || keys.length === 0) {
-		return keys.length === 0 ? [] : [keys];
+	const keys = [...graph.nodes.keys()];
+	if (1 >= zoneCount || 0 === keys.length) {
+		return 0 === keys.length ? [] : [keys];
 	}
 
 	// Farthest-point sampling: repeatedly pick the node with the largest
@@ -223,12 +223,12 @@ export function snapToNetwork(graph: PathGraph, start: PathGraphNode, options: P
 	return null;
 }
 
-// The most graph-central node among `keys` (the one minimising the maximum
+// The most graph-central node among `keys`
 // hop distance to every other tile in the set), used to place staff "in the
 // middle" of their zone instead of at its geometric centroid, which can fall
 // on an unreachable or off-network tile for an L-shaped or branching zone.
 export function centralTile(graph: PathGraph, keys: string[]): string | null {
-	if (keys.length === 0) {
+	if (0 === keys.length) {
 		return null;
 	}
 	let bestKey = keys[0];

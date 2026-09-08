@@ -2,7 +2,7 @@ import { openWindow } from "./ui";
 import { initAuto } from "./auto";
 
 function main(): void {
-	if (typeof ui !== "undefined") {
+	if ("undefined" !== typeof ui) {
 		ui.registerMenuItem("Staff Manager", function () { openWindow(); });
 	}
 	initAuto();

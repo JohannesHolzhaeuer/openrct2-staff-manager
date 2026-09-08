@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setGameContext, resetGameContext, setGameMap, resetGameMap, setGameObjects, resetGameObjects } from "../src/game";
-import { setAutoEnabled, initAuto } from "../src/auto";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetGameContext, resetGameMap, resetGameObjects, setGameContext, setGameMap, setGameObjects } from "../src/game";
+import { initAuto, setAutoEnabled } from "../src/auto";
 import { autoEnabledStore } from "../src/store";
 import { fakeMap } from "./fake-map";
 import { FakeContext, fakeObjects } from "./fake-context";
@@ -10,7 +10,7 @@ let ctx: FakeContext;
 // world coordinates (32 units per tile) of the tile used for path placements.
 const PATH_TILE_WORLD = { x: 160, y: 160 };
 
-function fireAction(action: string, args: Record<string, unknown>): void {
+function fireAction(action: string, args: { [key: string]: unknown }): void {
 	ctx.actionExecuteCallback?.({ action: action, args: args } as unknown as GameActionEventArgs);
 }
 

@@ -1,23 +1,23 @@
 import {
-	window as flexWindow, box, horizontal, vertical, label, button, spinner, checkbox, toggle, graphics, compute, isStore,
+	Bindable, Colour, FlexiblePosition, Scale, Store, WidgetCreator, WindowTemplate, WritableStore, box, button, checkbox, compute,
 	store as flexStore,
-	WindowTemplate, WidgetCreator, FlexiblePosition, Store, WritableStore, Bindable, Scale, Colour
+	window as flexWindow, graphics, horizontal, isStore, label, spinner, toggle, vertical
 } from "openrct2-flexui";
 import { t } from "./i18n";
 import {
-	parkEntranceInfoStore, autoEnabledStore, hasRanAdjustAndAssignStore,
-	pathTilesCountStore, queueTilesCountStore, gardenTilesCountStore, rideExitCountStore, ownedTilesCountStore,
-	handymenTilesPerStaffStore, handymenMowerTilesPerStaffStore,
-	guardsTilesPerStaffStore, entertainersTilesPerStaffStore, entertainersPerAreaStore, entertainersIncludeQueueStore,
-	handymenEnabledStore, guardsEnabledStore, entertainersEnabledStore, mechanicsEnabledStore,
-	handymenNeededStore, handymenHiredStore,
-	guardsNeededStore, guardsHiredStore,
-	entertainersNeededStore, entertainersHiredStore,
-	mechanicsNeededStore, mechanicsHiredStore,
-	handymenControlsDisabledStore, guardsControlsDisabledStore, entertainersControlsDisabledStore, mechanicsControlsDisabledStore,
-	staffControlsDisabledStore, statusTextStore, progressStore
+	autoEnabledStore, entertainersControlsDisabledStore, entertainersEnabledStore,
+	entertainersHiredStore, entertainersIncludeQueueStore, entertainersNeededStore, entertainersPerAreaStore, entertainersTilesPerStaffStore,
+	gardenTilesCountStore, guardsControlsDisabledStore,
+	guardsEnabledStore, guardsHiredStore, guardsNeededStore, guardsTilesPerStaffStore,
+	handymenControlsDisabledStore, handymenEnabledStore, handymenHiredStore, handymenMowerTilesPerStaffStore,
+	handymenNeededStore, handymenTilesPerStaffStore,
+	hasRanAdjustAndAssignStore, mechanicsControlsDisabledStore,
+	mechanicsEnabledStore, mechanicsHiredStore,
+	mechanicsNeededStore, ownedTilesCountStore,
+	parkEntranceInfoStore, pathTilesCountStore, progressStore, queueTilesCountStore,
+	rideExitCountStore, staffControlsDisabledStore, statusTextStore
 } from "./store";
-import { scanFootpathNetwork, findAndReportParkEntrance } from "./scan";
+import { findAndReportParkEntrance, scanFootpathNetwork } from "./scan";
 import { adjustStaffCounts, assignStaff, refreshHiredAndAssignedStaffCounts } from "./staff";
 import { setAutoEnabled } from "./auto";
 
@@ -26,16 +26,26 @@ import { setAutoEnabled } from "./auto";
 // right-aligned value, e.g. "Needed        nnn".
 const STAT_ROW_HEIGHT = 12;
 
+function coloredText(colorToken: Bindable<string> | undefined, text: Bindable<string>): Bindable<string> {
+	if (!colorToken) {
+		return text;
+	}
+	if (isStore(colorToken) && isStore(text)) {
+		return compute(colorToken, text, function (token: string, t: string) { return token + t; });
+	}
+	if (isStore(colorToken)) {
+		return compute(colorToken, function (token: string) { return token + (text as string); });
+	}
+	if (isStore(text)) {
+		return compute(text, function (t: string) { return colorToken + t; });
+	}
+	return colorToken + text;
+}
+
 function statRow(name: string, value: Bindable<number>, tooltip: string, disabled: Bindable<boolean>, colorToken?: Bindable<string>): WidgetCreator<FlexiblePosition> {
 	const text = isStore(value) ? compute(value, String) : String(value);
-	const nameText = colorToken
-		? (isStore(colorToken) ? compute(colorToken, function (token: string) { return token + name; }) : colorToken + name)
-		: name;
-	const valueText = colorToken
-		? (isStore(colorToken) && isStore(text)
-			? compute(colorToken, text, function (token: string, t: string) { return token + t; })
-			: (isStore(text) ? compute(text, function (t: string) { return (colorToken as string) + t; }) : (colorToken as string) + text))
-		: text;
+	const nameText = coloredText(colorToken, name);
+	const valueText = coloredText(colorToken, text);
 	return horizontal({
 		spacing: 4,
 		height: STAT_ROW_HEIGHT,
@@ -44,6 +54,16 @@ function statRow(name: string, value: Bindable<number>, tooltip: string, disable
 			label({ text: valueText, width: "1w", height: STAT_ROW_HEIGHT, alignment: "centred", tooltip: tooltip, disabled: disabled })
 		]
 	});
+}
+
+function differenceColor(d: number): string {
+	if (0 < d) {
+		return "{GREEN}";
+	}
+	if (0 > d) {
+		return "{RED}";
+	}
+	return "{BLACK}";
 }
 
 function statTable(needed: Bindable<number>, hired: Bindable<number>, disabled: Bindable<boolean>): WidgetCreator<FlexiblePosition>[] {
@@ -61,9 +81,9 @@ function statTable(needed: Bindable<number>, hired: Bindable<number>, disabled: 
 			isStore(difference) ? difference : flexStore(difference),
 			isStore(disabled) ? disabled : flexStore(disabled),
 			function (d: number, isDisabled: boolean) {
-				return isDisabled ? "" : (d > 0 ? "{GREEN}" : d < 0 ? "{RED}" : "{BLACK}");
+				return isDisabled ? "" : differenceColor(d);
 			})
-		: (difference > 0 ? "{GREEN}" : difference < 0 ? "{RED}" : "{BLACK}");
+		: differenceColor(difference);
 	return [
 		statRow(t("statRow.hired"), hired, t("statRow.hired.tooltip"), disabled),
 		statRow(t("statRow.needed"), needed, t("statRow.needed.tooltip"), disabled),
@@ -155,7 +175,7 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 		content: vertical({
 			spacing: 3,
 			content: [
-				checkbox({ text: t("staffGroup.enabled"), width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, tooltip: t("staffGroup.enabledTooltip"), onChange: function (isChecked) { enabled.set(isChecked); } }),
+				checkbox({ text: t("staffGroup.enabled"), width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, tooltip: t("staffGroup.enabledTooltip"), onChange: function  onChange(isChecked) { enabled.set(isChecked); } }),
 				...(tilesPerStaff ? [horizontal({
 					spacing: 4,
 					height: 14,
@@ -169,7 +189,7 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 							height: 14,
 							tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
 							disabled: controlsDisabled,
-							onChange: function (value) { tilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
+							onChange: function  onChange(value) { tilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
 						})
 					]
 				})] : []),
@@ -186,7 +206,7 @@ function staffGroup(title: string, tilesPerStaff: WritableStore<number> | null, 
 							height: 14,
 							tooltip: t("tooltip.handymenGardeningSpinner"),
 							disabled: controlsDisabled,
-							onChange: function (value) { mowerTilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
+							onChange: function  onChange(value) { mowerTilesPerStaff.set(value); if (onSettingsChanged) { onSettingsChanged(); } }
 						})
 					]
 						})] : []),
@@ -206,7 +226,7 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, wi
 		content: vertical({
 			spacing: 3,
 			content: [
-				checkbox({ text: t("staffGroup.enabled"), width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, tooltip: t("staffGroup.entertainers.enabledTooltip"), onChange: function (isChecked) { enabled.set(isChecked); } }),
+				checkbox({ text: t("staffGroup.enabled"), width: "100%", height: 14, isChecked: enabled, disabled: staffControlsDisabledStore, tooltip: t("staffGroup.entertainers.enabledTooltip"), onChange: function  onChange(isChecked) { enabled.set(isChecked); } }),
 				horizontal({
 						spacing: 4,
 						height: 14,
@@ -220,7 +240,7 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, wi
 								height: 14,
 								tooltip: t("tooltip.entertainersTilesSpinner"),
 								disabled: controlsDisabled,
-								onChange: function (value) { entertainersTilesPerStaffStore.set(value); }
+								onChange: function  onChange(value) { entertainersTilesPerStaffStore.set(value); }
 							})
 						]
 					}),
@@ -237,11 +257,11 @@ function entertainersGroup(needed: Bindable<number>, hired: Bindable<number>, wi
 								height: 14,
 								tooltip: t("tooltip.entertainersPerAreaSpinner"),
 								disabled: controlsDisabled,
-								onChange: function (value) { entertainersPerAreaStore.set(value); }
+								onChange: function  onChange(value) { entertainersPerAreaStore.set(value); }
 							})
 						]
 					}),
-				checkbox({ text: t("checkbox.queue"), width: "100%", height: 14, isChecked: entertainersIncludeQueueStore, disabled: controlsDisabled, tooltip: t("tooltip.entertainersQueueCheckbox"), onChange: function (isChecked) { entertainersIncludeQueueStore.set(isChecked); } }),
+				checkbox({ text: t("checkbox.queue"), width: "100%", height: 14, isChecked: entertainersIncludeQueueStore, disabled: controlsDisabled, tooltip: t("tooltip.entertainersQueueCheckbox"), onChange: function  onChange(isChecked) { entertainersIncludeQueueStore.set(isChecked); } }),
 						...statTable(needed, hired, controlsDisabled)
 					]
 				})
@@ -285,7 +305,7 @@ function separator(): WidgetCreator<FlexiblePosition> {
 	return graphics({
 		width: "100%",
 		height: SEPARATOR_ROW_HEIGHT,
-		onDraw: function (g) {
+		onDraw: function  onDraw(g) {
 			g.well(0, 1, g.width, 2);
 		}
 	});
@@ -379,7 +399,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 							tooltip: compute(progressTooltipStore, segmentFilledStore, function (tooltip: string) {
 								return tooltip;
 							}),
-							onDraw: function (g) {
+							onDraw: function  onDraw(g) {
 								if (segmentFilledStore.get()) {
 									g.colour = Colour.BrightGreen;
 									g.box(0, 0, g.width, g.height);
@@ -397,7 +417,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 					height: APPLY_ROW_HEIGHT,
 					content: [
 					button({
-						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), onClick: function () { hasRanAdjustAndAssignStore.set(true); progressStore.set(0); statusTextStore.set(""); adjustStaffCounts(assignStaff); }
+						text: t("button.adjustAndAssign"), width: "100%", height: APPLY_ROW_HEIGHT, tooltip: t("button.adjustAndAssign.tooltip"), onClick: function  onClick() { hasRanAdjustAndAssignStore.set(true); progressStore.set(0); statusTextStore.set(""); adjustStaffCounts(assignStaff); }
 					})
 					]
 				}),
@@ -409,7 +429,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 						graphics({
 							width: AUTO_ROW_HEIGHT,
 							height: AUTO_ROW_HEIGHT,
-							onDraw: function (g) {
+							onDraw: function  onDraw(g) {
 								const on = autoEnabledStore.get();
 								g.colour = on ? Colour.BrightGreen : Colour.SaturatedRed;
 								g.box(2, 2, AUTO_ROW_HEIGHT - 4, AUTO_ROW_HEIGHT - 4);
@@ -424,7 +444,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 							isPressed: autoEnabledStore,
 							tooltip: t("auto.tooltip"),
 							disabled: compute(hasRanAdjustAndAssignStore, function (hasRun) { return !hasRun; }),
-							onChange: function (pressed) { setAutoEnabled(pressed); }
+							onChange: function  onChange(pressed) { setAutoEnabled(pressed); }
 						})
 					]
 				})
