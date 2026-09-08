@@ -205,7 +205,7 @@ typecheck → bundle → deploy), or alone via `npm run test`.
 1. **Scan** every tile for footpaths (incl. queue flag), surface ownership and
    the park entrance.
 2. **Walk the real footpath graph** from the park entrance using the engine's
-   `PathNavigator`/`PathConnection` API ([`src/paths/pathGraph.ts`](src/paths/pathGraph.ts)):
+   `PathNavigator`/`PathConnection` API ([`src/paths/path-graph.ts`](src/paths/path-graph.ts)):
    two tiles are only treated as connected when the engine itself reports a
    `PathConnection` between them, which already accounts for slopes, height
    offsets and queue/regular separation — a bridge path and the path passing
@@ -307,7 +307,7 @@ exposed to plugins, so this layer replaces it entirely.
   or the detected language has no matching dictionary, the plugin falls back
   to **`en-GB`**, which is the canonical/fallback dictionary and always
   contains every translation key.
-- **Adding a new language**: copy [`src/i18n/en-GB.ts`](src/i18n/en-GB.ts) to
+- **Adding a new language**: copy [`src/i18n/en-gb.ts`](src/i18n/en-gb.ts) to
   `src/i18n/<language-code>.ts` (e.g. `fr-FR.ts`), translate every value
   (the `Translations` type in [`src/i18n/types.ts`](src/i18n/types.ts) makes
   the TypeScript compiler fail the build if a key is missing or misspelled),

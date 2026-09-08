@@ -32,7 +32,7 @@ import {
 	lastGardenAreas,
 	tileKey,
 } from "./scan";
-import { exitToPathTile } from "./paths/pathGraph";
+import { exitToPathTile } from "./paths/path-graph";
 import { gameContext, gameMap, gameObjects } from "./game";
 import { t } from "./i18n";
 

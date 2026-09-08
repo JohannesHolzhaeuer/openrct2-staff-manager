@@ -10,7 +10,7 @@ import {
 	rideExitCountStore,
 	tilesCalculatedStore,
 } from "./store";
-import { pathTilesConnected } from "./paths/pathGraph";
+import { pathTilesConnected } from "./paths/path-graph";
 
 // A single visited path/queue tile: its tile coordinates plus the base height of
 // the footpath element that was found on it.
@@ -226,7 +226,7 @@ export function footpathsConnect(
 
 // Whether staff can walk between two neighbouring tiles' *footpath* elements. Unlike
 // plain x/y adjacency, this defers to the engine's own PathNavigator/PathConnection
-// graph (see src/paths/pathGraph.ts) instead of re-deriving height/slope rules by
+// graph (see src/paths/path-graph.ts) instead of re-deriving height/slope rules by
 // hand: a path on a bridge and a path passing beneath it at a different height are
 // NOT considered connected, and two inclined ways meet only if the engine actually
 // reports a PathConnection between them. This is the shared connectivity primitive
