@@ -1,6 +1,6 @@
 {
   "name": "staff-manager",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "An OpenRCT2 plugin that automates park staff management (handymen, security, entertainers, mechanics).",
   "license": "MIT",
   "author": "Johannes Holzhäuer",
