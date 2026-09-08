@@ -638,18 +638,16 @@ function mergeSurplusChunks(chunks: PathTileInfo[][], staffCount: number): void 
 		let bestB = -1;
 		let bestSize = Number.POSITIVE_INFINITY;
 		for (let a = 0; a < chunks.length; a++) {
-			if (merged[a]) {
-				continue;
-			}
-			for (const b of linksOut[a]) {
-				if (merged[b] || b <= a) {
-					continue;
-				}
-				const size = chunks[a].length + chunks[b].length;
-				if (size < bestSize) {
-					bestSize = size;
-					bestA = a;
-					bestB = b;
+			if (!merged[a]) {
+				for (const b of linksOut[a]) {
+					if (!merged[b] && b > a) {
+						const size = chunks[a].length + chunks[b].length;
+						if (size < bestSize) {
+							bestSize = size;
+							bestA = a;
+							bestB = b;
+						}
+					}
 				}
 			}
 		}
@@ -980,16 +978,15 @@ export function decideAreaAction(
 		const neighbourX = newTile.x + worldToTileX(offset.x);
 		const neighbourY = newTile.y + worldToTileX(offset.y);
 		const areaIndex = areaIndexByTileKey.get(String(neighbourX) + "," + String(neighbourY));
-		if (areaIndex === undefined) {
-			continue;
+		if (
+			areaIndex !== undefined &&
+			(!connect || connect(neighbourX, neighbourY, newTile.x, newTile.y, areaIndex))
+		) {
+			if (areas[areaIndex].length < maxSize) {
+				return { action: "enlarge", areaIndex: areaIndex };
+			}
+			return { action: "hire" };
 		}
-		if (connect && !connect(neighbourX, neighbourY, newTile.x, newTile.y, areaIndex)) {
-			continue;
-		}
-		if (areas[areaIndex].length < maxSize) {
-			return { action: "enlarge", areaIndex: areaIndex };
-		}
-		return { action: "hire" };
 	}
 	return { action: "hire" };
 }
@@ -1119,15 +1116,14 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 	const tasks: { member: Staff; chunk: PathTileInfo[] }[] = [];
 	for (let c = 0; c < components.length; c++) {
 		const count = counts[c];
-		if (0 >= count) {
-			continue;
-		}
-		const componentMembers = members.slice(memberIndex, memberIndex + count);
-		memberIndex += count;
+		if (0 < count) {
+			const componentMembers = members.slice(memberIndex, memberIndex + count);
+			memberIndex += count;
 
-		const chunks = chunkTilesForStaffCount(components[c], componentMembers.length);
-		for (let i = 0; i < chunks.length && i < componentMembers.length; i++) {
-			tasks.push({ member: componentMembers[i], chunk: chunks[i] });
+			const chunks = chunkTilesForStaffCount(components[c], componentMembers.length);
+			for (let i = 0; i < chunks.length && i < componentMembers.length; i++) {
+				tasks.push({ member: componentMembers[i], chunk: chunks[i] });
+			}
 		}
 	}
 	applyInBatches(
@@ -1273,102 +1269,100 @@ function assignMechanics(onComplete: () => void): void {
 	}[] = [];
 	let mechanicIndex = 0;
 	for (let i = 0; i < rides.length && mechanicIndex < mechanics.length; i++) {
-		if ("ride" !== rides[i].classification) {
-			continue;
-		}
-		const stations = rides[i].stations;
-		for (let s = 0; s < stations.length && mechanicIndex < mechanics.length; s++) {
-			const exit = stations[s].exit;
-			if (!isValidStationExit(exit)) {
-				continue;
-			}
+		if ("ride" === rides[i].classification) {
+			const stations = rides[i].stations;
+			for (let s = 0; s < stations.length && mechanicIndex < mechanics.length; s++) {
+				const exit = stations[s].exit;
+				if (isValidStationExit(exit)) {
+					const exitTileX = Math.floor(exit.x / 32);
+					const exitTileY = Math.floor(exit.y / 32);
 
-			const exitTileX = Math.floor(exit.x / 32);
-			const exitTileY = Math.floor(exit.y / 32);
+					let frontTileX: number | undefined = undefined;
+					let frontTileY: number | undefined = undefined;
+					let frontZ: number | undefined = undefined;
 
-			let frontTileX: number | undefined = undefined;
-			let frontTileY: number | undefined = undefined;
-			let frontZ: number | undefined = undefined;
-
-			// The "front" tile is the footpath the exit actually leads onto.
-			// Prefer the exit's stored facing direction (mapped through
-			// DIRECTION_OFFSETS, since the game's direction ordering does not
-			// match CARDINAL_NEIGHBOUR_OFFSETS), then fall back to whichever
-			// cardinal neighbour the engine's PathNavigator reports a footpath
-			// on, in case the stored direction doesn't line up with where the
-			// path really is (e.g. an exit offset from the queue/track).
-			// Deferring to getPathNavigator (rather than manually probing for a
-			// footpath tile element) means the engine's own height/slope rules
-			// decide whether a candidate is really connected, so this keeps
-			// working across exits sitting at the top or bottom of a slope.
-			const preferredOffset = DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
-			const candidateOffsets = [
-				preferredOffset,
-				...CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) {
-					return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
-				}),
-			];
-			const frontTile = exitToPathTile(exitTileX, exitTileY, exit.z, candidateOffsets);
-			if (undefined !== frontTile) {
-				frontTileX = frontTile.x;
-				frontTileY = frontTile.y;
-				frontZ = frontTile.z;
-			}
-
-			// The patrol area must always stay just the exit tile plus the
-			// path tile directly in front of it - if no cardinal neighbour has
-			// a footpath, there is no valid "front of the ride" tile to patrol,
-			// so the area is just the exit tile on its own. A distant fallback
-			// tile is only ever used as a teleport destination (below), never
-			// added to the patrol area, since that produced patrol areas far
-			// away from the ride.
-			const member = mechanics[mechanicIndex];
-			const patrolTiles: CoordsXY[] = [tileToWorldXY(exitTileX, exitTileY)];
-			if (undefined !== frontTileX && undefined !== frontTileY) {
-				patrolTiles.push(tileToWorldXY(frontTileX, frontTileY));
-			}
-
-			// Only teleport idle mechanics. A busy mechanic (one not standing
-			// on a footpath - see canTeleportMechanic, the best available proxy
-			// for "currently servicing a ride") keeps its correct new patrol
-			// area from above but is not physically dragged off mid-repair; it
-			// will walk to its assigned area once it finishes its current job.
-			let teleportTarget: { x: number; y: number; z: number } | undefined = undefined;
-			if (canTeleportMechanic(member)) {
-				// Prefer standing on the front tile, but only if a peep can
-				// actually be placed there (it may carry a bench/lamp/bin);
-				// otherwise drop the mechanic on the nearest placeable footpath.
-				// The patrol area still stays on the real front tile regardless
-				// of where the mechanic is physically placed.
-				let teleportTileX: number | undefined = undefined;
-				let teleportTileY: number | undefined = undefined;
-				let teleportZ: number | undefined = undefined;
-				if (
-					undefined !== frontTileX &&
-					undefined !== frontTileY &&
-					isPeepPlaceableTile(frontTileX, frontTileY)
-				) {
-					teleportTileX = frontTileX;
-					teleportTileY = frontTileY;
-					teleportZ = frontZ;
-				} else {
-					const nearestPathTile = findNearestPathTile(exitTileX, exitTileY);
-					if (nearestPathTile) {
-						teleportTileX = nearestPathTile.x;
-						teleportTileY = nearestPathTile.y;
-						teleportZ = nearestPathTile.baseZ;
+					// The "front" tile is the footpath the exit actually leads onto.
+					// Prefer the exit's stored facing direction (mapped through
+					// DIRECTION_OFFSETS, since the game's direction ordering does not
+					// match CARDINAL_NEIGHBOUR_OFFSETS), then fall back to whichever
+					// cardinal neighbour the engine's PathNavigator reports a footpath
+					// on, in case the stored direction doesn't line up with where the
+					// path really is (e.g. an exit offset from the queue/track).
+					// Deferring to getPathNavigator (rather than manually probing for a
+					// footpath tile element) means the engine's own height/slope rules
+					// decide whether a candidate is really connected, so this keeps
+					// working across exits sitting at the top or bottom of a slope.
+					const preferredOffset =
+						DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
+					const candidateOffsets = [
+						preferredOffset,
+						...CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) {
+							return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
+						}),
+					];
+					const frontTile = exitToPathTile(exitTileX, exitTileY, exit.z, candidateOffsets);
+					if (undefined !== frontTile) {
+						frontTileX = frontTile.x;
+						frontTileY = frontTile.y;
+						frontZ = frontTile.z;
 					}
-				}
-				if (undefined !== teleportTileX && undefined !== teleportTileY) {
-					teleportTarget = {
-						x: teleportTileX * 32 + 16,
-						y: teleportTileY * 32 + 16,
-						z: teleportZ ?? exit.z,
-					};
+
+					// The patrol area must always stay just the exit tile plus the
+					// path tile directly in front of it - if no cardinal neighbour has
+					// a footpath, there is no valid "front of the ride" tile to patrol,
+					// so the area is just the exit tile on its own. A distant fallback
+					// tile is only ever used as a teleport destination (below), never
+					// added to the patrol area, since that produced patrol areas far
+					// away from the ride.
+					const member = mechanics[mechanicIndex];
+					const patrolTiles: CoordsXY[] = [tileToWorldXY(exitTileX, exitTileY)];
+					if (undefined !== frontTileX && undefined !== frontTileY) {
+						patrolTiles.push(tileToWorldXY(frontTileX, frontTileY));
+					}
+
+					// Only teleport idle mechanics. A busy mechanic (one not standing
+					// on a footpath - see canTeleportMechanic, the best available proxy
+					// for "currently servicing a ride") keeps its correct new patrol
+					// area from above but is not physically dragged off mid-repair; it
+					// will walk to its assigned area once it finishes its current job.
+					let teleportTarget: { x: number; y: number; z: number } | undefined = undefined;
+					if (canTeleportMechanic(member)) {
+						// Prefer standing on the front tile, but only if a peep can
+						// actually be placed there (it may carry a bench/lamp/bin);
+						// otherwise drop the mechanic on the nearest placeable footpath.
+						// The patrol area still stays on the real front tile regardless
+						// of where the mechanic is physically placed.
+						let teleportTileX: number | undefined = undefined;
+						let teleportTileY: number | undefined = undefined;
+						let teleportZ: number | undefined = undefined;
+						if (
+							undefined !== frontTileX &&
+							undefined !== frontTileY &&
+							isPeepPlaceableTile(frontTileX, frontTileY)
+						) {
+							teleportTileX = frontTileX;
+							teleportTileY = frontTileY;
+							teleportZ = frontZ;
+						} else {
+							const nearestPathTile = findNearestPathTile(exitTileX, exitTileY);
+							if (nearestPathTile) {
+								teleportTileX = nearestPathTile.x;
+								teleportTileY = nearestPathTile.y;
+								teleportZ = nearestPathTile.baseZ;
+							}
+						}
+						if (undefined !== teleportTileX && undefined !== teleportTileY) {
+							teleportTarget = {
+								x: teleportTileX * 32 + 16,
+								y: teleportTileY * 32 + 16,
+								z: teleportZ ?? exit.z,
+							};
+						}
+					}
+					tasks.push({ member: member, patrolTiles: patrolTiles, teleportTarget: teleportTarget });
+					mechanicIndex++;
 				}
 			}
-			tasks.push({ member: member, patrolTiles: patrolTiles, teleportTarget: teleportTarget });
-			mechanicIndex++;
 		}
 	}
 	applyInBatches(
@@ -1411,37 +1405,36 @@ function getStaffedRideExitFronts(): StaffedRideExit[] {
 	const result: StaffedRideExit[] = [];
 	const rides = gameMap().rides;
 	for (const ride of rides) {
-		if ("ride" !== ride.classification) {
-			continue;
-		}
-		const stations = ride.stations;
-		for (const station of stations) {
-			const exit = station.exit;
-			if (!isValidStationExit(exit)) {
-				continue;
-			}
-			const exitTileX = Math.floor(exit.x / 32);
-			const exitTileY = Math.floor(exit.y / 32);
-			const preferredOffset = DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
-			const candidateOffsets = [
-				preferredOffset,
-				...CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) {
-					return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
-				}),
-			];
-			for (const offset of candidateOffsets) {
-				const candidateX = exitTileX + offset.x;
-				const candidateY = exitTileY + offset.y;
-				const footpath = findFootpathElement(gameMap().getTile(candidateX, candidateY));
-				if (undefined !== footpath) {
-					result.push({
-						exitTileX: exitTileX,
-						exitTileY: exitTileY,
-						frontTileX: candidateX,
-						frontTileY: candidateY,
-						frontFootpath: footpath,
-					});
-					break;
+		if ("ride" === ride.classification) {
+			const stations = ride.stations;
+			for (const station of stations) {
+				const exit = station.exit;
+				if (isValidStationExit(exit)) {
+					const exitTileX = Math.floor(exit.x / 32);
+					const exitTileY = Math.floor(exit.y / 32);
+					const preferredOffset =
+						DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
+					const candidateOffsets = [
+						preferredOffset,
+						...CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) {
+							return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
+						}),
+					];
+					for (const offset of candidateOffsets) {
+						const candidateX = exitTileX + offset.x;
+						const candidateY = exitTileY + offset.y;
+						const footpath = findFootpathElement(gameMap().getTile(candidateX, candidateY));
+						if (undefined !== footpath) {
+							result.push({
+								exitTileX: exitTileX,
+								exitTileY: exitTileY,
+								frontTileX: candidateX,
+								frontTileY: candidateY,
+								frontFootpath: footpath,
+							});
+							break;
+						}
+					}
 				}
 			}
 		}

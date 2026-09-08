@@ -96,10 +96,8 @@ export function fakeMap(
 				const nx = x + offset.x;
 				const ny = y + offset.y;
 				for (const neighbourFootpath of footpathsAt(nx, ny)) {
-					if (neighbourFootpath.isQueue && !options?.includeQueues) {
-						continue;
-					}
 					if (
+						(!neighbourFootpath.isQueue || options?.includeQueues) &&
 						footpathsConnect(
 							{ baseZ: hereBaseZ, slopeDirection: hereSlopeDirection },
 							{
