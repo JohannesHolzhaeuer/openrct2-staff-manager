@@ -277,7 +277,7 @@ function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
 function staffGroup(
 	title: string,
-	tilesPerStaff: WritableStore<number> | null,
+	tilesPerStaff: WritableStore<number> | undefined,
 	needed: Bindable<number>,
 	hired: Bindable<number>,
 	width: Scale,
@@ -621,7 +621,7 @@ function staffManagerWindowTemplate(): WindowTemplate {
 						content: [
 							staffGroup(
 								t("staffGroup.mechanics.title"),
-								null,
+								undefined,
 								mechanicsNeededStore,
 								mechanicsHiredStore,
 								"100%",

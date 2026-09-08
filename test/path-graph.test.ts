@@ -243,10 +243,10 @@ describe("exitToPathTile", () => {
 		expect(result).toEqual({ x: 2, y: 1, z: 100 });
 	});
 
-	it("returns null when none of the candidate offsets have a footpath", () => {
+	it("returns undefined when none of the candidate offsets have a footpath", () => {
 		setGameMap(fakeMap({ x: 8, y: 8 }, {}));
 		const result = exitToPathTile(1, 1, 100, [{ x: 1, y: 0 }]);
-		expect(result).toBeNull();
+		expect(result).toBeUndefined();
 	});
 });
 

@@ -50,7 +50,7 @@ describe("setAutoEnabled", () => {
 		setAutoEnabled(true);
 		expect(autoEnabledStore.get()).toBe(true);
 		expect(ctx.subscriptions).toBe(1);
-		expect(ctx.actionExecuteCallback).not.toBeNull();
+		expect(ctx.actionExecuteCallback).toBeDefined();
 	});
 
 	it("unsubscribes and clears pending work when turned off", () => {

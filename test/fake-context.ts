@@ -16,7 +16,7 @@ export class FakeContext implements GameContext {
 	disposals = 0;
 	// The most recently subscribed action.execute callback, so tests can
 	// simulate a game action firing without a real event bus.
-	actionExecuteCallback: ((event: GameActionEventArgs) => void) | null = null;
+	actionExecuteCallback: ((event: GameActionEventArgs) => void) | undefined = undefined;
 
 	// Pending timer callbacks keyed by handle, in scheduling order.
 	private timers = new Map<number, () => void>();
