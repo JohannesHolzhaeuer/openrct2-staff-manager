@@ -109,14 +109,15 @@ describe("openWindow", () => {
 			fakeMap(
 				{ x: 1, y: 1 },
 				{},
-				[],
-				[
-					{
-						id: 1,
-						staffType: "handyman",
-						patrolArea: { tiles: [{ x: 0, y: 0 }] },
-					} as unknown as Staff,
-				],
+				{
+					staff: [
+						{
+							id: 1,
+							staffType: "handyman",
+							patrolArea: { tiles: [{ x: 0, y: 0 }] },
+						} as unknown as Staff,
+					],
+				},
 			),
 		);
 

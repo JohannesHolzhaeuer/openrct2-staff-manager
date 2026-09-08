@@ -35,17 +35,23 @@ afterEach(() => {
 
 describe("hireStaff", () => {
 	it("issues one staffhire action per requested staff member", () => {
-		hireStaff(STAFF_TYPE_ID_HANDYMAN, HANDYMAN_ORDERS_CLEANUP, 3, () => {
-			/* noop */
-		});
+		hireStaff(
+			{ staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_CLEANUP, countToHire: 3 },
+			() => {
+				/* noop */
+			},
+		);
 		ctx.runAllTimers();
 		expect(ctx.actionsOfType("staffhire")).toHaveLength(3);
 	});
 
 	it("passes the staff type and orders through to the game action", () => {
-		hireStaff(STAFF_TYPE_ID_HANDYMAN, HANDYMAN_ORDERS_CLEANUP, 1, () => {
-			/* noop */
-		});
+		hireStaff(
+			{ staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: HANDYMAN_ORDERS_CLEANUP, countToHire: 1 },
+			() => {
+				/* noop */
+			},
+		);
 		ctx.runAllTimers();
 		const args = ctx.actionsOfType("staffhire")[0].args;
 		expect(args.staffType).toBe(STAFF_TYPE_ID_HANDYMAN);
@@ -55,7 +61,7 @@ describe("hireStaff", () => {
 
 	it("invokes the completion callback once per hire", () => {
 		let completed = 0;
-		hireStaff(STAFF_TYPE_ID_HANDYMAN, 0, 5, () => {
+		hireStaff({ staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: 0, countToHire: 5 }, () => {
 			completed++;
 		});
 		ctx.runAllTimers();
@@ -63,7 +69,7 @@ describe("hireStaff", () => {
 	});
 
 	it("hires nothing when zero are requested", () => {
-		hireStaff(STAFF_TYPE_ID_HANDYMAN, 0, 0, () => {
+		hireStaff({ staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: 0, countToHire: 0 }, () => {
 			/* noop */
 		});
 		ctx.runAllTimers();
@@ -71,7 +77,7 @@ describe("hireStaff", () => {
 	});
 
 	it("picks a valid entertainer costume rather than the handyman default", () => {
-		hireStaff(STAFF_TYPE_ID_ENTERTAINER, 0, 1, () => {
+		hireStaff({ staffTypeId: STAFF_TYPE_ID_ENTERTAINER, orders: 0, countToHire: 1 }, () => {
 			/* noop */
 		});
 		ctx.runAllTimers();
@@ -83,7 +89,7 @@ describe("hireStaff", () => {
 	it("skips the hire but still reports completion when no entertainer costume is loaded", () => {
 		setGameObjects(fakeObjects(["rct2.peep_animations.handyman"]));
 		let completed = 0;
-		hireStaff(STAFF_TYPE_ID_ENTERTAINER, 0, 2, () => {
+		hireStaff({ staffTypeId: STAFF_TYPE_ID_ENTERTAINER, orders: 0, countToHire: 2 }, () => {
 			completed++;
 		});
 		ctx.runAllTimers();
@@ -96,7 +102,7 @@ describe("hireStaff", () => {
 
 describe("hire batching across ticks", () => {
 	it("dispatches at most TASKS_PER_TICK actions before yielding to the game loop", () => {
-		hireStaff(STAFF_TYPE_ID_HANDYMAN, 0, 10, () => {
+		hireStaff({ staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: 0, countToHire: 10 }, () => {
 			/* noop */
 		});
 		// The first chunk runs synchronously; the rest must be deferred.
@@ -105,7 +111,7 @@ describe("hire batching across ticks", () => {
 	});
 
 	it("spreads the remaining hires over subsequent ticks", () => {
-		hireStaff(STAFF_TYPE_ID_HANDYMAN, 0, 10, () => {
+		hireStaff({ staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: 0, countToHire: 10 }, () => {
 			/* noop */
 		});
 		ctx.runPendingTimers();
@@ -117,7 +123,7 @@ describe("hire batching across ticks", () => {
 	});
 
 	it("never schedules a follow-up tick when the work fits in one chunk", () => {
-		hireStaff(STAFF_TYPE_ID_HANDYMAN, 0, 4, () => {
+		hireStaff({ staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: 0, countToHire: 4 }, () => {
 			/* noop */
 		});
 		expect(ctx.actionsOfType("staffhire")).toHaveLength(4);
@@ -127,7 +133,7 @@ describe("hire batching across ticks", () => {
 	it("uses a non-zero delay so the engine can render between chunks", () => {
 		// A delay of 0 would be re-entered within the same tick, defeating the
 		// batching entirely (see BATCH_TICK_DELAY).
-		hireStaff(STAFF_TYPE_ID_HANDYMAN, 0, 8, () => {
+		hireStaff({ staffTypeId: STAFF_TYPE_ID_HANDYMAN, orders: 0, countToHire: 8 }, () => {
 			/* noop */
 		});
 		expect(ctx.delays.length).toBeGreaterThan(0);
@@ -137,7 +143,7 @@ describe("hire batching across ticks", () => {
 
 describe("teleportStaffToTile", () => {
 	it("picks the staff member up and puts them down on the target tile", () => {
-		teleportStaffToTile(fakeStaff(7, "handyman"), 3, 4, 32);
+		teleportStaffToTile(fakeStaff(7, "handyman"), { x: 3, y: 4, z: 32 });
 		ctx.runAllTimers();
 		const pickups = ctx.actionsOfType("peeppickup");
 		expect(pickups).toHaveLength(2);
@@ -155,7 +161,7 @@ describe("teleportStaffToTile", () => {
 
 	it("does not attempt to place the staff member when the pickup fails", () => {
 		ctx.actionResult = { error: 1 };
-		teleportStaffToTile(fakeStaff(7, "handyman"), 3, 4, 32);
+		teleportStaffToTile(fakeStaff(7, "handyman"), { x: 3, y: 4, z: 32 });
 		ctx.runAllTimers();
 		expect(ctx.actionsOfType("peeppickup")).toHaveLength(1);
 	});

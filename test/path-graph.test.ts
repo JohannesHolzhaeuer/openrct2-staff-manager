@@ -46,7 +46,7 @@ describe("pathTilesConnected", () => {
 				},
 			),
 		);
-		expect(pathTilesConnected(1, 1, 100, 2, 1)).toBe(true);
+		expect(pathTilesConnected({ x: 1, y: 1, z: 100 }, { x: 2, y: 1 })).toBe(true);
 	});
 
 	it("does not connect a bridge path to the path passing underneath, across a slope", () => {
@@ -63,8 +63,8 @@ describe("pathTilesConnected", () => {
 		// The slope at (1,1) climbs towards +X (direction 2), so its edge
 		// there is one level up (116) and correctly meets (2,1); a distant,
 		// unrelated path at a different height must not be reported connected.
-		expect(pathTilesConnected(1, 1, 100, 2, 1)).toBe(true);
-		expect(pathTilesConnected(2, 1, 116, 3, 1)).toBe(false);
+		expect(pathTilesConnected({ x: 1, y: 1, z: 100 }, { x: 2, y: 1 })).toBe(true);
+		expect(pathTilesConnected({ x: 2, y: 1, z: 116 }, { x: 3, y: 1 })).toBe(false);
 	});
 });
 
@@ -234,7 +234,7 @@ describe("exitToPathTile", () => {
 				},
 			),
 		);
-		const result = exitToPathTile(1, 1, 100, [
+		const result = exitToPathTile({ x: 1, y: 1, z: 100 }, [
 			{ x: 1, y: 0 },
 			{ x: -1, y: 0 },
 			{ x: 0, y: 1 },
@@ -245,7 +245,7 @@ describe("exitToPathTile", () => {
 
 	it("returns undefined when none of the candidate offsets have a footpath", () => {
 		setGameMap(fakeMap({ x: 8, y: 8 }, {}));
-		const result = exitToPathTile(1, 1, 100, [{ x: 1, y: 0 }]);
+		const result = exitToPathTile({ x: 1, y: 1, z: 100 }, [{ x: 1, y: 0 }]);
 		expect(result).toBeUndefined();
 	});
 });

@@ -23,7 +23,7 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles(1, 1, 2, 1)).toBe(true);
+		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 2, y: 1 })).toBe(true);
 	});
 
 	it("does not connect a bridge path to the path passing underneath", () => {
@@ -36,7 +36,7 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles(1, 1, 2, 1)).toBe(false);
+		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 2, y: 1 })).toBe(false);
 	});
 
 	it("picks the matching path when a tile carries several at different heights", () => {
@@ -49,7 +49,7 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles(1, 1, 2, 1)).toBe(true);
+		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 2, y: 1 })).toBe(true);
 	});
 
 	it("rejects diagonal and identical tiles", () => {
@@ -62,8 +62,8 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles(1, 1, 2, 2)).toBe(false);
-		expect(footpathsConnectTiles(1, 1, 1, 1)).toBe(false);
+		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 2, y: 2 })).toBe(false);
+		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 1, y: 1 })).toBe(false);
 	});
 
 	it("treats out-of-bounds tiles as having no paths", () => {
@@ -75,7 +75,7 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles(0, 0, -1, 0)).toBe(false);
+		expect(footpathsConnectTiles({ x: 0, y: 0 }, { x: -1, y: 0 })).toBe(false);
 	});
 });
 
@@ -90,7 +90,7 @@ describe("surfaceTilesConnect", () => {
 				},
 			),
 		);
-		expect(surfaceTilesConnect(1, 1, 1, 2)).toBe(true);
+		expect(surfaceTilesConnect({ x: 1, y: 1 }, { x: 1, y: 2 })).toBe(true);
 	});
 
 	it("does not connect across an unclimbable step", () => {
@@ -103,7 +103,7 @@ describe("surfaceTilesConnect", () => {
 				},
 			),
 		);
-		expect(surfaceTilesConnect(1, 1, 1, 2)).toBe(false);
+		expect(surfaceTilesConnect({ x: 1, y: 1 }, { x: 1, y: 2 })).toBe(false);
 	});
 
 	it("does not connect to a submerged tile", () => {
@@ -116,7 +116,7 @@ describe("surfaceTilesConnect", () => {
 				},
 			),
 		);
-		expect(surfaceTilesConnect(1, 1, 1, 2)).toBe(false);
+		expect(surfaceTilesConnect({ x: 1, y: 1 }, { x: 1, y: 2 })).toBe(false);
 	});
 
 	it("does not connect when a tile has no surface at all", () => {
@@ -128,7 +128,7 @@ describe("surfaceTilesConnect", () => {
 				},
 			),
 		);
-		expect(surfaceTilesConnect(1, 1, 1, 2)).toBe(false);
+		expect(surfaceTilesConnect({ x: 1, y: 1 }, { x: 1, y: 2 })).toBe(false);
 	});
 });
 
@@ -143,7 +143,7 @@ describe("surfaceFenceBlocksWalking", () => {
 				},
 			),
 		);
-		expect(surfaceFenceBlocksWalking(1, 1, 1, 0)).toBe(false);
+		expect(surfaceFenceBlocksWalking({ x: 1, y: 1 }, { x: 1, y: 0 })).toBe(false);
 	});
 
 	it("blocks when the source tile is fenced on the shared edge", () => {
@@ -157,7 +157,7 @@ describe("surfaceFenceBlocksWalking", () => {
 				},
 			),
 		);
-		expect(surfaceFenceBlocksWalking(1, 1, 1, 0)).toBe(true);
+		expect(surfaceFenceBlocksWalking({ x: 1, y: 1 }, { x: 1, y: 0 })).toBe(true);
 	});
 
 	it("blocks when only the destination tile is fenced on the shared edge", () => {
@@ -171,7 +171,7 @@ describe("surfaceFenceBlocksWalking", () => {
 				},
 			),
 		);
-		expect(surfaceFenceBlocksWalking(1, 1, 1, 0)).toBe(true);
+		expect(surfaceFenceBlocksWalking({ x: 1, y: 1 }, { x: 1, y: 0 })).toBe(true);
 	});
 
 	it("ignores fences on unrelated edges", () => {
@@ -184,7 +184,7 @@ describe("surfaceFenceBlocksWalking", () => {
 				},
 			),
 		);
-		expect(surfaceFenceBlocksWalking(1, 1, 1, 0)).toBe(false);
+		expect(surfaceFenceBlocksWalking({ x: 1, y: 1 }, { x: 1, y: 0 })).toBe(false);
 	});
 
 	it("reports no blocking for non-cardinal neighbours", () => {
@@ -197,7 +197,7 @@ describe("surfaceFenceBlocksWalking", () => {
 				},
 			),
 		);
-		expect(surfaceFenceBlocksWalking(1, 1, 2, 2)).toBe(false);
+		expect(surfaceFenceBlocksWalking({ x: 1, y: 1 }, { x: 2, y: 2 })).toBe(false);
 	});
 });
 

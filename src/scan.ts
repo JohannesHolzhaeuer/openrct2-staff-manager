@@ -232,13 +232,13 @@ export function footpathsConnect(
 // used by both the manual scan (to build patrol areas) and auto mode (to decide
 // enlarge-vs-hire), so the two never disagree about whether two tiles belong in one
 // reachable area.
-export function footpathsConnectTiles(tx: number, ty: number, nx: number, ny: number): boolean {
-	if (tx === nx && ty === ny) {
+export function footpathsConnectTiles(from: CoordsXY, to: CoordsXY): boolean {
+	if (from.x === to.x && from.y === to.y) {
 		return false;
 	}
-	const froms = findFootpathElements(tx, ty);
-	for (const from of froms) {
-		if (pathTilesConnected(tx, ty, from.baseZ, nx, ny)) {
+	const froms = findFootpathElements(from.x, from.y);
+	for (const f of froms) {
+		if (pathTilesConnected({ x: from.x, y: from.y, z: f.baseZ }, to)) {
 			return true;
 		}
 	}
@@ -248,10 +248,10 @@ export function footpathsConnectTiles(tx: number, ty: number, nx: number, ny: nu
 // Whether staff can walk between two neighbouring *land* tiles (used for gardening
 // areas): their terrain heights must be close enough not to form an unclimbable step,
 // and neither may be water. Shared by the manual garden-area scan and auto mode.
-export function surfaceTilesConnect(tx: number, ty: number, nx: number, ny: number): boolean {
+export function surfaceTilesConnect(from: CoordsXY, to: CoordsXY): boolean {
 	return surfacesConnect(
-		findSurfaceElement(gameMap().getTile(tx, ty)),
-		findSurfaceElement(gameMap().getTile(nx, ny)),
+		findSurfaceElement(gameMap().getTile(from.x, from.y)),
+		findSurfaceElement(gameMap().getTile(to.x, to.y)),
 	);
 }
 
@@ -294,9 +294,9 @@ const FENCE_BIT_BY_DIRECTION = [0x4, 0x2, 0x1, 0x8];
 // neighbouring tiles across their shared edge. A park fence on a surface (parkFences),
 // or a path edge/railing (FootpathElement.edges), physically bars walking, so fenced
 // tiles must not be merged into the same patrol area.
-export function surfaceFenceBlocksWalking(x1: number, y1: number, x2: number, y2: number): boolean {
-	const dx = x2 - x1;
-	const dy = y2 - y1;
+export function surfaceFenceBlocksWalking(from: CoordsXY, to: CoordsXY): boolean {
+	const dx = to.x - from.x;
+	const dy = to.y - from.y;
 	let direction = -1;
 	for (let d = 0; d < CARDINAL_NEIGHBOUR_OFFSETS.length; d++) {
 		if (CARDINAL_NEIGHBOUR_OFFSETS[d].x === dx && CARDINAL_NEIGHBOUR_OFFSETS[d].y === dy) {
@@ -308,8 +308,8 @@ export function surfaceFenceBlocksWalking(x1: number, y1: number, x2: number, y2
 		return false;
 	}
 	const inverse = oppositeDirection(direction);
-	const surfaceA = findSurfaceElement(gameMap().getTile(x1, y1));
-	const surfaceB = findSurfaceElement(gameMap().getTile(x2, y2));
+	const surfaceA = findSurfaceElement(gameMap().getTile(from.x, from.y));
+	const surfaceB = findSurfaceElement(gameMap().getTile(to.x, to.y));
 	if (surfaceA && 0 !== (surfaceA.parkFences & FENCE_BIT_BY_DIRECTION[direction])) {
 		return true;
 	}
@@ -480,11 +480,8 @@ function scanFootpathNetworkFromEntrance(entranceTile: CoordsXY): {
 							const offset = DIRECTION_OFFSETS[d];
 							const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
 							const connects = pathTilesConnected(
-								current.x,
-								current.y,
-								footpath.baseZ,
-								neighbour.x,
-								neighbour.y,
+								{ x: current.x, y: current.y, z: footpath.baseZ },
+								neighbour,
 							);
 							if (connects) {
 								const edgeZ = footpathEdgeZ(footpath, d);
@@ -761,7 +758,7 @@ function groupGardeningTiles(state: GardeningSweepState): {
 					) &&
 					// A park fence or path railing on either side of the shared edge blocks
 					// walking between the two tiles, so they must remain separate areas.
-					!surfaceFenceBlocksWalking(current.x, current.y, neighbour.x, neighbour.y)
+					!surfaceFenceBlocksWalking(current, neighbour)
 				) {
 					info.neighbourKeys.push(neighbourKey);
 					const neighbourInfo = componentByKey.get(neighbourKey);
