@@ -139,7 +139,10 @@ function queueTileIfPlacedPath(x: number, y: number): void {
 	if (!hasNonGhostFootpathElements(x, y)) {
 		return;
 	}
-	const kind = isQueueTile(x, y) ? "queue" : "path";
+	let kind: "queue" | "path" = "path";
+	if (isQueueTile(x, y)) {
+		kind = "queue";
+	}
 	pendingTiles.push({ x: x, y: y, kind: kind });
 	schedule();
 }

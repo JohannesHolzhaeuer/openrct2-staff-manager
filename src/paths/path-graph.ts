@@ -151,7 +151,10 @@ export function graphDistance(graph: PathGraph, fromKey: string, toKey: string):
 export function splitIntoZones(graph: PathGraph, zoneCount: number): string[][] {
 	const keys = [...graph.nodes.keys()];
 	if (1 >= zoneCount || 0 === keys.length) {
-		return 0 === keys.length ? [] : [keys];
+		if (0 === keys.length) {
+			return [];
+		}
+		return [keys];
 	}
 
 	// Farthest-point sampling: repeatedly pick the node with the largest

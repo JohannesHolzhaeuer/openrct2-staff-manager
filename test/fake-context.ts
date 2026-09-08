@@ -57,7 +57,10 @@ export class FakeContext implements GameContext {
 	}
 
 	getSetting<T>(key: string, fallback: T): T {
-		return this.settings.has(key) ? (this.settings.get(key) as T) : fallback;
+		if (this.settings.has(key)) {
+			return this.settings.get(key) as T;
+		}
+		return fallback;
 	}
 
 	setSetting(key: string, value: unknown): void {

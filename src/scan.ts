@@ -203,7 +203,10 @@ export function footpathEdgeZ(
 	direction: number,
 	slopeHeight: number = FOOTPATH_SLOPE_HEIGHT,
 ): number {
-	return footpath.slopeDirection === direction ? footpath.baseZ + slopeHeight : footpath.baseZ;
+	if (footpath.slopeDirection === direction) {
+		return footpath.baseZ + slopeHeight;
+	}
+	return footpath.baseZ;
 }
 
 export function oppositeDirection(direction: number): number {
@@ -264,6 +267,22 @@ function findSurfaceElement(tile: Tile): SurfaceElement | undefined {
 		}
 	}
 	return undefined;
+}
+
+// The baseZ of a (possibly missing) surface element, or 0 if there is none.
+function surfaceBaseZOr0(surface: SurfaceElement | undefined): number {
+	if (surface) {
+		return surface.baseZ;
+	}
+	return 0;
+}
+
+// The baseHeight of a (possibly missing) surface element, or 0 if there is none.
+function surfaceBaseHeightOr0(surface: SurfaceElement | undefined): number {
+	if (surface) {
+		return surface.baseHeight;
+	}
+	return 0;
 }
 
 // The maximum difference in surface baseHeight between two neighbouring land
@@ -648,7 +667,7 @@ function scanGardeningColumn(x: number, state: GardeningSweepState): void {
 			const tile = gameMap().getTile(x, y);
 			const surface = findSurfaceElement(tile);
 			const tileKeyStr = tileKey(x, y);
-			if (!hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
+			if (!hasBlockingElement(tile, surfaceBaseZOr0(surface))) {
 				const footpaths = findFootpathElementsOnTile(tile);
 				if (0 < footpaths.length) {
 					// An owned plain (non-queue) footpath tile is a walkable connector: it
@@ -728,8 +747,8 @@ function groupGardeningTiles(state: GardeningSweepState): {
 			const info: PathTileInfo = {
 				x: current.x,
 				y: current.y,
-				baseHeight: surface ? surface.baseHeight : 0,
-				baseZ: surface ? surface.baseZ : 0,
+				baseHeight: surfaceBaseHeightOr0(surface),
+				baseZ: surfaceBaseZOr0(surface),
 				isQueue: false,
 				isConnector: connectorKeys.has(currentKey),
 				neighbourKeys: [],
@@ -869,7 +888,7 @@ export function isGardenTile(x: number, y: number): boolean {
 	}
 	const tile = gameMap().getTile(x, y);
 	const surface = findSurfaceElement(tile);
-	if (hasFootpathElement(tile) || hasBlockingElement(tile, surface ? surface.baseZ : 0)) {
+	if (hasFootpathElement(tile) || hasBlockingElement(tile, surfaceBaseZOr0(surface))) {
 		return false;
 	}
 	const isMowable = isLandSurface(surface) && grassSurfaceStyleIndices().has(surface.surfaceStyle);
@@ -882,7 +901,7 @@ export function isGardenTile(x: number, y: number): boolean {
 // gardening handymen (unlike footpathBaseZAt, which is 0 on grass-only tiles).
 export function surfaceBaseZAt(x: number, y: number): number {
 	const surface = findSurfaceElement(gameMap().getTile(x, y));
-	return surface ? surface.baseZ : 0;
+	return surfaceBaseZOr0(surface);
 }
 
 let cachedGrassSurfaceStyleIndices: Set<number> | undefined = undefined;

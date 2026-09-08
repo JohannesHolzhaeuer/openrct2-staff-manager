@@ -91,6 +91,13 @@ function coloredText(
 	return colorToken + text;
 }
 
+function textOf(value: Bindable<number>): Bindable<string> {
+	if (isStore(value)) {
+		return compute(value, String);
+	}
+	return String(value);
+}
+
 function statRow(options: {
 	name: string;
 	value: Bindable<number>;
@@ -99,7 +106,7 @@ function statRow(options: {
 	colorToken?: Bindable<string>;
 }): WidgetCreator<FlexiblePosition> {
 	const { name, value, tooltip, disabled, colorToken } = options;
-	const text = isStore(value) ? compute(value, String) : String(value);
+	const text = textOf(value);
 	const nameText = coloredText(colorToken, name);
 	const valueText = coloredText(colorToken, text);
 	return horizontal({
@@ -135,34 +142,51 @@ function differenceColor(d: number): string {
 	return "{BLACK}";
 }
 
+function toStore<T>(value: Bindable<T>): Store<T> {
+	if (isStore(value)) {
+		return value;
+	}
+	return flexStore(value);
+}
+
+function computeDifference(needed: Bindable<number>, hired: Bindable<number>): Bindable<number> {
+	if (isStore(needed) || isStore(hired)) {
+		return compute(toStore(needed), toStore(hired), function (n: number, h: number) {
+			return n - h;
+		});
+	}
+	return needed - hired;
+}
+
+function computeDifferenceColorToken(
+	difference: Bindable<number>,
+	disabled: Bindable<boolean>,
+): Bindable<string> {
+	if (isStore(difference) || isStore(disabled)) {
+		return compute(
+			toStore(difference),
+			toStore(disabled),
+			function (d: number, isDisabled: boolean) {
+				if (isDisabled) {
+					return "";
+				}
+				return differenceColor(d);
+			},
+		);
+	}
+	return differenceColor(difference);
+}
+
 function statTable(
 	needed: Bindable<number>,
 	hired: Bindable<number>,
 	disabled: Bindable<boolean>,
 ): WidgetCreator<FlexiblePosition>[] {
-	const difference =
-		isStore(needed) || isStore(hired)
-			? compute(
-					isStore(needed) ? needed : flexStore(needed),
-					isStore(hired) ? hired : flexStore(hired),
-					function (n: number, h: number) {
-						return n - h;
-					},
-				)
-			: needed - hired;
+	const difference = computeDifference(needed, hired);
 	// The colour token forces a text colour that would otherwise override the
 	// greyed-out appearance a label gets from being disabled, so use no colour
 	// override at all (empty prefix) whenever the row is disabled.
-	const differenceColorToken: Bindable<string> =
-		isStore(difference) || isStore(disabled)
-			? compute(
-					isStore(difference) ? difference : flexStore(difference),
-					isStore(disabled) ? disabled : flexStore(disabled),
-					function (d: number, isDisabled: boolean) {
-						return isDisabled ? "" : differenceColor(d);
-					},
-				)
-			: differenceColor(difference);
+	const differenceColorToken = computeDifferenceColorToken(difference, disabled);
 	return [
 		statRow({
 			name: t("statRow.hired"),
@@ -197,7 +221,7 @@ function parkEntranceStatCell(
 	name: string,
 	value: Bindable<number>,
 ): WidgetCreator<FlexiblePosition> {
-	const valueText = isStore(value) ? compute(value, String) : String(value);
+	const valueText = textOf(value);
 	return vertical({
 		spacing: 0,
 		width: "1w",
@@ -286,6 +310,94 @@ function parkEntranceStatTable(): WidgetCreator<FlexiblePosition> {
 // One bordered box per staff type: title, count spinner, a Needed/Hired/
 // Assigned/Difference stat table, apply and reset buttons. Mirrors the
 // marginRect groups in the mockup (Handymen, Guards, Mechanics).
+function tilesPerStaffRow(options: {
+	tilesPerStaff: WritableStore<number> | undefined;
+	spinnerLabel: string | undefined;
+	spinnerTooltip: string | undefined;
+	controlsDisabled: Store<boolean>;
+	onSettingsChanged: (() => void) | undefined;
+}): WidgetCreator<FlexiblePosition>[] {
+	const { tilesPerStaff, spinnerLabel, spinnerTooltip, controlsDisabled, onSettingsChanged } =
+		options;
+	if (!tilesPerStaff) {
+		return [];
+	}
+	return [
+		horizontal({
+			spacing: 4,
+			height: 14,
+			content: [
+				label({
+					text: spinnerLabel ?? "",
+					width: "2w",
+					height: 14,
+					padding: { top: 2 },
+					tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
+					disabled: controlsDisabled,
+				}),
+				spinner({
+					value: tilesPerStaff,
+					minimum: 0,
+					maximum: 999,
+					width: "3w",
+					height: 14,
+					tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
+					disabled: controlsDisabled,
+					onChange: function onChange(value) {
+						tilesPerStaff.set(value);
+						if (onSettingsChanged) {
+							onSettingsChanged();
+						}
+					},
+				}),
+			],
+		}),
+	];
+}
+
+function mowerTilesPerStaffRow(options: {
+	mowerTilesPerStaff: WritableStore<number> | undefined;
+	mowerSpinnerLabel: string | undefined;
+	controlsDisabled: Store<boolean>;
+	onSettingsChanged: (() => void) | undefined;
+}): WidgetCreator<FlexiblePosition>[] {
+	const { mowerTilesPerStaff, mowerSpinnerLabel, controlsDisabled, onSettingsChanged } = options;
+	if (!mowerTilesPerStaff) {
+		return [];
+	}
+	return [
+		horizontal({
+			spacing: 4,
+			height: 14,
+			content: [
+				label({
+					text: mowerSpinnerLabel ?? "",
+					width: "2w",
+					height: 14,
+					padding: { top: 2 },
+					tooltip: t("tooltip.handymenGardeningSpinner"),
+					disabled: controlsDisabled,
+				}),
+				spinner({
+					value: mowerTilesPerStaff,
+					minimum: 0,
+					maximum: 999,
+					width: "3w",
+					height: 14,
+					tooltip: t("tooltip.handymenGardeningSpinner"),
+					disabled: controlsDisabled,
+					onChange: function onChange(value) {
+						mowerTilesPerStaff.set(value);
+						if (onSettingsChanged) {
+							onSettingsChanged();
+						}
+					},
+				}),
+			],
+		}),
+	];
+}
+
 function staffGroup(options: {
 	title: string;
 	tilesPerStaff: WritableStore<number> | undefined;
@@ -334,72 +446,19 @@ function staffGroup(options: {
 						enabled.set(isChecked);
 					},
 				}),
-				...(tilesPerStaff
-					? [
-							horizontal({
-								spacing: 4,
-								height: 14,
-								content: [
-									label({
-										text: spinnerLabel ?? "",
-										width: "2w",
-										height: 14,
-										padding: { top: 2 },
-										tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
-										disabled: controlsDisabled,
-									}),
-									spinner({
-										value: tilesPerStaff,
-										minimum: 0,
-										maximum: 999,
-										width: "3w",
-										height: 14,
-										tooltip: spinnerTooltip ?? t("tooltip.handymenCleanupSpinner"),
-										disabled: controlsDisabled,
-										onChange: function onChange(value) {
-											tilesPerStaff.set(value);
-											if (onSettingsChanged) {
-												onSettingsChanged();
-											}
-										},
-									}),
-								],
-							}),
-						]
-					: []),
-				...(mowerTilesPerStaff
-					? [
-							horizontal({
-								spacing: 4,
-								height: 14,
-								content: [
-									label({
-										text: mowerSpinnerLabel ?? "",
-										width: "2w",
-										height: 14,
-										padding: { top: 2 },
-										tooltip: t("tooltip.handymenGardeningSpinner"),
-										disabled: controlsDisabled,
-									}),
-									spinner({
-										value: mowerTilesPerStaff,
-										minimum: 0,
-										maximum: 999,
-										width: "3w",
-										height: 14,
-										tooltip: t("tooltip.handymenGardeningSpinner"),
-										disabled: controlsDisabled,
-										onChange: function onChange(value) {
-											mowerTilesPerStaff.set(value);
-											if (onSettingsChanged) {
-												onSettingsChanged();
-											}
-										},
-									}),
-								],
-							}),
-						]
-					: []),
+				...tilesPerStaffRow({
+					tilesPerStaff,
+					spinnerLabel,
+					spinnerTooltip,
+					controlsDisabled,
+					onSettingsChanged,
+				}),
+				...mowerTilesPerStaffRow({
+					mowerTilesPerStaff,
+					mowerSpinnerLabel,
+					controlsDisabled,
+					onSettingsChanged,
+				}),
 				...statTable(needed, hired, controlsDisabled),
 			],
 		}),
@@ -751,13 +810,20 @@ function staffManagerWindowTemplate(): WindowTemplate {
 										height: AUTO_ROW_HEIGHT,
 										onDraw: function onDraw(g) {
 											const on = autoEnabledStore.get();
-											g.colour = on ? Colour.BrightGreen : Colour.SaturatedRed;
+											if (on) {
+												g.colour = Colour.BrightGreen;
+											} else {
+												g.colour = Colour.SaturatedRed;
+											}
 											g.box(2, 2, AUTO_ROW_HEIGHT - 4, AUTO_ROW_HEIGHT - 4);
 										},
 									}),
 									toggle({
 										text: compute(autoEnabledStore, function (on) {
-											return on ? t("auto.on") : t("auto.off");
+											if (on) {
+												return t("auto.on");
+											}
+											return t("auto.off");
 										}),
 										width: "1w",
 										height: AUTO_ROW_HEIGHT,

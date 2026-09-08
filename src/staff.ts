@@ -63,7 +63,10 @@ export type HandymanPurpose = "cleanup" | "gardening";
 // watering/mowing, and a "cleanup" handyman otherwise (this also covers
 // freshly hired handymen with no orders set yet).
 export function classifyHandyman(member: Handyman): HandymanPurpose {
-	return 0 !== (member.orders & HANDYMAN_ORDERS_GARDENING) ? "gardening" : "cleanup";
+	if (0 !== (member.orders & HANDYMAN_ORDERS_GARDENING)) {
+		return "gardening";
+	}
+	return "cleanup";
 }
 
 export function getHandymenByPurpose(purpose: HandymanPurpose): Handyman[] {
@@ -246,11 +249,18 @@ export function hireStaff(
 // Collects the hire/fire tasks needed to bring handymen of a specific purpose
 // (cleanup/gardening) to the needed count, firing the oldest first when there
 // is a surplus.
+function ordersForPurpose(purpose: HandymanPurpose): number {
+	if ("cleanup" === purpose) {
+		return HANDYMAN_ORDERS_CLEANUP;
+	}
+	return HANDYMAN_ORDERS_GARDENING;
+}
+
 function collectHandymanTasks(purpose: HandymanPurpose, needed: number): StaffAdjustTask[] {
 	const current = getHandymenByPurpose(purpose);
 	const difference = needed - current.length;
 	if (0 < difference) {
-		const orders = "cleanup" === purpose ? HANDYMAN_ORDERS_CLEANUP : HANDYMAN_ORDERS_GARDENING;
+		const orders = ordersForPurpose(purpose);
 		return collectHireStaffTasks(STAFF_TYPE_ID_HANDYMAN, orders, difference);
 	}
 	if (0 > difference) {
@@ -1605,7 +1615,10 @@ function reassignHandymenOrders(): void {
 
 	for (let i = 0; i < handymen.length; i++) {
 		const member = handymen[i] as Handyman;
-		const desiredOrders = i < cleanupCount ? HANDYMAN_ORDERS_CLEANUP : HANDYMAN_ORDERS_GARDENING;
+		let desiredOrders = HANDYMAN_ORDERS_GARDENING;
+		if (i < cleanupCount) {
+			desiredOrders = HANDYMAN_ORDERS_CLEANUP;
+		}
 		if (member.orders !== desiredOrders) {
 			member.orders = desiredOrders;
 		}

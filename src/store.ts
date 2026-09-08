@@ -93,11 +93,13 @@ export const hasRanAdjustAndAssignStore = flexStore<boolean>(false);
 // Whether automatic adjust+assign is enabled. Persisted in context.sharedStorage
 // (key "staffManager.autoEnabled") via the auto.ts module, so it survives across
 // game/plugin launches. Loaded at startup from the saved value.
-export const autoEnabledStore = flexStore<boolean>(
-	"undefined" !== typeof context
-		? context.sharedStorage.get("staffManager.autoEnabled.v1", DEFAULT_AUTO_ENABLED)
-		: DEFAULT_AUTO_ENABLED,
-);
+function initialAutoEnabled(): boolean {
+	if ("undefined" !== typeof context) {
+		return context.sharedStorage.get("staffManager.autoEnabled.v1", DEFAULT_AUTO_ENABLED);
+	}
+	return DEFAULT_AUTO_ENABLED;
+}
+export const autoEnabledStore = flexStore<boolean>(initialAutoEnabled());
 
 // Per-staff-type "disabled" stores for the spinners/toggles/labels within
 // each staff group box: disabled whenever the general controls are disabled
@@ -140,7 +142,10 @@ export const handymenCleanupNeededStore = compute(
 	handymenTilesPerStaffStore,
 	handymenEnabledStore,
 	function (tiles: number, tilesPerStaff: number, enabled: boolean) {
-		return enabled ? computeNeeded(tiles, tilesPerStaff) : 0;
+		if (!enabled) {
+			return 0;
+		}
+		return computeNeeded(tiles, tilesPerStaff);
 	},
 );
 export const handymenGardeningNeededStore = compute(
@@ -173,7 +178,10 @@ export const guardsNeededStore = compute(
 	guardsTilesPerStaffStore,
 	guardsEnabledStore,
 	function (path: number, tilesPerStaff: number, enabled: boolean) {
-		return enabled ? computeNeeded(path, tilesPerStaff) : 0;
+		if (!enabled) {
+			return 0;
+		}
+		return computeNeeded(path, tilesPerStaff);
 	},
 );
 
@@ -184,7 +192,10 @@ const entertainersTilesStore = compute(
 	queueTilesCountStore,
 	entertainersIncludeQueueStore,
 	function (path: number, queue: number, includeQueue: boolean) {
-		return path + (includeQueue ? queue : 0);
+		if (includeQueue) {
+			return path + queue;
+		}
+		return path;
 	},
 );
 const entertainersNeededBaseStore = compute(
@@ -199,7 +210,10 @@ export const entertainersNeededStore = compute(
 	entertainersNeededBaseStore,
 	entertainersEnabledStore,
 	function (needed: number, enabled: boolean) {
-		return enabled ? needed : 0;
+		if (!enabled) {
+			return 0;
+		}
+		return needed;
 	},
 );
 
@@ -208,7 +222,10 @@ export const mechanicsNeededStore = compute(
 	rideExitCountStore,
 	mechanicsEnabledStore,
 	function (rideExits: number, enabled: boolean) {
-		return enabled ? rideExits : 0;
+		if (!enabled) {
+			return 0;
+		}
+		return rideExits;
 	},
 );
 
