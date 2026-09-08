@@ -1,12 +1,14 @@
-import { openWindow } from "./ui";
 import { initAuto } from "./auto";
+import { openWindow } from "./ui";
 
-function main(): void {
-	if (typeof ui !== "undefined") {
-		ui.registerMenuItem("Staff Manager", function () { openWindow(); });
+const main = function main(): void {
+	if ("undefined" !== typeof ui) {
+		ui.registerMenuItem("Staff Manager", function openStaffManagerWindow() {
+			openWindow();
+		});
 	}
 	initAuto();
-}
+};
 
 registerPlugin({
 	name: "Staff Manager",
@@ -16,5 +18,5 @@ registerPlugin({
 	licence: "MIT",
 	minApiVersion: 78,
 	targetApiVersion: 78,
-	main: main
+	main: main,
 });

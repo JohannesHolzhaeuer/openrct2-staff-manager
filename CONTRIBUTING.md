@@ -15,7 +15,7 @@ developer, but the workflow below still applies to every change, including your 
 1. **Rulesets → New branch ruleset** targeting `main`:
    - Require a pull request before merging.
    - Required approvals: **0**.
-   - Require status checks to pass: select the `build` job from the *CI* workflow (and `commitlint` if desired).
+   - Require status checks to pass: select the `build` job from the _CI_ workflow (and `commitlint` if desired).
    - Block force pushes.
    - Do **not** allow bypass, so even repo admins must go through a PR.
 2. **Settings → Actions → General → Workflow permissions**: enable "Allow GitHub Actions to create and approve
@@ -36,17 +36,17 @@ Commit messages are linted locally via a Husky `commit-msg` hook and re-checked 
 Common types used by this project (see `.release-please-config.json` for how each type affects the changelog and
 version bump):
 
-| Type       | Effect                                             |
-| ---------- | --------------------------------------------------- |
-| `feat`     | New feature — triggers a minor version bump (0.x)   |
-| `fix`      | Bug fix — triggers a patch version bump             |
-| `perf`     | Performance improvement                              |
-| `refactor` | Code change that neither fixes a bug nor adds a feature |
-| `docs`     | Documentation only changes                           |
-| `build`    | Changes to the build system or dependencies          |
+| Type       | Effect                                                                       |
+| ---------- | ---------------------------------------------------------------------------- |
+| `feat`     | New feature — triggers a minor version bump (0.x)                            |
+| `fix`      | Bug fix — triggers a patch version bump                                      |
+| `perf`     | Performance improvement                                                      |
+| `refactor` | Code change that neither fixes a bug nor adds a feature                      |
+| `docs`     | Documentation only changes                                                   |
+| `build`    | Changes to the build system or dependencies                                  |
 | `chore`    | Other changes that don't modify source or test files (hidden from changelog) |
-| `style`    | Formatting only changes (hidden from changelog)      |
-| `test`     | Adding or fixing tests (hidden from changelog)       |
+| `style`    | Formatting only changes (hidden from changelog)                              |
+| `test`     | Adding or fixing tests (hidden from changelog)                               |
 
 Add a `!` after the type/scope (e.g. `feat!:`) or a `BREAKING CHANGE:` footer to signal a breaking change.
 

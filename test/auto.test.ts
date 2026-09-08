@@ -1,28 +1,40 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setGameContext, resetGameContext, setGameMap, resetGameMap, setGameObjects, resetGameObjects } from "../src/game";
-import { setAutoEnabled, initAuto } from "../src/auto";
+import { FakeContext, fakeObjects } from "./fake-context";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { initAuto, setAutoEnabled } from "../src/auto";
+import {
+	resetGameContext,
+	resetGameMap,
+	resetGameObjects,
+	setGameContext,
+	setGameMap,
+	setGameObjects,
+} from "../src/game";
 import { autoEnabledStore } from "../src/store";
 import { fakeMap } from "./fake-map";
-import { FakeContext, fakeObjects } from "./fake-context";
 
-let ctx: FakeContext;
+let ctx: FakeContext = new FakeContext();
 
 // world coordinates (32 units per tile) of the tile used for path placements.
 const PATH_TILE_WORLD = { x: 160, y: 160 };
 
-function fireAction(action: string, args: Record<string, unknown>): void {
+const fireAction = function fireAction(action: string, args: { [key: string]: unknown }): void {
 	ctx.actionExecuteCallback?.({ action: action, args: args } as unknown as GameActionEventArgs);
-}
+};
 
 beforeEach(() => {
 	ctx = new FakeContext();
 	setGameContext(ctx);
-	setGameMap(fakeMap({ x: 16, y: 16 }, {
-		"5,5": { footpaths: [{ baseZ: 0 }] },
-		"6,5": { footpaths: [{ baseZ: 0 }] },
-		"5,6": { footpaths: [{ baseZ: 0, isGhost: true }] },
-		"7,5": { footpaths: [{ baseZ: 0, isQueue: true }] }
-	}));
+	setGameMap(
+		fakeMap(
+			{ x: 16, y: 16 },
+			{
+				"5,5": { footpaths: [{ baseZ: 0 }] },
+				"6,5": { footpaths: [{ baseZ: 0 }] },
+				"5,6": { footpaths: [{ baseZ: 0, isGhost: true }] },
+				"7,5": { footpaths: [{ baseZ: 0, isQueue: true }] },
+			},
+		),
+	);
 	setGameObjects(fakeObjects(["rct2.peep_animations.handyman", "rct2.peep_animations.panda"]));
 });
 
@@ -38,7 +50,7 @@ describe("setAutoEnabled", () => {
 		setAutoEnabled(true);
 		expect(autoEnabledStore.get()).toBe(true);
 		expect(ctx.subscriptions).toBe(1);
-		expect(ctx.actionExecuteCallback).not.toBeNull();
+		expect(ctx.actionExecuteCallback).toBeDefined();
 	});
 
 	it("unsubscribes and clears pending work when turned off", () => {

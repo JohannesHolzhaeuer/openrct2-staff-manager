@@ -3,7 +3,8 @@
   "categories": {
     "correctness": "error",
     "suspicious": "error",
-    "perf": "error"
+    "perf": "error",
+    "style": "error"
   },
   "rules": {
     "eslint/no-var": "error",
@@ -16,23 +17,27 @@
     "typescript/no-namespace": "error",
     "typescript/no-non-null-assertion": "error",
     "unicorn/no-anonymous-default-export": "error",
-    "unicorn/no-process-exit": "error"
+    "unicorn/no-process-exit": "error",
+    "eslint/no-magic-numbers": "off",
+    "eslint/sort-keys": "off"
   },
   "env": {
     "es2023": true,
     "node": true
   },
-  "ignorePatterns": [
-    "dist/**",
-    "node_modules/**",
-    "coverage/**"
-  ],
+  "ignorePatterns": ["dist/**", "node_modules/**", "coverage/**"],
   "overrides": [
     {
       "files": ["deploy.ts"],
       "rules": {
         "eslint/no-console": "off",
         "unicorn/no-process-exit": "off"
+      }
+    },
+    {
+      "files": ["test/fake-map.ts", "test/fake-context.ts", "test/decoupled.test.ts"],
+      "rules": {
+        "unicorn/no-null": "off"
       }
     }
   ]

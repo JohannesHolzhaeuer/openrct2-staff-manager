@@ -1,7 +1,7 @@
-import { autoEnabledStore } from "./store";
-import { isQueueTile, worldToTile, hasNonGhostFootpathElements } from "./scan";
-import { handlePlacedPathTile, handleBoughtLandTile } from "./staff-auto";
+import { handleBoughtLandTile, handlePlacedPathTile } from "./staff-auto";
+import { hasNonGhostFootpathElements, isQueueTile, worldToTile } from "./scan";
 import { BATCH_TICK_DELAY } from "./staff";
+import { autoEnabledStore } from "./store";
 import { gameContext } from "./game";
 
 // The storage key backing the persisted auto flag. Versioned so an earlier
@@ -13,8 +13,8 @@ const AUTO_STORAGE_KEY = "staffManager.autoEnabled.v1";
 // batch, but never performs a full map rescan.
 const DEBOUNCE_MS = 250;
 
-let actionSubscription: IDisposable | null = null;
-let pendingTimer: number | null = null;
+let actionSubscription: IDisposable | undefined = undefined;
+let pendingTimer: number | undefined = undefined;
 let pendingTiles: { x: number; y: number; kind: "path" | "queue" | "land" }[] = [];
 let isWorking = false;
 
@@ -24,67 +24,68 @@ let isWorking = false;
 // duplicate would be handled separately (and, worse, could hire a fresh staff
 // member each time). Keeping the first occurrence per tile means each distinct
 // tile is handled exactly once per batch.
-function dedupeTiles(tiles: { x: number; y: number; kind: "path" | "queue" | "land" }[]): { x: number; y: number; kind: "path" | "queue" | "land" }[] {
+const dedupeTiles = function dedupeTiles(
+	tiles: { x: number; y: number; kind: "path" | "queue" | "land" }[],
+): { x: number; y: number; kind: "path" | "queue" | "land" }[] {
 	const seen = new Set<string>();
 	const result: { x: number; y: number; kind: "path" | "queue" | "land" }[] = [];
 	for (const tile of tiles) {
 		const key = String(tile.x) + ":" + String(tile.y) + ":" + tile.kind;
-		if (seen.has(key)) {
-			continue;
+		if (!seen.has(key)) {
+			seen.add(key);
+			result.push(tile);
 		}
-		seen.add(key);
-		result.push(tile);
 	}
 	return result;
-}
+};
 
 // How many pending tiles to handle per game tick. Processing is chunked and
 // re-scheduled with context.setTimeout so a large burst of queued tiles (e.g. a
 // long path drag) never blocks the game loop in one tick (which froze the game).
 const TILES_PER_TICK = 16;
 
-export function setAutoEnabled(enabled: boolean): void {
+export const setAutoEnabled = function setAutoEnabled(enabled: boolean): void {
 	autoEnabledStore.set(enabled);
 	gameContext().setSetting(AUTO_STORAGE_KEY, enabled);
-	if (pendingTimer !== null) {
+	if (undefined !== pendingTimer) {
 		gameContext().clearTimeout(pendingTimer);
-		pendingTimer = null;
+		pendingTimer = undefined;
 	}
 	pendingTiles = [];
 	if (actionSubscription) {
 		actionSubscription.dispose();
-		actionSubscription = null;
+		actionSubscription = undefined;
 	}
 	if (enabled) {
 		actionSubscription = gameContext().subscribe("action.execute", onAction);
 	}
-}
+};
 
 // Called for every executed game action while auto is on.
-function onAction(e: GameActionEventArgs): void {
+const onAction = function onAction(e: GameActionEventArgs): void {
 	// Ignore actions fired by this plugin itself (hires/teleports/patrol-area).
 	if (isWorking) {
 		return;
 	}
 	collectFromAction(e);
-}
+};
 
 // Extracts the affected tile(s) from a relevant action and queues them.
-function collectFromAction(e: GameActionEventArgs): void {
+const collectFromAction = function collectFromAction(e: GameActionEventArgs): void {
 	const action = e.action;
 
-	if (action === "footpathplace" || action === "footpathremove") {
+	if ("footpathplace" === action || "footpathremove" === action) {
 		const args = e.args as { x: number; y: number };
 		const tile = worldToTile(args.x, args.y);
 		// Removing a path can't change need upward (staff aren't going to need more of
 		// a removed tile), so only handle placements.
-		if (action === "footpathplace") {
+		if ("footpathplace" === action) {
 			queueTileIfPlacedPath(tile.x, tile.y);
 		}
 		return;
 	}
 
-	if (action === "footpathlayoutplace") {
+	if ("footpathlayoutplace" === action) {
 		const args = e.args as { x: number; y: number; slope: number };
 		const centre = worldToTile(args.x, args.y);
 		// A layout place can add the centre and (via the slope edges bitmask)
@@ -95,10 +96,10 @@ function collectFromAction(e: GameActionEventArgs): void {
 		return;
 	}
 
-	if (action === "landbuyrights") {
+	if ("landbuyrights" === action) {
 		const args = e.args as { x1: number; y1: number; x2: number; y2: number; setting: number };
 		// Only buying LAND (setting 0), not construction rights.
-		if (args.setting !== 0) {
+		if (0 !== args.setting) {
 			return;
 		}
 		const bx1 = Math.floor(Math.min(args.x1, args.x2) / 32);
@@ -117,7 +118,7 @@ function collectFromAction(e: GameActionEventArgs): void {
 	// rideentranceexitplace: an exit placed next to an existing path should get a
 	// mechanic. We treat the placed exit tile as a "path-like" tile so the mechanic
 	// adjacency check runs.
-	if (action === "rideentranceexitplace") {
+	if ("rideentranceexitplace" === action) {
 		const args = e.args as { x: number; y: number; isExit: boolean };
 		if (args.isExit) {
 			const tile = worldToTile(args.x, args.y);
@@ -126,7 +127,7 @@ function collectFromAction(e: GameActionEventArgs): void {
 		}
 		return;
 	}
-}
+};
 
 // Queues a freshly placed path/queue tile, but only if it now actually holds a
 // real (non-ghost) footpath. Hovering the path tool fires repeated
@@ -134,33 +135,36 @@ function collectFromAction(e: GameActionEventArgs): void {
 // non-ghost check, every hover tile would be queued and then classified as
 // "land", hiring a staff member (or reassigning one) for a tile no path was
 // ever built on.
-function queueTileIfPlacedPath(x: number, y: number): void {
+const queueTileIfPlacedPath = function queueTileIfPlacedPath(x: number, y: number): void {
 	if (!hasNonGhostFootpathElements(x, y)) {
 		return;
 	}
-	const kind = isQueueTile(x, y) ? "queue" : "path";
+	let kind: "queue" | "path" = "path";
+	if (isQueueTile(x, y)) {
+		kind = "queue";
+	}
 	pendingTiles.push({ x: x, y: y, kind: kind });
 	schedule();
-}
+};
 
 // Debounce: coalesce a burst of tile placements into one grouped processing pass.
-function schedule(): void {
-	if (pendingTimer !== null) {
+const schedule = function schedule(): void {
+	if (undefined !== pendingTimer) {
 		gameContext().clearTimeout(pendingTimer);
 	}
-	pendingTimer = gameContext().setTimeout(function () {
-		pendingTimer = null;
+	pendingTimer = gameContext().setTimeout(function runPendingProcessing() {
+		pendingTimer = undefined;
 		processPending();
 	}, DEBOUNCE_MS);
-}
+};
 
 // Processes all queued tiles in one batch per tick (still only touching affected
 // tiles, no full map scan), chunking the work across ticks so a large burst
 // (e.g. a long path drag) doesn't block the game loop.
-function processPending(): void {
+const processPending = function processPending(): void {
 	const tiles = dedupeTiles(pendingTiles);
 	pendingTiles = [];
-	if (tiles.length === 0) {
+	if (0 === tiles.length) {
 		return;
 	}
 	if (isWorking) {
@@ -168,15 +172,15 @@ function processPending(): void {
 	}
 	isWorking = true;
 	let index = 0;
-	function step(): void {
+	const step = function step(): void {
 		const end = Math.min(tiles.length, index + TILES_PER_TICK);
 		try {
 			for (; index < end; index++) {
 				const t = tiles[index];
-				if (t.kind === "land") {
+				if ("land" === t.kind) {
 					handleBoughtLandTile(t.x, t.y);
 				} else {
-					handlePlacedPathTile(t.x, t.y, t.kind === "queue");
+					handlePlacedPathTile(t.x, t.y, "queue" === t.kind);
 				}
 			}
 		} catch {
@@ -187,14 +191,14 @@ function processPending(): void {
 		} else {
 			isWorking = false;
 		}
-	}
+	};
 	step();
-}
+};
 
 // Initialises automatic mode from the persisted setting. Safe to call more than once
 // (only subscribes when the flag is true and no subscription exists yet).
-export function initAuto(): void {
-	if (autoEnabledStore.get() && actionSubscription === null) {
+export const initAuto = function initAuto(): void {
+	if (autoEnabledStore.get() && undefined === actionSubscription) {
 		actionSubscription = gameContext().subscribe("action.execute", onAction);
 	}
-}
+};

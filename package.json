@@ -2,22 +2,27 @@
   "name": "staff-manager",
   "version": "0.14.0",
   "description": "An OpenRCT2 plugin that automates park staff management (handymen, security, entertainers, mechanics).",
-  "main": "dist/staff-manager.js",
-  "type": "module",
   "license": "MIT",
   "author": "Johannes Holzhäuer",
+  "type": "module",
+  "main": "dist/staff-manager.js",
   "scripts": {
     "build": "npm run verify && npm run bundle && node deploy.ts",
-    "verify": "npm run lint && npm run test && npm run typecheck",
+    "verify": "npm run format:check && npm run lint && npm run test && npm run typecheck",
     "dev": "npm run bundle && node deploy.ts",
     "bundle": "esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023",
     "lint": "oxlint .",
+    "format": "oxfmt -c .oxfmtrc.ts .",
+    "format:check": "oxfmt --check -c .oxfmtrc.ts .",
     "audit": "npm audit --audit-level=high",
     "watch": "esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023 --watch",
     "test": "vitest run --reporter=tap --no-color",
     "coverage": "vitest run --coverage --no-color",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "prepare": "husky"
+  },
+  "dependencies": {
+    "openrct2-flexui": "0.1.0-prerelease.22"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
@@ -28,12 +33,10 @@
     "@vitest/coverage-v8": "^5.0.0",
     "esbuild": "^0.28.2",
     "husky": "^9.1.7",
+    "oxfmt": "^0.67.0",
     "oxlint": "^0.15.0",
     "typescript": "~7.0.0",
     "vitest": "^5.0.0"
-  },
-  "dependencies": {
-    "openrct2-flexui": "0.1.0-prerelease.22"
   },
   "allowScripts": {
     "esbuild@0.28.2": true

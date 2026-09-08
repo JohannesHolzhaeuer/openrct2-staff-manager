@@ -13,11 +13,16 @@ const SOURCE_FILE = path.join(import.meta.dirname, "dist", "staff-manager.js");
 // On Windows, "Documents" can be redirected (e.g. by OneDrive) away from
 // %USERPROFILE%\Documents. Ask the registry for the real "Personal" shell
 // folder instead of assuming the default path.
-function windowsDocumentsDir(): string {
+const windowsDocumentsDir = function windowsDocumentsDir(): string {
 	try {
 		const output = execFileSync(
 			"reg",
-			["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders", "/v", "Personal"],
+			[
+				"query",
+				String.raw`HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders`,
+				"/v",
+				"Personal",
+			],
 			{ encoding: "utf8" },
 		);
 		const match = /Personal\s+REG_(?:EXPAND_)?SZ\s+(.+)/.exec(output);
@@ -28,9 +33,9 @@ function windowsDocumentsDir(): string {
 		// Fall through to the default below.
 	}
 	return path.join(os.homedir(), "Documents");
-}
+};
 
-function defaultPluginDir(): string {
+const defaultPluginDir = function defaultPluginDir(): string {
 	const home = os.homedir();
 	switch (process.platform) {
 		case "win32":
@@ -40,9 +45,9 @@ function defaultPluginDir(): string {
 		default:
 			return path.join(home, ".config", "OpenRCT2", "plugin");
 	}
-}
+};
 
-function main(): void {
+const main = function main(): void {
 	if (!fs.existsSync(SOURCE_FILE)) {
 		console.error(`Build output not found: ${SOURCE_FILE} (run \`tsc\` first).`);
 		process.exit(1);
@@ -55,6 +60,6 @@ function main(): void {
 	fs.copyFileSync(SOURCE_FILE, destFile);
 
 	console.log(`Deployed plugin to: ${destFile}`);
-}
+};
 
 main();

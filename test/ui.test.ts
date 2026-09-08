@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { setGameContext, resetGameContext, setGameMap, resetGameMap } from "../src/game";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { handymenAssignedStore, handymenHiredStore, parkEntranceInfoStore } from "../src/store";
+import { resetGameContext, resetGameMap, setGameContext, setGameMap } from "../src/game";
 import { FakeContext } from "./fake-context";
 import { fakeMap } from "./fake-map";
-import { handymenHiredStore, handymenAssignedStore, parkEntranceInfoStore } from "../src/store";
 
 // ui.ts builds its window purely with openrct2-flexui widget factories. The
 // real factories need a live OpenRCT2 `ui` global to actually render
@@ -21,18 +21,24 @@ const openedWindows: unknown[] = [];
 // close over must be defined via vi.hoisted rather than as a plain const.
 const { STORE_MARKER, makeStore } = vi.hoisted(() => {
 	const marker = Symbol("store");
-	function make<T>(initial: T): { [k: symbol]: true; get(): T; set(value: T): void } {
+	const make = function make<T>(initial: T): { [k: symbol]: true; get(): T; set(value: T): void } {
 		let value = initial;
 		return {
 			[marker]: true,
 			get: (): T => value,
-			set: (next: T): void => { value = next; }
+			set: (next: T): void => {
+				value = next;
+			},
 		};
-	}
+	};
 	return { STORE_MARKER: marker, makeStore: make };
 });
 
-interface FakeStore<T> { [k: symbol]: true; get(): T; set(value: T): void }
+interface FakeStore<T> {
+	[k: symbol]: true;
+	get(): T;
+	set(value: T): void;
+}
 
 vi.mock("openrct2-flexui", () => {
 	const passthrough = (config: unknown): unknown => config;
@@ -40,7 +46,7 @@ vi.mock("openrct2-flexui", () => {
 		window: (config: unknown): { open: () => void } => ({
 			open: (): void => {
 				openedWindows.push(config);
-			}
+			},
 		}),
 		box: passthrough,
 		horizontal: passthrough,
@@ -52,22 +58,27 @@ vi.mock("openrct2-flexui", () => {
 		toggle: passthrough,
 		graphics: passthrough,
 		compute: (...args: unknown[]): unknown => {
-			const stores = args.filter((a): a is FakeStore<unknown> => typeof a === "object" && a !== null && STORE_MARKER in a);
-			const fn = args.find((a): a is (...values: unknown[]) => unknown => typeof a === "function");
+			const stores = args.filter(
+				(a): a is FakeStore<unknown> => "object" === typeof a && null !== a && STORE_MARKER in a,
+			);
+			const fn = args.find((a): a is (...values: unknown[]) => unknown => "function" === typeof a);
 			if (!fn) {
 				throw new Error("compute() called without a combiner function");
 			}
-			return makeStore(fn(...stores.map(s => s.get())));
+			return makeStore(fn(...stores.map((s) => s.get())));
 		},
-		isStore: (value: unknown): boolean => typeof value === "object" && value !== null && STORE_MARKER in value,
-		store: (value: unknown): FakeStore<unknown> => makeStore(value)
+		isStore: (value: unknown): boolean =>
+			"object" === typeof value && null !== value && STORE_MARKER in value,
+		store: (value: unknown): FakeStore<unknown> => makeStore(value),
 	};
 });
 
-interface TestGlobal { ui?: { width: number; height: number } }
+interface TestGlobal {
+	ui?: { width: number; height: number };
+}
 const testGlobal = globalThis as unknown as TestGlobal;
 
-let ctx: FakeContext;
+let ctx: FakeContext = new FakeContext();
 
 beforeEach(() => {
 	openedWindows.length = 0;
@@ -94,9 +105,21 @@ describe("openWindow", () => {
 	});
 
 	it("refreshes hired/assigned staff counts", async () => {
-		setGameMap(fakeMap({ x: 1, y: 1 }, {}, [], [
-			{ id: 1, staffType: "handyman", patrolArea: { tiles: [{ x: 0, y: 0 }] } } as unknown as Staff
-		]));
+		setGameMap(
+			fakeMap(
+				{ x: 1, y: 1 },
+				{},
+				{
+					staff: [
+						{
+							id: 1,
+							staffType: "handyman",
+							patrolArea: { tiles: [{ x: 0, y: 0 }] },
+						} as unknown as Staff,
+					],
+				},
+			),
+		);
 
 		const { openWindow } = await import("../src/ui");
 		openWindow();

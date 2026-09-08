@@ -93,7 +93,7 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
   pick a non-queue work tile from the same area so they can reach the grass.
 - Automatic mode (`src/auto.ts` + the "Incremental automatic helpers" in `src/staff.ts`) decides
   **synchronously** against an in-memory record of each purpose's assigned areas
-  (`autoAreasByPurpose` / `AutoArea`), *not* against the live staff roster/`patrolArea`s — those
+  (`autoAreasByPurpose` / `AutoArea`), _not_ against the live staff roster/`patrolArea`s — those
   only update after async `staffhire`/`patrolArea.add` calls complete, so reading them mid-drag would
   hire one member per tile. Consecutive connected tiles extend one area up to its tiles/staff cap, hiring
   a new member only when nothing adjacent is under the cap; hires are serialised one per purpose via
@@ -127,6 +127,7 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
 ## Testing changes
 
 Validate changes by:
+
 1. Running `npm run build` to confirm lint, typecheck, AND the unit tests (`vitest`) pass.
 2. Loading the deployed `staff-manager.js` in OpenRCT2 and exercising the affected functionality
    (open the plugin window from the map/red-toolbox menu, verify staff assignment behavior).

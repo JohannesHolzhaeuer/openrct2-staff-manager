@@ -1,18 +1,39 @@
 import {
-	handymenCleanupNeededStore, handymenGardeningNeededStore, handymenMowerTilesPerStaffStore,
-	guardsNeededStore, entertainersNeededStore, mechanicsNeededStore,
-	handymenEnabledStore, guardsEnabledStore, entertainersEnabledStore, mechanicsEnabledStore,
-	entertainersIncludeQueueStore, entertainersPerAreaStore,
-	handymenHiredStore, handymenAssignedStore, guardsHiredStore, guardsAssignedStore,
-	entertainersHiredStore, entertainersAssignedStore, mechanicsHiredStore, mechanicsAssignedStore,
-	computeNeeded, statusTextStore, progressStore
-} from "./store";
-import {
-	lastAllPathTiles, lastGardenAreas, isValidStationExit, tileKey,
-	CARDINAL_NEIGHBOUR_OFFSETS, DIRECTION_OFFSETS, PathTileInfo
+	CARDINAL_NEIGHBOUR_OFFSETS,
+	DIRECTION_OFFSETS,
+	PathTileInfo,
+	isValidStationExit,
+	lastAllPathTiles,
+	lastGardenAreas,
+	tileKey,
 } from "./scan";
-import { exitToPathTile } from "./paths/pathGraph";
-import { gameMap, gameContext, gameObjects } from "./game";
+import {
+	computeNeeded,
+	entertainersAssignedStore,
+	entertainersEnabledStore,
+	entertainersHiredStore,
+	entertainersIncludeQueueStore,
+	entertainersNeededStore,
+	entertainersPerAreaStore,
+	guardsAssignedStore,
+	guardsEnabledStore,
+	guardsHiredStore,
+	guardsNeededStore,
+	handymenAssignedStore,
+	handymenCleanupNeededStore,
+	handymenEnabledStore,
+	handymenGardeningNeededStore,
+	handymenHiredStore,
+	handymenMowerTilesPerStaffStore,
+	mechanicsAssignedStore,
+	mechanicsEnabledStore,
+	mechanicsHiredStore,
+	mechanicsNeededStore,
+	progressStore,
+	statusTextStore,
+} from "./store";
+import { gameContext, gameMap, gameObjects } from "./game";
+import { exitToPathTile } from "./paths/path-graph";
 import { t } from "./i18n";
 
 // --- Handyman orders bitmasks ------------------------------------------------
@@ -41,22 +62,27 @@ export type HandymanPurpose = "cleanup" | "gardening";
 // A handyman is considered a "gardening" handyman if any of their orders are
 // watering/mowing, and a "cleanup" handyman otherwise (this also covers
 // freshly hired handymen with no orders set yet).
-export function classifyHandyman(member: Handyman): HandymanPurpose {
-	return (member.orders & HANDYMAN_ORDERS_GARDENING) !== 0 ? "gardening" : "cleanup";
-}
+export const classifyHandyman = function classifyHandyman(member: Handyman): HandymanPurpose {
+	if (0 !== (member.orders & HANDYMAN_ORDERS_GARDENING)) {
+		return "gardening";
+	}
+	return "cleanup";
+};
 
-export function getHandymenByPurpose(purpose: HandymanPurpose): Handyman[] {
+export const getHandymenByPurpose = function getHandymenByPurpose(
+	purpose: HandymanPurpose,
+): Handyman[] {
 	const staff = gameMap().getAllEntities("staff");
 	const result: Handyman[] = [];
 	for (const member of staff) {
-		if (member.staffType === "handyman" && classifyHandyman(member) === purpose) {
+		if ("handyman" === member.staffType && classifyHandyman(member) === purpose) {
 			result.push(member);
 		}
 	}
 	return result;
-}
+};
 
-export function getStaffByType(staffType: StaffType): Staff[] {
+export const getStaffByType = function getStaffByType(staffType: StaffType): Staff[] {
 	const staff = gameMap().getAllEntities("staff");
 	const result: Staff[] = [];
 	for (const member of staff) {
@@ -65,7 +91,7 @@ export function getStaffByType(staffType: StaffType): Staff[] {
 		}
 	}
 	return result;
-}
+};
 
 // A single queued hire/fire game action. Collected up-front by
 // adjustStaffCounts and then dispatched a few per tick (see applyInBatches),
@@ -81,28 +107,43 @@ type StaffAdjustTask =
 // Collects the fire tasks for the given number of staff members, oldest first
 // (lowest entity id first, since entity ids are assigned in creation order and
 // are not reused while the entity is alive).
-function collectFireOldestStaffTasks(members: Staff[], countToFire: number): StaffAdjustTask[] {
+const collectFireOldestStaffTasks = function collectFireOldestStaffTasks(
+	members: Staff[],
+	countToFire: number,
+): StaffAdjustTask[] {
 	const tasks: StaffAdjustTask[] = [];
-	const sorted = members.slice().sort(function (a, b) { return (a.id ?? 0) - (b.id ?? 0); });
+	const sorted = [...members].sort(function byEntityIdAscending(a, b) {
+		return (a.id ?? 0) - (b.id ?? 0);
+	});
 	for (let i = 0; i < countToFire && i < sorted.length; i++) {
 		const id = sorted[i].id;
-		if (id !== null) {
+		if (null !== id) {
 			tasks.push({ kind: "fire", id: id });
 		}
 	}
 	return tasks;
-}
+};
 
 // Identifiers (or parts thereof) of peep_animations objects that represent
 // entertainer costumes, as opposed to handyman/mechanic/security costumes.
 // Mirrors the non-staff entries of the StaffCostume type.
 const ENTERTAINER_COSTUME_IDENTIFIER_PARTS = [
-	"panda", "tiger", "elephant", "roman", "gorilla", "snowman", "knight", "astronaut", "bandit", "sheriff", "pirate"
+	"panda",
+	"tiger",
+	"elephant",
+	"roman",
+	"gorilla",
+	"snowman",
+	"knight",
+	"astronaut",
+	"bandit",
+	"sheriff",
+	"pirate",
 ];
 
 // Finds all loaded peep_animations object indices that are valid entertainer
 // costumes (mirrors the non-staff entries of the StaffCostume type).
-function findEntertainerCostumeIndices(): number[] {
+const findEntertainerCostumeIndices = function findEntertainerCostumeIndices(): number[] {
 	const peepAnimationObjects = gameObjects().getAllObjects("peep_animations");
 	const result: number[] = [];
 	for (const peepAnimationObject of peepAnimationObjects) {
@@ -115,7 +156,7 @@ function findEntertainerCostumeIndices(): number[] {
 		}
 	}
 	return result;
-}
+};
 
 // Finds a loaded peep_animations object index that is a valid costume for the
 // given staff type. Handymen/mechanics/security use costume index 0 (their
@@ -125,41 +166,52 @@ function findEntertainerCostumeIndices(): number[] {
 // valid costume exists (only possible for entertainers when no entertainer
 // costume objects are loaded), so the caller can skip the hire instead of
 // issuing one with costume 0 that the game would silently reject.
-function findCostumeIndexForStaffType(staffTypeId: number): number {
+const findCostumeIndexForStaffType = function findCostumeIndexForStaffType(
+	staffTypeId: number,
+): number {
 	if (staffTypeId !== STAFF_TYPE_ID_ENTERTAINER) {
 		return 0;
 	}
 
 	const entertainerCostumeIndices = findEntertainerCostumeIndices();
-	if (entertainerCostumeIndices.length === 0) {
+	if (0 === entertainerCostumeIndices.length) {
 		return -1;
 	}
 
 	return entertainerCostumeIndices[Math.floor(Math.random() * entertainerCostumeIndices.length)];
-}
+};
 
 // Collects hire tasks for the given number of new staff of the given type,
 // applying the given orders bitmask (only relevant for handymen/mechanics).
 // The costume is picked when the task is actually dispatched, so each hired
 // staff member still gets its own randomly picked costume (entertainers).
-function collectHireStaffTasks(staffTypeId: number, orders: number, countToHire: number): StaffAdjustTask[] {
+const collectHireStaffTasks = function collectHireStaffTasks(
+	staffTypeId: number,
+	orders: number,
+	countToHire: number,
+): StaffAdjustTask[] {
 	const tasks: StaffAdjustTask[] = [];
 	for (let i = 0; i < countToHire; i++) {
 		tasks.push({ kind: "hire", staffTypeId: staffTypeId, orders: orders });
 	}
 	return tasks;
-}
+};
 
 // Executes a single queued hire/fire action. Invokes onActionComplete once the
 // action's callback has fired (regardless of success/failure).
-function runStaffAdjustTask(task: StaffAdjustTask, onActionComplete: () => void): void {
-	if (task.kind === "fire") {
-		gameContext().executeAction("stafffire", { id: task.id }, function () { onActionComplete(); });
+const runStaffAdjustTask = function runStaffAdjustTask(
+	task: StaffAdjustTask,
+	onActionComplete: () => void,
+): void {
+	if ("fire" === task.kind) {
+		gameContext().executeAction("stafffire", { id: task.id }, function onFireActionComplete() {
+			onActionComplete();
+		});
 		return;
 	}
 
 	const costumeIndex = findCostumeIndexForStaffType(task.staffTypeId);
-	if (costumeIndex < 0) {
+	if (0 > costumeIndex) {
 		// No valid costume for this staff type (e.g. entertainer with no
 		// entertainer costume objects loaded). Skip the hire, but still
 		// invoke the completion callback so the pending-action counter in
@@ -168,13 +220,19 @@ function runStaffAdjustTask(task: StaffAdjustTask, onActionComplete: () => void)
 		return;
 	}
 
-	gameContext().executeAction("staffhire", {
-		autoPosition: true,
-		staffType: task.staffTypeId,
-		costumeIndex: costumeIndex,
-		staffOrders: task.orders
-	}, function () { onActionComplete(); });
-}
+	gameContext().executeAction(
+		"staffhire",
+		{
+			autoPosition: true,
+			staffType: task.staffTypeId,
+			costumeIndex: costumeIndex,
+			staffOrders: task.orders,
+		},
+		function onHireActionComplete() {
+			onActionComplete();
+		},
+	);
+};
 
 // Hires the given number of new staff of the given type, applying the given
 // orders bitmask (only relevant for handymen/mechanics). Each hired staff
@@ -182,42 +240,66 @@ function runStaffAdjustTask(task: StaffAdjustTask, onActionComplete: () => void)
 // The actions are dispatched a few per tick so hiring many staff at once
 // doesn't block the game loop. Invokes onActionComplete once per action after
 // its callback has fired.
-export function hireStaff(staffTypeId: number, orders: number, countToHire: number, onActionComplete: () => void): void {
-	const tasks = collectHireStaffTasks(staffTypeId, orders, countToHire);
-	applyInBatches(tasks, function (task) {
-		runStaffAdjustTask(task, onActionComplete);
-	}, function () { /* per-action callbacks already reported completion */ });
-}
+export const hireStaff = function hireStaff(
+	spec: { staffTypeId: number; orders: number; countToHire: number },
+	onActionComplete: () => void,
+): void {
+	const tasks = collectHireStaffTasks(spec.staffTypeId, spec.orders, spec.countToHire);
+	applyInBatches(
+		tasks,
+		function runAdjustTask(task) {
+			runStaffAdjustTask(task, onActionComplete);
+		},
+		function noopOnComplete() {
+			/* per-action callbacks already reported completion */
+		},
+	);
+};
 
 // Collects the hire/fire tasks needed to bring handymen of a specific purpose
 // (cleanup/gardening) to the needed count, firing the oldest first when there
 // is a surplus.
-function collectHandymanTasks(purpose: HandymanPurpose, needed: number): StaffAdjustTask[] {
+const ordersForPurpose = function ordersForPurpose(purpose: HandymanPurpose): number {
+	if ("cleanup" === purpose) {
+		return HANDYMAN_ORDERS_CLEANUP;
+	}
+	return HANDYMAN_ORDERS_GARDENING;
+};
+
+const collectHandymanTasks = function collectHandymanTasks(
+	purpose: HandymanPurpose,
+	needed: number,
+): StaffAdjustTask[] {
 	const current = getHandymenByPurpose(purpose);
 	const difference = needed - current.length;
-	if (difference > 0) {
-		const orders = purpose === "cleanup" ? HANDYMAN_ORDERS_CLEANUP : HANDYMAN_ORDERS_GARDENING;
+	if (0 < difference) {
+		const orders = ordersForPurpose(purpose);
 		return collectHireStaffTasks(STAFF_TYPE_ID_HANDYMAN, orders, difference);
 	}
-	if (difference < 0) {
+	if (0 > difference) {
 		return collectFireOldestStaffTasks(current, -difference);
 	}
 	return [];
-}
+};
 
 // Collects the hire/fire tasks needed to bring staff of a given type to the
 // needed count, firing the oldest first when there is a surplus.
-function collectStaffOfTypeTasks(staffType: StaffType, staffTypeId: number, orders: number, needed: number): StaffAdjustTask[] {
-	const current = getStaffByType(staffType);
-	const difference = needed - current.length;
-	if (difference > 0) {
-		return collectHireStaffTasks(staffTypeId, orders, difference);
+const collectStaffOfTypeTasks = function collectStaffOfTypeTasks(spec: {
+	staffType: StaffType;
+	staffTypeId: number;
+	orders: number;
+	needed: number;
+}): StaffAdjustTask[] {
+	const current = getStaffByType(spec.staffType);
+	const difference = spec.needed - current.length;
+	if (0 < difference) {
+		return collectHireStaffTasks(spec.staffTypeId, spec.orders, difference);
 	}
-	if (difference < 0) {
+	if (0 > difference) {
 		return collectFireOldestStaffTasks(current, -difference);
 	}
 	return [];
-}
+};
 
 // Adjusts the number of hired staff of every type to match the currently
 // calculated Needed counts: hires more if understaffed, fires the oldest
@@ -226,19 +308,34 @@ function collectStaffOfTypeTasks(staffType: StaffType, staffTypeId: number, orde
 // rendering/simulating and the status row stays responsive while a large
 // number of staff is being adjusted. The Hired/Assigned/Difference stats are
 // refreshed once all the queued hire/fire game actions have completed.
-export function adjustStaffCounts(onComplete?: () => void): void {
+export const adjustStaffCounts = function adjustStaffCounts(onComplete?: () => void): void {
 	// Snapshot the needed counts and collect every hire/fire action to run
 	// before issuing any of them, so the task list isn't affected by staff
 	// created/removed while it is being worked through.
-	const tasks: StaffAdjustTask[] = ([] as StaffAdjustTask[]).concat(
-		collectHandymanTasks("cleanup", handymenCleanupNeededStore.get()),
-		collectHandymanTasks("gardening", handymenGardeningNeededStore.get()),
-		collectStaffOfTypeTasks("security", STAFF_TYPE_ID_SECURITY, 0, guardsNeededStore.get()),
-		collectStaffOfTypeTasks("entertainer", STAFF_TYPE_ID_ENTERTAINER, 0, entertainersNeededStore.get()),
-		collectStaffOfTypeTasks("mechanic", STAFF_TYPE_ID_MECHANIC, MECHANIC_ORDERS_DEFAULT, mechanicsNeededStore.get())
-	);
+	const tasks: StaffAdjustTask[] = [
+		...collectHandymanTasks("cleanup", handymenCleanupNeededStore.get()),
+		...collectHandymanTasks("gardening", handymenGardeningNeededStore.get()),
+		...collectStaffOfTypeTasks({
+			staffType: "security",
+			staffTypeId: STAFF_TYPE_ID_SECURITY,
+			orders: 0,
+			needed: guardsNeededStore.get(),
+		}),
+		...collectStaffOfTypeTasks({
+			staffType: "entertainer",
+			staffTypeId: STAFF_TYPE_ID_ENTERTAINER,
+			orders: 0,
+			needed: entertainersNeededStore.get(),
+		}),
+		...collectStaffOfTypeTasks({
+			staffType: "mechanic",
+			staffTypeId: STAFF_TYPE_ID_MECHANIC,
+			orders: MECHANIC_ORDERS_DEFAULT,
+			needed: mechanicsNeededStore.get(),
+		}),
+	];
 
-	if (tasks.length === 0) {
+	if (0 === tasks.length) {
 		refreshHiredAndAssignedStaffCounts();
 		setProgress(PROGRESS_ADJUST_DONE);
 		if (onComplete) {
@@ -249,36 +346,40 @@ export function adjustStaffCounts(onComplete?: () => void): void {
 
 	let pendingCount = tasks.length;
 	let allDispatched = false;
-	const finishIfDone: () => void = function () {
-		if (allDispatched && pendingCount <= 0) {
+	const finishIfDone: () => void = function finishIfDone() {
+		if (allDispatched && 0 >= pendingCount) {
 			refreshHiredAndAssignedStaffCounts();
 			if (onComplete) {
 				onComplete();
 			}
 		}
 	};
-	const onActionComplete: () => void = function () {
+	const onActionComplete: () => void = function onActionComplete() {
 		pendingCount--;
 		finishIfDone();
 	};
 
 	setStatus(`${t("status.adjusting")} (0/${tasks.length.toString()})`);
 	setProgress(0);
-	applyInBatches(tasks, function (task, index) {
-		runStaffAdjustTask(task, onActionComplete);
-		setStatus(`${t("status.adjusting")} (${(index + 1).toString()}/${tasks.length.toString()})`);
-		setProgress(PROGRESS_ADJUST_DONE * ((index + 1) / tasks.length));
-	}, function () {
-		allDispatched = true;
-		finishIfDone();
-	});
-}
+	applyInBatches(
+		tasks,
+		function runAdjustTaskWithStatus(task, index) {
+			runStaffAdjustTask(task, onActionComplete);
+			setStatus(`${t("status.adjusting")} (${(index + 1).toString()}/${tasks.length.toString()})`);
+			setProgress(PROGRESS_ADJUST_DONE * ((index + 1) / tasks.length));
+		},
+		function onAllDispatched() {
+			allDispatched = true;
+			finishIfDone();
+		},
+	);
+};
 
 // --- Staff counting (Hired / Assigned) ---------------------------------------
 // Counts the number of currently hired staff of a given type (e.g. handyman,
 // security), and how many of those already have a non-empty patrol area
 // (i.e. are already "assigned" to patrol a section of the park).
-function countHiredStaff(staffType: StaffType): number {
+const countHiredStaff = function countHiredStaff(staffType: StaffType): number {
 	const staff = gameMap().getAllEntities("staff");
 	let count = 0;
 	for (const member of staff) {
@@ -287,40 +388,41 @@ function countHiredStaff(staffType: StaffType): number {
 		}
 	}
 	return count;
-}
+};
 
-function countAssignedStaff(staffType: StaffType): number {
+const countAssignedStaff = function countAssignedStaff(staffType: StaffType): number {
 	const staff = gameMap().getAllEntities("staff");
 	let count = 0;
 	for (const member of staff) {
-		if (member.staffType === staffType && member.patrolArea.tiles.length > 0) {
+		if (member.staffType === staffType && 0 < member.patrolArea.tiles.length) {
 			count++;
 		}
 	}
 	return count;
-}
+};
 
 // Refreshes the Hired/Assigned stores for Handymen, Guards and Mechanics from
 // the current, real-time staff roster. Unlike Needed (which depends on the
 // potentially slow tile scan), this is cheap and can be refreshed whenever
 // Calculate is pressed.
-export function refreshHiredAndAssignedStaffCounts(): void {
-	handymenHiredStore.set(countHiredStaff("handyman"));
-	handymenAssignedStore.set(countAssignedStaff("handyman"));
-	guardsHiredStore.set(countHiredStaff("security"));
-	guardsAssignedStore.set(countAssignedStaff("security"));
-	entertainersHiredStore.set(countHiredStaff("entertainer"));
-	entertainersAssignedStore.set(countAssignedStaff("entertainer"));
-	mechanicsHiredStore.set(countHiredStaff("mechanic"));
-	mechanicsAssignedStore.set(countAssignedStaff("mechanic"));
-}
+export const refreshHiredAndAssignedStaffCounts =
+	function refreshHiredAndAssignedStaffCounts(): void {
+		handymenHiredStore.set(countHiredStaff("handyman"));
+		handymenAssignedStore.set(countAssignedStaff("handyman"));
+		guardsHiredStore.set(countHiredStaff("security"));
+		guardsAssignedStore.set(countAssignedStaff("security"));
+		entertainersHiredStore.set(countHiredStaff("entertainer"));
+		entertainersAssignedStore.set(countAssignedStaff("entertainer"));
+		mechanicsHiredStore.set(countHiredStaff("mechanic"));
+		mechanicsAssignedStore.set(countAssignedStaff("mechanic"));
+	};
 
 // --- Assign patrol areas --------------------------------------------------------
 // Converts a tile coordinate to the world (32-per-tile) coordinate used by
 // patrol areas.
-function tileToWorldXY(x: number, y: number): CoordsXY {
+const tileToWorldXY = function tileToWorldXY(x: number, y: number): CoordsXY {
 	return { x: x * 32, y: y * 32 };
-}
+};
 
 // Teleports a staff member to the centre of the given tile, at the given
 // world z height, via the "peeppickup" game action (pick the staff member
@@ -342,7 +444,7 @@ interface PendingTeleport {
 const teleportQueue: PendingTeleport[] = [];
 let teleportInProgress = false;
 
-function processTeleportQueue(): void {
+const processTeleportQueue = function processTeleportQueue(): void {
 	if (teleportInProgress) {
 		return;
 	}
@@ -354,29 +456,40 @@ function processTeleportQueue(): void {
 	// Continue on the next tick rather than recursing, so a large queue is
 	// processed iteratively across ticks instead of growing the call stack one frame
 	// per teleport (which overflowed it).
-	function scheduleNext(): void {
+	const scheduleNext = function scheduleNext(): void {
 		teleportInProgress = false;
 		gameContext().setTimeout(processTeleportQueue, BATCH_TICK_DELAY);
-	}
-	gameContext().executeAction("peeppickup", { type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 }, function (pickupResult) {
-		if (pickupResult.error) {
-			scheduleNext();
-			return;
-		}
-		gameContext().executeAction("peeppickup", { type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 }, function () {
-			scheduleNext();
-		});
-	});
-}
+	};
+	gameContext().executeAction(
+		"peeppickup",
+		{ type: 0, id: next.id, x: 0, y: 0, z: 0, playerId: 0 },
+		function onPickupComplete(pickupResult) {
+			if (pickupResult.error) {
+				scheduleNext();
+				return;
+			}
+			gameContext().executeAction(
+				"peeppickup",
+				{ type: 2, id: next.id, x: next.x, y: next.y, z: next.z, playerId: 0 },
+				function onPlaceComplete() {
+					scheduleNext();
+				},
+			);
+		},
+	);
+};
 
-export function teleportStaffToTile(member: Staff, x: number, y: number, z: number): void {
+export const teleportStaffToTile = function teleportStaffToTile(
+	member: Staff,
+	target: CoordsXYZ,
+): void {
 	const id = member.id;
-	if (id === null) {
+	if (null === id) {
 		return;
 	}
-	teleportQueue.push({ id: id, x: x * 32 + 16, y: y * 32 + 16, z: z });
+	teleportQueue.push({ id: id, x: target.x * 32 + 16, y: target.y * 32 + 16, z: target.z });
 	processTeleportQueue();
-}
+};
 
 // Splits the given tile list into contiguous (spatially connected) chunks,
 // each roughly totalTiles/staffCount tiles large. Unlike a naive index-based
@@ -388,8 +501,11 @@ export function teleportStaffToTile(member: Staff, x: number, y: number, z: numb
 // disconnected pockets (e.g. separate garden areas), a chunk's growth simply
 // stops once its local pocket is exhausted, which can result in more chunks
 // than staffCount; callers should merge/ignore any surplus as appropriate.
-export function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: number): PathTileInfo[][] {
-	if (staffCount <= 0 || tiles.length === 0) {
+export const chunkTilesForStaffCount = function chunkTilesForStaffCount(
+	tiles: PathTileInfo[],
+	staffCount: number,
+): PathTileInfo[][] {
+	if (0 >= staffCount || 0 === tiles.length) {
 		return [];
 	}
 	const targetSize = Math.ceil(tiles.length / staffCount);
@@ -414,15 +530,15 @@ export function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: numbe
 	// from the beginning for every chunk, which is quadratic on large parks.
 	let scanIndex = 0;
 
-	while (remaining.size > 0) {
-		let startKey: string | null = null;
+	while (0 < remaining.size) {
+		let startKey: string | undefined = undefined;
 		for (; scanIndex < order.length; scanIndex++) {
 			if (remaining.has(order[scanIndex])) {
 				startKey = order[scanIndex];
 				break;
 			}
 		}
-		if (startKey === null) {
+		if (undefined === startKey) {
 			break;
 		}
 
@@ -494,11 +610,13 @@ export function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: numbe
 	// With fewer staff than (unmergeable) areas, cover the biggest
 	// areas first instead of whichever happened to be found first.
 	if (chunks.length > staffCount) {
-		chunks.sort(function (a, b) { return b.length - a.length; });
+		chunks.sort(function byLengthDescending(a, b) {
+			return b.length - a.length;
+		});
 	}
 
 	return chunks;
-}
+};
 
 // Merges connected chunks together (smallest combined pair first) until at most
 // `staffCount` of them remain, or until no two remaining chunks are connected.
@@ -509,7 +627,10 @@ export function chunkTilesForStaffCount(tiles: PathTileInfo[], staffCount: numbe
 // a single pass over all tiles. Merging chunk `b` into chunk `a` then only has
 // to rewire the handful of edges touching `b`, rather than re-testing every
 // chunk pair against every tile again.
-function mergeSurplusChunks(chunks: PathTileInfo[][], staffCount: number): void {
+const mergeSurplusChunks = function mergeSurplusChunks(
+	chunks: PathTileInfo[][],
+	staffCount: number,
+): void {
 	const chunkIndexByKey = new Map<string, number>();
 	for (let i = 0; i < chunks.length; i++) {
 		for (const tile of chunks[i]) {
@@ -520,8 +641,12 @@ function mergeSurplusChunks(chunks: PathTileInfo[][], staffCount: number): void 
 	// linksOut[a] holds every chunk b that chunk a has a walkable link into
 	// (mirroring the old chunksConnect(chunks[a], keySets[b]) test), linksIn[b]
 	// the reverse, so both directions can be rewired on merge.
-	const linksOut: Set<number>[] = chunks.map(function () { return new Set<number>(); });
-	const linksIn: Set<number>[] = chunks.map(function () { return new Set<number>(); });
+	const linksOut: Set<number>[] = chunks.map(function newEmptySet() {
+		return new Set<number>();
+	});
+	const linksIn: Set<number>[] = chunks.map(function newEmptySet2() {
+		return new Set<number>();
+	});
 	for (let a = 0; a < chunks.length; a++) {
 		for (const tile of chunks[a]) {
 			for (const neighbourKey of tile.neighbourKeys) {
@@ -534,7 +659,9 @@ function mergeSurplusChunks(chunks: PathTileInfo[][], staffCount: number): void 
 		}
 	}
 
-	const merged: boolean[] = chunks.map(function () { return false; });
+	const merged: boolean[] = chunks.map(function notMerged() {
+		return false;
+	});
 	let aliveCount = chunks.length;
 
 	while (aliveCount > staffCount) {
@@ -544,27 +671,25 @@ function mergeSurplusChunks(chunks: PathTileInfo[][], staffCount: number): void 
 		let bestB = -1;
 		let bestSize = Number.POSITIVE_INFINITY;
 		for (let a = 0; a < chunks.length; a++) {
-			if (merged[a]) {
-				continue;
-			}
-			for (const b of linksOut[a]) {
-				if (merged[b] || b <= a) {
-					continue;
-				}
-				const size = chunks[a].length + chunks[b].length;
-				if (size < bestSize) {
-					bestSize = size;
-					bestA = a;
-					bestB = b;
+			if (!merged[a]) {
+				for (const b of linksOut[a]) {
+					if (!merged[b] && b > a) {
+						const size = chunks[a].length + chunks[b].length;
+						if (size < bestSize) {
+							bestSize = size;
+							bestA = a;
+							bestB = b;
+						}
+					}
 				}
 			}
 		}
 
-		if (bestA === -1) {
+		if (-1 === bestA) {
 			break;
 		}
 
-		chunks[bestA] = chunks[bestA].concat(chunks[bestB]);
+		chunks[bestA] = [...chunks[bestA], ...chunks[bestB]];
 		merged[bestB] = true;
 		aliveCount--;
 
@@ -591,20 +716,20 @@ function mergeSurplusChunks(chunks: PathTileInfo[][], staffCount: number): void 
 	}
 
 	// Drop the absorbed chunks, keeping the surviving ones in their original order.
-	for (let i = chunks.length - 1; i >= 0; i--) {
+	for (let i = chunks.length - 1; 0 <= i; i--) {
 		if (merged[i]) {
 			chunks.splice(i, 1);
 		}
 	}
-}
+};
 
 // Clears every given staff member's patrol area. Used at the start of each
 // staff type's (re-)assignment so stale patrol areas don't linger.
-function clearPatrolAreas(members: Staff[]): void {
+const clearPatrolAreas = function clearPatrolAreas(members: Staff[]): void {
 	for (const member of members) {
 		member.patrolArea.clear();
 	}
-}
+};
 
 // Applies `perTask` to each task, but only a bounded number per game tick, so
 // assigning patrol areas to (or moving) many staff members doesn't block the game
@@ -625,9 +750,9 @@ const TASKS_PER_TICK = 4;
 export const BATCH_TICK_DELAY = 1;
 
 // Helper to set the window's status row while "Adjust and assign" is running.
-function setStatus(text: string): void {
+const setStatus = function setStatus(text: string): void {
 	statusTextStore.set(text);
-}
+};
 
 // Fractions of the overall "Adjust and assign" pass that each phase has
 // completed by the time it finishes. The adjust phase animates smoothly from
@@ -639,13 +764,17 @@ export const PROGRESS_GUARDS_DONE = 0.7;
 export const PROGRESS_ENTERTAINERS_DONE = 0.85;
 
 // Helper to set the window's progress bar (a fraction between 0 and 1).
-function setProgress(fraction: number): void {
+const setProgress = function setProgress(fraction: number): void {
 	progressStore.set(Math.max(0, Math.min(1, fraction)));
-}
+};
 
-function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void, onComplete: () => void): void {
+const applyInBatches = function applyInBatches<T>(
+	tasks: T[],
+	perTask: (task: T, index: number) => void,
+	onComplete: () => void,
+): void {
 	let index = 0;
-	function step(): void {
+	const step = function step(): void {
 		const end = Math.min(tasks.length, index + TASKS_PER_TICK);
 		for (; index < end; index++) {
 			perTask(tasks[index], index);
@@ -655,9 +784,9 @@ function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void
 		} else {
 			onComplete();
 		}
-	}
+	};
 	step();
-}
+};
 
 // Whether a staff member can likely be placed on the given tile via
 // "peeppickup". A tile with a walkable footpath element is accepted unless
@@ -680,34 +809,43 @@ function applyInBatches<T>(tasks: T[], perTask: (task: T, index: number) => void
 // fails outright on any small scenery item (e.g. a tree), so such a tile
 // must never be chosen as a teleport target even though a handyman can
 // still walk across/around it once already patrolling the area normally.
-export function isPeepPlaceableTile(x: number, y: number): boolean {
-	if (x < 0 || y < 0 || x >= gameMap().size.x || y >= gameMap().size.y) {
+export const isPeepPlaceableTile = function isPeepPlaceableTile(x: number, y: number): boolean {
+	if (0 > x || 0 > y || x >= gameMap().size.x || y >= gameMap().size.y) {
 		return false;
 	}
 	const tile = gameMap().getTile(x, y);
-	let footpath: FootpathElement | null = null;
+	let footpath: FootpathElement | undefined = undefined;
 	let hasSurface = false;
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
-		if (element.type === "footpath") {
+		if ("footpath" === element.type) {
 			footpath = element;
-		} else if (element.type === "entrance" || element.type === "track" || element.type === "large_scenery" || element.type === "small_scenery") {
+		} else if (
+			"entrance" === element.type ||
+			"track" === element.type ||
+			"large_scenery" === element.type ||
+			"small_scenery" === element.type
+		) {
 			return false;
-		} else if (element.type === "surface") {
+		} else if ("surface" === element.type) {
 			hasSurface = true;
 		}
 	}
-	return footpath !== null || hasSurface;
-}
+	return undefined !== footpath || hasSurface;
+};
 
 // Returns the given tiles ordered by Manhattan distance from (x, y), nearest
 // first. Used so the placeability check below only has to touch the closest
 // candidates instead of every tile in the park.
-function tilesByDistance(tiles: PathTileInfo[], x: number, y: number): PathTileInfo[] {
-	return tiles.slice().sort(function (a, b) {
-		return (Math.abs(a.x - x) + Math.abs(a.y - y)) - (Math.abs(b.x - x) + Math.abs(b.y - y));
+const tilesByDistance = function tilesByDistance(
+	tiles: PathTileInfo[],
+	x: number,
+	y: number,
+): PathTileInfo[] {
+	return [...tiles].sort(function byManhattanDistance(a, b) {
+		return Math.abs(a.x - x) + Math.abs(a.y - y) - (Math.abs(b.x - x) + Math.abs(b.y - y));
 	});
-}
+};
 
 // Finds the walkable footpath tile (from lastAllPathTiles) closest to the
 // given tile, by Manhattan distance, that is actually clear enough for a
@@ -723,22 +861,29 @@ function tilesByDistance(tiles: PathTileInfo[], x: number, y: number): PathTileI
 // `map.getTile` plus an element scan) meant one engine query per path tile in
 // the park *per staff member*, which was a major source of stutter while
 // patrol areas were being assigned.
-function findNearestPathTile(x: number, y: number): PathTileInfo | null {
+const findNearestPathTile = function findNearestPathTile(
+	x: number,
+	y: number,
+): PathTileInfo | undefined {
 	for (const tile of tilesByDistance(lastAllPathTiles, x, y)) {
 		if (isPeepPlaceableTile(tile.x, tile.y)) {
 			return tile;
 		}
 	}
-	return null;
-}
+	return undefined;
+};
 
 // Finds the walkable footpath tile closest to (x, y) among only the given
 // tiles (typically the chunk/area being assigned to the staff member), that
 // is actually clear enough for a staff member to be placed on. Fall back to
 // the global nearest placeable tile if the area has none.
-export function findNearestPathInOrderedTiles(tiles: PathTileInfo[], x: number, y: number): PathTileInfo | null {
-	const inBounds = tiles.filter(function (tile) {
-		return tile.x >= 0 && tile.y >= 0 && tile.x < gameMap().size.x && tile.y < gameMap().size.y;
+export const findNearestPathInOrderedTiles = function findNearestPathInOrderedTiles(
+	tiles: PathTileInfo[],
+	x: number,
+	y: number,
+): PathTileInfo | undefined {
+	const inBounds = tiles.filter(function isInBounds(tile) {
+		return 0 <= tile.x && 0 <= tile.y && tile.x < gameMap().size.x && tile.y < gameMap().size.y;
 	});
 	for (const tile of tilesByDistance(inBounds, x, y)) {
 		if (isPeepPlaceableTile(tile.x, tile.y)) {
@@ -746,7 +891,7 @@ export function findNearestPathInOrderedTiles(tiles: PathTileInfo[], x: number, 
 		}
 	}
 	return findNearestPathTile(x, y);
-}
+};
 
 // Assigns one consecutive chunk of the given ordered tile list to each hired
 // staff member (only dealing with already-hired staff, per Assign's remit),
@@ -756,40 +901,59 @@ export function findNearestPathInOrderedTiles(tiles: PathTileInfo[], x: number, 
 // as a ride entrance/exit or a bench), so the nearest actually-placeable
 // tile is used as the teleport target instead; the patrol area itself still
 // covers the full chunk regardless.
-function assignConsecutiveAreas(members: Staff[], orderedTiles: PathTileInfo[], onComplete: () => void): void {
+const assignConsecutiveAreas = function assignConsecutiveAreas(
+	members: Staff[],
+	orderedTiles: PathTileInfo[],
+	onComplete: () => void,
+): void {
 	clearPatrolAreas(members);
-	if (members.length === 0) {
+	if (0 === members.length) {
 		onComplete();
 		return;
 	}
 	const chunks = chunkTilesForStaffCount(orderedTiles, members.length);
-	const tasks = chunks.slice(0, members.length).map(function (chunk, i) {
+	const tasks = chunks.slice(0, members.length).map(function toMemberChunkTask(chunk, i) {
 		return { member: members[i], chunk: chunk };
 	});
-	applyInBatches(tasks, function (task) {
-		const area = task.chunk.map(function (t) { return tileToWorldXY(t.x, t.y); });
-		task.member.patrolArea.add(area);
-		// If the staff member is already standing on their area's first tile, they
-		// don't need teleporting - this keeps automatic re-assignment from repeatedly
-		// yanking already-correctly-placed staff, while newly-assigned/needed staff
-		// are still moved to the start of their area.
-		if (isStandingOnTile(task.member, task.chunk[0])) {
-			return;
-		}
-		// Resolved here rather than up-front for every member, so the tile
-		// placeability queries are spread across ticks along with the rest of
-		// the work instead of all running before the first batch.
-		const teleportTarget = findNearestPathInOrderedTiles(task.chunk, task.chunk[0].x, task.chunk[0].y) ?? task.chunk[0];
-		teleportStaffToTile(task.member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
-	}, onComplete);
-}
+	applyInBatches(
+		tasks,
+		function assignAreaToMember(task) {
+			const area = task.chunk.map(function toWorldCoords(t) {
+				return tileToWorldXY(t.x, t.y);
+			});
+			task.member.patrolArea.add(area);
+			// If the staff member is already standing on their area's first tile, they
+			// don't need teleporting - this keeps automatic re-assignment from repeatedly
+			// yanking already-correctly-placed staff, while newly-assigned/needed staff
+			// are still moved to the start of their area.
+			if (isStandingOnTile(task.member, task.chunk[0])) {
+				return;
+			}
+			// Resolved here rather than up-front for every member, so the tile
+			// placeability queries are spread across ticks along with the rest of
+			// the work instead of all running before the first batch.
+			const teleportTarget =
+				findNearestPathInOrderedTiles(task.chunk, task.chunk[0].x, task.chunk[0].y) ??
+				task.chunk[0];
+			teleportStaffToTile(task.member, {
+				x: teleportTarget.x,
+				y: teleportTarget.y,
+				z: teleportTarget.baseZ,
+			});
+		},
+		onComplete,
+	);
+};
 
 // Whether the given staff member is currently standing on the given tile.
-export function isStandingOnTile(member: Staff, tile: PathTileInfo): boolean {
+export const isStandingOnTile = function isStandingOnTile(
+	member: Staff,
+	tile: PathTileInfo,
+): boolean {
 	const tileX = Math.floor(member.x / 32);
 	const tileY = Math.floor(member.y / 32);
 	return tileX === tile.x && tileY === tile.y;
-}
+};
 
 // The outcome of deciding what to do with a freshly placed tile for one staff type.
 export type AreaDecision =
@@ -798,16 +962,16 @@ export type AreaDecision =
 	| { action: "hire" };
 
 // Converts a world coordinate to its integer tile coordinate.
-export function worldToTileX(v: number): number {
+export const worldToTileX = function worldToTileX(v: number): number {
 	return Math.floor(v / 32);
-}
+};
 
 // Cardinal-neighbour world-offsets used to find which areas are adjacent to a tile.
 export const ADJACENT_OFFSETS: CoordsXY[] = [
 	{ x: 32, y: 0 },
 	{ x: -32, y: 0 },
 	{ x: 0, y: 32 },
-	{ x: 0, y: -32 }
+	{ x: 0, y: -32 },
 ];
 
 // Pure decision logic for a freshly placed (or bought) tile against one staff type's
@@ -821,8 +985,14 @@ export const ADJACENT_OFFSETS: CoordsXY[] = [
 // existing area tile: when supplied, only actually-connected cardinal neighbours count as
 // adjacent (so bridges/inclined ways are never merged); when omitted (tests), plain
 // cardinal adjacency is used.
-export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize: number, connect?: (areaTileX: number, areaTileY: number, newTileX: number, newTileY: number, areaIndex: number) => boolean): AreaDecision {
-	if (newTile.x < 0 || newTile.y < 0) {
+export const decideAreaAction = function decideAreaAction(options: {
+	areas: CoordsXY[][];
+	newTile: CoordsXY;
+	maxSize: number;
+	connect?: (areaTile: CoordsXY, newTile: CoordsXY, areaIndex: number) => boolean;
+}): AreaDecision {
+	const { areas, newTile, maxSize, connect } = options;
+	if (0 > newTile.x || 0 > newTile.y) {
 		return { action: "hire" };
 	}
 	// Index every area tile once by "x,y" tile key, mapping to the index of the
@@ -850,29 +1020,31 @@ export function decideAreaAction(areas: CoordsXY[][], newTile: CoordsXY, maxSize
 		const neighbourX = newTile.x + worldToTileX(offset.x);
 		const neighbourY = newTile.y + worldToTileX(offset.y);
 		const areaIndex = areaIndexByTileKey.get(String(neighbourX) + "," + String(neighbourY));
-		if (areaIndex === undefined) {
-			continue;
+		if (
+			areaIndex !== undefined &&
+			(!connect ||
+				connect({ x: neighbourX, y: neighbourY }, { x: newTile.x, y: newTile.y }, areaIndex))
+		) {
+			if (areas[areaIndex].length < maxSize) {
+				return { action: "enlarge", areaIndex: areaIndex };
+			}
+			return { action: "hire" };
 		}
-		if (connect && !connect(neighbourX, neighbourY, newTile.x, newTile.y, areaIndex)) {
-			continue;
-		}
-		if (areas[areaIndex].length < maxSize) {
-			return { action: "enlarge", areaIndex: areaIndex };
-		}
-		return { action: "hire" };
 	}
 	return { action: "hire" };
-}
+};
 
 // Returns the patrol-area tile arrays for every currently hired member of the
 // given staff type (in order, one entry per member).
-export function getStaffAreas(staffType: StaffType): CoordsXY[][] {
-	return getStaffByType(staffType).map(function (m) { return m.patrolArea.tiles.slice(); });
-}
+export const getStaffAreas = function getStaffAreas(staffType: StaffType): CoordsXY[][] {
+	return getStaffByType(staffType).map(function toPatrolAreaTiles(m) {
+		return [...m.patrolArea.tiles];
+	});
+};
 
 // Only mowable/waterable tiles (work tiles) count toward staffing; footpath
 // connector tiles in an area are reachability only and don't add staffing.
-function workSize(area: PathTileInfo[]): number {
+const workSize = function workSize(area: PathTileInfo[]): number {
 	let count = 0;
 	for (const t of area) {
 		if (!t.isConnector) {
@@ -880,7 +1052,7 @@ function workSize(area: PathTileInfo[]): number {
 		}
 	}
 	return count;
-}
+};
 
 // Assigns gardening areas built from the garden tiles' connected components.
 // Unlike a flat/naive approach (concatenating every component into one tile
@@ -896,30 +1068,43 @@ function workSize(area: PathTileInfo[]): number {
 // component when there are enough gardeners to go around; if there are
 // fewer gardeners than components, the smallest components are left
 // unassigned (logged) rather than silently merged into an unrelated area.
-function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
+const assignGardeningAreas = function assignGardeningAreas(
+	members: Staff[],
+	onComplete: () => void,
+): void {
 	clearPatrolAreas(members);
-	if (members.length === 0) {
+	if (0 === members.length) {
 		onComplete();
 		return;
 	}
 
-	const components = lastGardenAreas.filter(function (area) { return area.some(function (t) { return !t.isConnector; }); });
-	if (components.length === 0) {
+	const components = lastGardenAreas.filter(function hasWorkTile(area) {
+		return area.some(function isNotConnector(t) {
+			return !t.isConnector;
+		});
+	});
+	if (0 === components.length) {
 		onComplete();
 		return;
 	}
 
-	const totalTiles = components.reduce(function (sum, area) { return sum + workSize(area); }, 0);
+	const totalTiles = components.reduce(function sumWorkSize(sum, area) {
+		return sum + workSize(area);
+	}, 0);
 
 	// Each component's own needed count (same "max tiles per staff" rule
 	// used for the needed-gardener total), guaranteeing every disconnected
 	// area gets at least one gardener regardless of its size relative to
 	// the others.
 	const tilesPerStaff = handymenMowerTilesPerStaffStore.get();
-	const desiredCounts = components.map(function (area) { return computeNeeded(workSize(area), tilesPerStaff); });
-	const desiredTotal = desiredCounts.reduce(function (sum, c) { return sum + c; }, 0);
+	const desiredCounts = components.map(function desiredCountForArea(area) {
+		return computeNeeded(workSize(area), tilesPerStaff);
+	});
+	const desiredTotal = desiredCounts.reduce(function sumCounts(sum, c) {
+		return sum + c;
+	}, 0);
 
-	let counts: number[];
+	let counts: number[] = desiredCounts;
 	if (desiredTotal === members.length) {
 		// Exactly enough gardeners hired to cover every area's own need;
 		// use the per-area counts directly.
@@ -928,18 +1113,25 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// Hired count doesn't match total need (e.g. hiring/firing hasn't
 		// caught up yet); fall back to a largest-remainder allocation of
 		// the actually-available gardeners, proportional to tile count.
-		const allocations = components.map(function (area) {
+		const allocations = components.map(function allocationForArea(area) {
 			return (workSize(area) / totalTiles) * members.length;
 		});
 		counts = allocations.map(Math.floor);
-		const assignedTotal = counts.reduce(function (sum, c) { return sum + c; }, 0);
+		const assignedTotal = counts.reduce(function sumCounts2(sum, c) {
+			return sum + c;
+		}, 0);
 		let remainder = members.length - assignedTotal;
 
 		// Distribute leftover gardeners (from flooring) to the components with
 		// the largest fractional remainder first.
-		const order = components.map(function (_, i) { return i; })
-			.sort(function (a, b) { return (allocations[b] - counts[b]) - (allocations[a] - counts[a]); });
-		for (let i = 0; i < order.length && remainder > 0; i++) {
+		const order = components
+			.map(function indexOf(_, i) {
+				return i;
+			})
+			.sort(function byRemainderDescending(a, b) {
+				return allocations[b] - counts[b] - (allocations[a] - counts[a]);
+			});
+		for (let i = 0; i < order.length && 0 < remainder; i++) {
 			counts[order[i]]++;
 			remainder--;
 		}
@@ -949,9 +1141,16 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 		// prioritized to receive at least one by taking from any
 		// multiply-allocated component, largest first.
 		if (members.length < components.length) {
-			const bySizeDesc = components.map(function (_, i) { return i; })
-				.sort(function (a, b) { return workSize(components[b]) - workSize(components[a]); });
-			const newCounts = components.map(function () { return 0; });
+			const bySizeDesc = components
+				.map(function indexOf2(_, i) {
+					return i;
+				})
+				.sort(function byComponentSizeDescending(a, b) {
+					return workSize(components[b]) - workSize(components[a]);
+				});
+			const newCounts = components.map(function zero() {
+				return 0;
+			});
 			for (let i = 0; i < members.length; i++) {
 				newCounts[bySizeDesc[i]] = 1;
 			}
@@ -963,88 +1162,129 @@ function assignGardeningAreas(members: Staff[], onComplete: () => void): void {
 	const tasks: { member: Staff; chunk: PathTileInfo[] }[] = [];
 	for (let c = 0; c < components.length; c++) {
 		const count = counts[c];
-		if (count <= 0) {
-			continue;
-		}
-		const componentMembers = members.slice(memberIndex, memberIndex + count);
-		memberIndex += count;
+		if (0 < count) {
+			const componentMembers = members.slice(memberIndex, memberIndex + count);
+			memberIndex += count;
 
-		const chunks = chunkTilesForStaffCount(components[c], componentMembers.length);
-		for (let i = 0; i < chunks.length && i < componentMembers.length; i++) {
-			tasks.push({ member: componentMembers[i], chunk: chunks[i] });
+			const chunks = chunkTilesForStaffCount(components[c], componentMembers.length);
+			for (let i = 0; i < chunks.length && i < componentMembers.length; i++) {
+				tasks.push({ member: componentMembers[i], chunk: chunks[i] });
+			}
 		}
 	}
-	applyInBatches(tasks, function (task) {
-		task.member.patrolArea.add(task.chunk.map(function (t) { return tileToWorldXY(t.x, t.y); }));
-		if (isStandingOnTile(task.member, task.chunk[0])) {
-			return;
-		}
-		// Resolved per batch rather than up-front, so the tile placeability
-		// queries are spread across ticks (see assignConsecutiveAreas).
-		const teleportTarget = findNearestPathInOrderedTiles(task.chunk, task.chunk[0].x, task.chunk[0].y) ?? task.chunk[0];
-		teleportStaffToTile(task.member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
-	}, onComplete);
-}
+	applyInBatches(
+		tasks,
+		function assignGardeningChunk(task) {
+			task.member.patrolArea.add(
+				task.chunk.map(function toWorldCoords2(t) {
+					return tileToWorldXY(t.x, t.y);
+				}),
+			);
+			if (isStandingOnTile(task.member, task.chunk[0])) {
+				return;
+			}
+			// Resolved per batch rather than up-front, so the tile placeability
+			// queries are spread across ticks (see assignConsecutiveAreas).
+			const teleportTarget =
+				findNearestPathInOrderedTiles(task.chunk, task.chunk[0].x, task.chunk[0].y) ??
+				task.chunk[0];
+			teleportStaffToTile(task.member, {
+				x: teleportTarget.x,
+				y: teleportTarget.y,
+				z: teleportTarget.baseZ,
+			});
+		},
+		onComplete,
+	);
+};
 
 // Assigns consecutive entertainer areas, putting "perArea" entertainers into
 // each patrol area (all sharing the same tiles), rather than one staff
 // member per area like the other staff types.
-function assignEntertainerAreas(members: Staff[], orderedTiles: PathTileInfo[], perArea: number, onComplete: () => void): void {
+const assignEntertainerAreas = function assignEntertainerAreas(options: {
+	members: Staff[];
+	orderedTiles: PathTileInfo[];
+	perArea: number;
+	onComplete: () => void;
+}): void {
+	const { members, orderedTiles, perArea, onComplete } = options;
 	clearPatrolAreas(members);
-	if (members.length === 0 || orderedTiles.length === 0 || perArea <= 0) {
+	if (0 === members.length || 0 === orderedTiles.length || 0 >= perArea) {
 		onComplete();
 		return;
 	}
 	const areaCount = Math.max(1, Math.ceil(members.length / perArea));
 	const chunks = chunkTilesForStaffCount(orderedTiles, areaCount);
-	const tasks: { member: Staff; coords: CoordsXY[]; chunk: PathTileInfo[]; anchorTile: PathTileInfo }[] = [];
+	const tasks: {
+		member: Staff;
+		coords: CoordsXY[];
+		chunk: PathTileInfo[];
+		anchorTile: PathTileInfo;
+	}[] = [];
 	let memberIndex = 0;
 	for (let a = 0; a < chunks.length && memberIndex < members.length; a++) {
 		const chunk = chunks[a];
-		const coords = chunk.map(function (t) { return tileToWorldXY(t.x, t.y); });
+		const coords = chunk.map(function toWorldCoords3(t) {
+			return tileToWorldXY(t.x, t.y);
+		});
 		for (let p = 0; p < perArea && memberIndex < members.length; p++, memberIndex++) {
-			tasks.push({ member: members[memberIndex], coords: coords, chunk: chunk, anchorTile: chunk[0] });
+			tasks.push({
+				member: members[memberIndex],
+				coords: coords,
+				chunk: chunk,
+				anchorTile: chunk[0],
+			});
 		}
 	}
 	// Entertainers sharing an area also share a teleport target, so the search
 	// result is cached per chunk - it is resolved lazily inside the batch (see
 	// assignConsecutiveAreas) rather than up-front for every area.
 	const teleportTargetByChunk = new Map<PathTileInfo[], PathTileInfo>();
-	applyInBatches(tasks, function (task) {
-		task.member.patrolArea.add(task.coords);
-		if (isStandingOnTile(task.member, task.anchorTile)) {
-			return;
-		}
-		let teleportTarget = teleportTargetByChunk.get(task.chunk);
-		if (!teleportTarget) {
-			teleportTarget = findNearestPathInOrderedTiles(task.chunk, task.chunk[0].x, task.chunk[0].y) ?? task.chunk[0];
-			teleportTargetByChunk.set(task.chunk, teleportTarget);
-		}
-		teleportStaffToTile(task.member, teleportTarget.x, teleportTarget.y, teleportTarget.baseZ);
-	}, onComplete);
-}
+	applyInBatches(
+		tasks,
+		function assignEntertainerArea(task) {
+			task.member.patrolArea.add(task.coords);
+			if (isStandingOnTile(task.member, task.anchorTile)) {
+				return;
+			}
+			let teleportTarget = teleportTargetByChunk.get(task.chunk);
+			if (!teleportTarget) {
+				teleportTarget =
+					findNearestPathInOrderedTiles(task.chunk, task.chunk[0].x, task.chunk[0].y) ??
+					task.chunk[0];
+				teleportTargetByChunk.set(task.chunk, teleportTarget);
+			}
+			teleportStaffToTile(task.member, {
+				x: teleportTarget.x,
+				y: teleportTarget.y,
+				z: teleportTarget.baseZ,
+			});
+		},
+		onComplete,
+	);
+};
 
 // Finds the footpath element on a tile, if any (mirrors findSurfaceElement).
-function findFootpathElement(tile: Tile): FootpathElement | null {
+const findFootpathElement = function findFootpathElement(tile: Tile): FootpathElement | undefined {
 	for (let e = 0; e < tile.numElements; e++) {
 		const element = tile.getElement(e);
-		if (element.type === "footpath") {
+		if ("footpath" === element.type) {
 			return element;
 		}
 	}
-	return null;
-}
+	return undefined;
+};
 
 // Whether a mechanic can safely be teleported: the API doesn't expose
 // whether a mechanic is currently servicing a ride, so this uses the best
 // available proxy - a mechanic standing on a footpath tile is walking/idle,
 // while one that isn't (e.g. inside a ride's building) is assumed to be
 // busy fixing/inspecting it and is left alone.
-export function canTeleportMechanic(member: Staff): boolean {
+export const canTeleportMechanic = function canTeleportMechanic(member: Staff): boolean {
 	const tileX = Math.floor(member.x / 32);
 	const tileY = Math.floor(member.y / 32);
-	return findFootpathElement(gameMap().getTile(tileX, tileY)) !== null;
-}
+	return undefined !== findFootpathElement(gameMap().getTile(tileX, tileY));
+};
 
 // Assigns mechanics to ride exits: each patrol area consists of just the
 // ride exit tile and the path tile directly in front of it. Rather than
@@ -1057,7 +1297,7 @@ export function canTeleportMechanic(member: Staff): boolean {
 // are hired to cover every ride exit (difference === 0); otherwise does
 // nothing, since there's no sensible way to split a single-tile-pair area
 // further.
-function assignMechanics(onComplete: () => void): void {
+const assignMechanics = function assignMechanics(onComplete: () => void): void {
 	const mechanics = getStaffByType("mechanic");
 	const mechanicsNeeded = mechanicsNeededStore.get();
 	if (mechanics.length !== mechanicsNeeded) {
@@ -1077,111 +1317,132 @@ function assignMechanics(onComplete: () => void): void {
 	clearPatrolAreas(mechanics);
 
 	const rides = gameMap().rides;
-	const tasks: { member: Staff; patrolTiles: CoordsXY[]; teleportTarget: { x: number; y: number; z: number } | null }[] = [];
+	const tasks: {
+		member: Staff;
+		patrolTiles: CoordsXY[];
+		teleportTarget: { x: number; y: number; z: number } | undefined;
+	}[] = [];
 	let mechanicIndex = 0;
 	for (let i = 0; i < rides.length && mechanicIndex < mechanics.length; i++) {
-		if (rides[i].classification !== "ride") {
-			continue;
-		}
-		const stations = rides[i].stations;
-		for (let s = 0; s < stations.length && mechanicIndex < mechanics.length; s++) {
-			const exit = stations[s].exit;
-			if (!isValidStationExit(exit)) {
-				continue;
-			}
+		if ("ride" === rides[i].classification) {
+			const stations = rides[i].stations;
+			for (let s = 0; s < stations.length && mechanicIndex < mechanics.length; s++) {
+				const exit = stations[s].exit;
+				if (isValidStationExit(exit)) {
+					const exitTileX = Math.floor(exit.x / 32);
+					const exitTileY = Math.floor(exit.y / 32);
 
-			const exitTileX = Math.floor(exit.x / 32);
-			const exitTileY = Math.floor(exit.y / 32);
+					let frontTileX: number | undefined = undefined;
+					let frontTileY: number | undefined = undefined;
+					let frontZ: number | undefined = undefined;
 
-			let frontTileX: number | null = null;
-			let frontTileY: number | null = null;
-			let frontZ: number | null = null;
-
-			// The "front" tile is the footpath the exit actually leads onto.
-			// Prefer the exit's stored facing direction (mapped through
-			// DIRECTION_OFFSETS, since the game's direction ordering does not
-			// match CARDINAL_NEIGHBOUR_OFFSETS), then fall back to whichever
-			// cardinal neighbour the engine's PathNavigator reports a footpath
-			// on, in case the stored direction doesn't line up with where the
-			// path really is (e.g. an exit offset from the queue/track).
-			// Deferring to getPathNavigator (rather than manually probing for a
-			// footpath tile element) means the engine's own height/slope rules
-			// decide whether a candidate is really connected, so this keeps
-			// working across exits sitting at the top or bottom of a slope.
-			const preferredOffset = DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
-			const candidateOffsets = [preferredOffset].concat(
-				CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) { return o.x !== preferredOffset.x || o.y !== preferredOffset.y; })
-			);
-			const frontTile = exitToPathTile(exitTileX, exitTileY, exit.z, candidateOffsets);
-			if (frontTile !== null) {
-				frontTileX = frontTile.x;
-				frontTileY = frontTile.y;
-				frontZ = frontTile.z;
-			}
-
-			// The patrol area must always stay just the exit tile plus the
-			// path tile directly in front of it - if no cardinal neighbour has
-			// a footpath, there is no valid "front of the ride" tile to patrol,
-			// so the area is just the exit tile on its own. A distant fallback
-			// tile is only ever used as a teleport destination (below), never
-			// added to the patrol area, since that produced patrol areas far
-			// away from the ride.
-			const member = mechanics[mechanicIndex];
-			const patrolTiles: CoordsXY[] = [tileToWorldXY(exitTileX, exitTileY)];
-			if (frontTileX !== null && frontTileY !== null) {
-				patrolTiles.push(tileToWorldXY(frontTileX, frontTileY));
-			}
-
-			// Only teleport idle mechanics. A busy mechanic (one not standing
-			// on a footpath - see canTeleportMechanic, the best available proxy
-			// for "currently servicing a ride") keeps its correct new patrol
-			// area from above but is not physically dragged off mid-repair; it
-			// will walk to its assigned area once it finishes its current job.
-			let teleportTarget: { x: number; y: number; z: number } | null = null;
-			if (canTeleportMechanic(member)) {
-				// Prefer standing on the front tile, but only if a peep can
-				// actually be placed there (it may carry a bench/lamp/bin);
-				// otherwise drop the mechanic on the nearest placeable footpath.
-				// The patrol area still stays on the real front tile regardless
-				// of where the mechanic is physically placed.
-				let teleportTileX: number | null = null;
-				let teleportTileY: number | null = null;
-				let teleportZ: number | null = null;
-				if (frontTileX !== null && frontTileY !== null && isPeepPlaceableTile(frontTileX, frontTileY)) {
-					teleportTileX = frontTileX;
-					teleportTileY = frontTileY;
-					teleportZ = frontZ;
-				} else {
-					const nearestPathTile = findNearestPathTile(exitTileX, exitTileY);
-					if (nearestPathTile) {
-						teleportTileX = nearestPathTile.x;
-						teleportTileY = nearestPathTile.y;
-						teleportZ = nearestPathTile.baseZ;
+					// The "front" tile is the footpath the exit actually leads onto.
+					// Prefer the exit's stored facing direction (mapped through
+					// DIRECTION_OFFSETS, since the game's direction ordering does not
+					// match CARDINAL_NEIGHBOUR_OFFSETS), then fall back to whichever
+					// cardinal neighbour the engine's PathNavigator reports a footpath
+					// on, in case the stored direction doesn't line up with where the
+					// path really is (e.g. an exit offset from the queue/track).
+					// Deferring to getPathNavigator (rather than manually probing for a
+					// footpath tile element) means the engine's own height/slope rules
+					// decide whether a candidate is really connected, so this keeps
+					// working across exits sitting at the top or bottom of a slope.
+					const preferredOffset =
+						DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
+					const candidateOffsets = [
+						preferredOffset,
+						...CARDINAL_NEIGHBOUR_OFFSETS.filter(function isNotPreferredOffset(o) {
+							return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
+						}),
+					];
+					const frontTile = exitToPathTile(
+						{ x: exitTileX, y: exitTileY, z: exit.z },
+						candidateOffsets,
+					);
+					if (undefined !== frontTile) {
+						frontTileX = frontTile.x;
+						frontTileY = frontTile.y;
+						frontZ = frontTile.z;
 					}
-				}
-				if (teleportTileX !== null && teleportTileY !== null) {
-					teleportTarget = {
-						x: teleportTileX * 32 + 16,
-						y: teleportTileY * 32 + 16,
-						z: teleportZ ?? exit.z
-					};
+
+					// The patrol area must always stay just the exit tile plus the
+					// path tile directly in front of it - if no cardinal neighbour has
+					// a footpath, there is no valid "front of the ride" tile to patrol,
+					// so the area is just the exit tile on its own. A distant fallback
+					// tile is only ever used as a teleport destination (below), never
+					// added to the patrol area, since that produced patrol areas far
+					// away from the ride.
+					const member = mechanics[mechanicIndex];
+					const patrolTiles: CoordsXY[] = [tileToWorldXY(exitTileX, exitTileY)];
+					if (undefined !== frontTileX && undefined !== frontTileY) {
+						patrolTiles.push(tileToWorldXY(frontTileX, frontTileY));
+					}
+
+					// Only teleport idle mechanics. A busy mechanic (one not standing
+					// on a footpath - see canTeleportMechanic, the best available proxy
+					// for "currently servicing a ride") keeps its correct new patrol
+					// area from above but is not physically dragged off mid-repair; it
+					// will walk to its assigned area once it finishes its current job.
+					let teleportTarget: { x: number; y: number; z: number } | undefined = undefined;
+					if (canTeleportMechanic(member)) {
+						// Prefer standing on the front tile, but only if a peep can
+						// actually be placed there (it may carry a bench/lamp/bin);
+						// otherwise drop the mechanic on the nearest placeable footpath.
+						// The patrol area still stays on the real front tile regardless
+						// of where the mechanic is physically placed.
+						let teleportTileX: number | undefined = undefined;
+						let teleportTileY: number | undefined = undefined;
+						let teleportZ: number | undefined = undefined;
+						if (
+							undefined !== frontTileX &&
+							undefined !== frontTileY &&
+							isPeepPlaceableTile(frontTileX, frontTileY)
+						) {
+							teleportTileX = frontTileX;
+							teleportTileY = frontTileY;
+							teleportZ = frontZ;
+						} else {
+							const nearestPathTile = findNearestPathTile(exitTileX, exitTileY);
+							if (nearestPathTile) {
+								teleportTileX = nearestPathTile.x;
+								teleportTileY = nearestPathTile.y;
+								teleportZ = nearestPathTile.baseZ;
+							}
+						}
+						if (undefined !== teleportTileX && undefined !== teleportTileY) {
+							teleportTarget = {
+								x: teleportTileX * 32 + 16,
+								y: teleportTileY * 32 + 16,
+								z: teleportZ ?? exit.z,
+							};
+						}
+					}
+					tasks.push({ member: member, patrolTiles: patrolTiles, teleportTarget: teleportTarget });
+					mechanicIndex++;
 				}
 			}
-			tasks.push({ member: member, patrolTiles: patrolTiles, teleportTarget: teleportTarget });
-			mechanicIndex++;
 		}
 	}
-	applyInBatches(tasks, function (task) {
-		task.member.patrolArea.add(task.patrolTiles);
-		if (task.teleportTarget) {
-			const id = task.member.id;
-			if (id !== null) {
-				teleportQueue.push({ id: id, x: task.teleportTarget.x, y: task.teleportTarget.y, z: task.teleportTarget.z });
-				processTeleportQueue();
+	applyInBatches(
+		tasks,
+		function applyMechanicPatrolTask(task) {
+			task.member.patrolArea.add(task.patrolTiles);
+			if (task.teleportTarget) {
+				const id = task.member.id;
+				if (null !== id) {
+					teleportQueue.push({
+						id: id,
+						x: task.teleportTarget.x,
+						y: task.teleportTarget.y,
+						z: task.teleportTarget.z,
+					});
+					processTeleportQueue();
+				}
 			}
-		}
-	}, onComplete);
-}
+		},
+		onComplete,
+	);
+};
 
 // Information about a valid ride exit that has a footpath tile directly in front
 // of it. Mechanics are only needed (and only assigned, in automatic mode) for
@@ -1198,51 +1459,62 @@ interface StaffedRideExit {
 // Collects every valid ride exit that has a footpath in front of it (see the
 // front-finding logic in assignMechanics for why the facing direction alone isn't
 // reliable - we fall back to any cardinal neighbour with a footpath).
-function getStaffedRideExitFronts(): StaffedRideExit[] {
+const getStaffedRideExitFronts = function getStaffedRideExitFronts(): StaffedRideExit[] {
 	const result: StaffedRideExit[] = [];
 	const rides = gameMap().rides;
 	for (const ride of rides) {
-		if (ride.classification !== "ride") {
-			continue;
-		}
-		const stations = ride.stations;
-		for (const station of stations) {
-			const exit = station.exit;
-			if (!isValidStationExit(exit)) {
-				continue;
-			}
-			const exitTileX = Math.floor(exit.x / 32);
-			const exitTileY = Math.floor(exit.y / 32);
-			const preferredOffset = DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
-			const candidateOffsets = [preferredOffset].concat(
-				CARDINAL_NEIGHBOUR_OFFSETS.filter(function (o) { return o.x !== preferredOffset.x || o.y !== preferredOffset.y; })
-			);
-			for (const offset of candidateOffsets) {
-				const candidateX = exitTileX + offset.x;
-				const candidateY = exitTileY + offset.y;
-				const footpath = findFootpathElement(gameMap().getTile(candidateX, candidateY));
-				if (footpath !== null) {
-					result.push({ exitTileX: exitTileX, exitTileY: exitTileY, frontTileX: candidateX, frontTileY: candidateY, frontFootpath: footpath });
-					break;
+		if ("ride" === ride.classification) {
+			const stations = ride.stations;
+			for (const station of stations) {
+				const exit = station.exit;
+				if (isValidStationExit(exit)) {
+					const exitTileX = Math.floor(exit.x / 32);
+					const exitTileY = Math.floor(exit.y / 32);
+					const preferredOffset =
+						DIRECTION_OFFSETS[exit.direction] || CARDINAL_NEIGHBOUR_OFFSETS[0];
+					const candidateOffsets = [
+						preferredOffset,
+						...CARDINAL_NEIGHBOUR_OFFSETS.filter(function isNotPreferredOffset(o) {
+							return o.x !== preferredOffset.x || o.y !== preferredOffset.y;
+						}),
+					];
+					for (const offset of candidateOffsets) {
+						const candidateX = exitTileX + offset.x;
+						const candidateY = exitTileY + offset.y;
+						const footpath = findFootpathElement(gameMap().getTile(candidateX, candidateY));
+						if (undefined !== footpath) {
+							result.push({
+								exitTileX: exitTileX,
+								exitTileY: exitTileY,
+								frontTileX: candidateX,
+								frontTileY: candidateY,
+								frontFootpath: footpath,
+							});
+							break;
+						}
+					}
 				}
 			}
 		}
 	}
 	return result;
-}
+};
 
 // The number of ride exits that actually have a footpath in front of them. Used
 // by automatic mode to decide how many mechanics are needed; exits without a path
 // yet aren't staffed until a path is added at them.
-export function countStaffedRideExitFronts(): number {
+export const countStaffedRideExitFronts = function countStaffedRideExitFronts(): number {
 	return getStaffedRideExitFronts().length;
-}
+};
 
 // Whether any already-hired mechanic is assigned to (patrolling) the given exit
 // tile - i.e. their patrol area contains that tile. Used by automatic mode to
 // only hire/assign a mechanic for a newly-path-added exit that doesn't have one
 // yet.
-export function isExitAlreadyAssigned(exitTileX: number, exitTileY: number): boolean {
+export const isExitAlreadyAssigned = function isExitAlreadyAssigned(
+	exitTileX: number,
+	exitTileY: number,
+): boolean {
 	const mechanics = getStaffByType("mechanic");
 	for (const member of mechanics) {
 		for (const tile of member.patrolArea.tiles) {
@@ -1252,85 +1524,107 @@ export function isExitAlreadyAssigned(exitTileX: number, exitTileY: number): boo
 		}
 	}
 	return false;
-}
+};
 
 // Automatic-mode mechanics handling: hires a mechanic + assigns a patrol area for
 // every ride exit that has a footpath in front of it and that doesn't already
 // have a mechanic assigned. Exits without a front path, and exits already
 // covered, are left alone so existing staff aren't disturbed.
-export function adjustAndAssignAutoMechanics(onComplete: () => void): void {
+export const adjustAndAssignAutoMechanics = function adjustAndAssignAutoMechanics(
+	onComplete: () => void,
+): void {
 	if (!mechanicsEnabledStore.get()) {
 		onComplete();
 		return;
 	}
 	const staffedExits = getStaffedRideExitFronts();
-	const exitsNeedingMechanic = staffedExits.filter(function (exit) {
+	const exitsNeedingMechanic = staffedExits.filter(function isExitUnassigned(exit) {
 		return !isExitAlreadyAssigned(exit.exitTileX, exit.exitTileY);
 	});
-	if (exitsNeedingMechanic.length === 0) {
+	if (0 === exitsNeedingMechanic.length) {
 		onComplete();
 		return;
 	}
 	const currentMechanics = getStaffByType("mechanic");
-	const currentFree = currentMechanics.length - currentMechanics.filter(function (m) {
-		return m.patrolArea.tiles.length > 0;
-	}).length;
+	const currentFree =
+		currentMechanics.length -
+		currentMechanics.filter(function hasPatrolTiles(m) {
+			return 0 < m.patrolArea.tiles.length;
+		}).length;
 	const shortfall = Math.max(0, exitsNeedingMechanic.length - currentFree);
-	if (shortfall > 0) {
+	if (0 < shortfall) {
 		let hireDone = false;
 		setStatus(t("status.assigningMechanics"));
-		hireStaff(STAFF_TYPE_ID_MECHANIC, MECHANIC_ORDERS_DEFAULT, shortfall, function () {
-			if (hireDone) {
-				return;
-			}
-			hireDone = true;
-			assignAutoMechanicAreas(exitsNeedingMechanic, onComplete);
-		});
+		hireStaff(
+			{
+				staffTypeId: STAFF_TYPE_ID_MECHANIC,
+				orders: MECHANIC_ORDERS_DEFAULT,
+				countToHire: shortfall,
+			},
+			function onMechanicsHired() {
+				if (hireDone) {
+					return;
+				}
+				hireDone = true;
+				assignAutoMechanicAreas(exitsNeedingMechanic, onComplete);
+			},
+		);
 	} else {
 		assignAutoMechanicAreas(exitsNeedingMechanic, onComplete);
 	}
-}
+};
 
 // Assigns a patrol area (exit tile + front path tile) to a mechanic for each of
 // the given needed exits. Already-assigned mechanics keep their existing areas;
 // only unassigned (free) mechanics are reused, and any shortfall is hired by the
 // caller. Batching the work across ticks avoids a game freeze.
-function assignAutoMechanicAreas(neededExits: StaffedRideExit[], onComplete: () => void): void {
+const assignAutoMechanicAreas = function assignAutoMechanicAreas(
+	neededExits: StaffedRideExit[],
+	onComplete: () => void,
+): void {
 	const mechanics = getStaffByType("mechanic");
-	const freeMechanics = mechanics.filter(function (m) {
-		return m.patrolArea.tiles.length === 0;
+	const freeMechanics = mechanics.filter(function hasNoPatrolTiles(m) {
+		return 0 === m.patrolArea.tiles.length;
 	});
-	const tasks: { member: Staff; exit: StaffedRideExit }[] = neededExits.map(function (exit, i) {
-		return { member: freeMechanics[i % freeMechanics.length], exit: exit };
-	});
-	applyInBatches(tasks, function (task) {
-		const patrolTiles: CoordsXY[] = [tileToWorldXY(task.exit.exitTileX, task.exit.exitTileY)];
-		patrolTiles.push(tileToWorldXY(task.exit.frontTileX, task.exit.frontTileY));
-		task.member.patrolArea.add(patrolTiles);
-		if (canTeleportMechanic(task.member)) {
-			const id = task.member.id;
-			if (id !== null) {
-				teleportQueue.push({
-					id: id,
-					x: task.exit.frontTileX * 32 + 16,
-					y: task.exit.frontTileY * 32 + 16,
-					z: task.exit.frontFootpath.baseZ
-				});
-				processTeleportQueue();
+	const tasks: { member: Staff; exit: StaffedRideExit }[] = neededExits.map(
+		function toMechanicTask(exit, i) {
+			return { member: freeMechanics[i % freeMechanics.length], exit: exit };
+		},
+	);
+	applyInBatches(
+		tasks,
+		function applyMechanicAreaTask(task) {
+			const patrolTiles: CoordsXY[] = [tileToWorldXY(task.exit.exitTileX, task.exit.exitTileY)];
+			patrolTiles.push(tileToWorldXY(task.exit.frontTileX, task.exit.frontTileY));
+			task.member.patrolArea.add(patrolTiles);
+			if (canTeleportMechanic(task.member)) {
+				const id = task.member.id;
+				if (null !== id) {
+					teleportQueue.push({
+						id: id,
+						x: task.exit.frontTileX * 32 + 16,
+						y: task.exit.frontTileY * 32 + 16,
+						z: task.exit.frontFootpath.baseZ,
+					});
+					processTeleportQueue();
+				}
 			}
-		}
-	}, onComplete);
-}
+		},
+		onComplete,
+	);
+};
 
 // Builds the ordered tile list entertainers patrol: path tiles, plus queue
 // tiles too if the "Queue" toggle is on, preserving the original BFS
 // visitation order across both.
-function getEntertainerTiles(includeQueue: boolean): PathTileInfo[] {
+const getEntertainerTiles = function getEntertainerTiles(includeQueue: boolean): PathTileInfo[] {
 	if (includeQueue) {
 		return lastAllPathTiles;
 	}
-	return lastAllPathTiles.filter(function (t) { return !t.isQueue; });
-}
+	return lastAllPathTiles.filter(function isNotQueueTile(t) {
+		return !t.isQueue;
+	});
+};
 
 // Recomputes which currently-hired handymen should be cleanup vs gardening
 // handymen and (re-)applies their orders accordingly. A handyman's
@@ -1342,9 +1636,11 @@ function getEntertainerTiles(includeQueue: boolean): PathTileInfo[] {
 // handyman - not just newly hired ones - every time Assign runs, splitting
 // the currently hired handymen (oldest first, for a stable/consistent
 // result) between cleanup and gardening in proportion to the needed counts.
-function reassignHandymenOrders(): void {
-	const handymen = getStaffByType("handyman").slice().sort(function (a, b) { return (a.id ?? 0) - (b.id ?? 0); });
-	if (handymen.length === 0) {
+const reassignHandymenOrders = function reassignHandymenOrders(): void {
+	const handymen = [...getStaffByType("handyman")].sort(function byIdAscending(a, b) {
+		return (a.id ?? 0) - (b.id ?? 0);
+	});
+	if (0 === handymen.length) {
 		return;
 	}
 
@@ -1352,8 +1648,8 @@ function reassignHandymenOrders(): void {
 	const gardeningNeeded = handymenGardeningNeededStore.get();
 	const totalNeeded = cleanupNeeded + gardeningNeeded;
 
-	let cleanupCount: number;
-	if (totalNeeded <= 0) {
+	let cleanupCount: number = handymen.length;
+	if (0 >= totalNeeded) {
 		cleanupCount = handymen.length;
 	} else {
 		cleanupCount = Math.round(handymen.length * (cleanupNeeded / totalNeeded));
@@ -1362,12 +1658,15 @@ function reassignHandymenOrders(): void {
 
 	for (let i = 0; i < handymen.length; i++) {
 		const member = handymen[i] as Handyman;
-		const desiredOrders = i < cleanupCount ? HANDYMAN_ORDERS_CLEANUP : HANDYMAN_ORDERS_GARDENING;
+		let desiredOrders = HANDYMAN_ORDERS_GARDENING;
+		if (i < cleanupCount) {
+			desiredOrders = HANDYMAN_ORDERS_CLEANUP;
+		}
 		if (member.orders !== desiredOrders) {
 			member.orders = desiredOrders;
 		}
 	}
-}
+};
 
 // Handles the "Assign" button: (re-)builds every staff type's patrol areas
 // from the most recently scanned tiles, and teleports one staff member to
@@ -1377,27 +1676,29 @@ function reassignHandymenOrders(): void {
 // Used by both the manual Assign button and automatic mode; mechanics are handled
 // separately (manual: assignMechanics; auto: adjustAndAssignAutoMechanics) so auto
 // mode never clears/re-assigns already-placed mechanics.
-export function assignHandymenGuardsEntertainers(onComplete: () => void): void {
-	function next(): void {
+export const assignHandymenGuardsEntertainers = function assignHandymenGuardsEntertainers(
+	onComplete: () => void,
+): void {
+	const next = function next(): void {
 		stepIndex++;
 		if (stepIndex < steps.length) {
 			steps[stepIndex]();
 		} else {
 			onComplete();
 		}
-	}
+	};
 
 	const steps: (() => void)[] = [
-		function () {
+		function assignHandymenStep() {
 			if (!handymenEnabledStore.get()) {
 				next();
 				return;
 			}
 			reassignHandymenOrders();
 			let remaining = 2;
-			const done: () => void = function () {
+			const done: () => void = function done() {
 				remaining--;
-				if (remaining <= 0) {
+				if (0 >= remaining) {
 					setProgress(PROGRESS_HANDYMEN_DONE);
 					next();
 				}
@@ -1406,42 +1707,53 @@ export function assignHandymenGuardsEntertainers(onComplete: () => void): void {
 			assignConsecutiveAreas(getHandymenByPurpose("cleanup"), lastAllPathTiles, done);
 			assignGardeningAreas(getHandymenByPurpose("gardening"), done);
 		},
-		function () {
+		function assignGuardsStep() {
 			if (guardsEnabledStore.get()) {
 				setStatus(t("status.assigningGuards"));
-				assignConsecutiveAreas(getStaffByType("security"), lastAllPathTiles.filter(function (t) { return !t.isQueue; }), function () {
-					setProgress(PROGRESS_GUARDS_DONE);
-					next();
-				});
+				assignConsecutiveAreas(
+					getStaffByType("security"),
+					lastAllPathTiles.filter(function isNotQueue(t) {
+						return !t.isQueue;
+					}),
+					function onGuardsAssigned() {
+						setProgress(PROGRESS_GUARDS_DONE);
+						next();
+					},
+				);
 			} else {
 				setProgress(PROGRESS_GUARDS_DONE);
 				next();
 			}
 		},
-		function () {
+		function assignEntertainersStep() {
 			if (entertainersEnabledStore.get()) {
 				setStatus(t("status.assigningEntertainers"));
-				assignEntertainerAreas(getStaffByType("entertainer"), getEntertainerTiles(entertainersIncludeQueueStore.get()), entertainersPerAreaStore.get(), function () {
-					setProgress(PROGRESS_ENTERTAINERS_DONE);
-					next();
+				assignEntertainerAreas({
+					members: getStaffByType("entertainer"),
+					orderedTiles: getEntertainerTiles(entertainersIncludeQueueStore.get()),
+					perArea: entertainersPerAreaStore.get(),
+					onComplete: function onEntertainersAssigned() {
+						setProgress(PROGRESS_ENTERTAINERS_DONE);
+						next();
+					},
 				});
 			} else {
 				setProgress(PROGRESS_ENTERTAINERS_DONE);
 				next();
 			}
-		}
+		},
 	];
 
 	let stepIndex = 0;
 	steps[0]();
-}
+};
 
-export function assignStaff(): void {
-	const finish: () => void = function () {
+export const assignStaff = function assignStaff(): void {
+	const finish: () => void = function finish() {
 		setProgress(1);
 		setStatus(t("status.done"));
 	};
-	assignHandymenGuardsEntertainers(function () {
+	assignHandymenGuardsEntertainers(function onHandymenGuardsEntertainersAssigned() {
 		if (mechanicsEnabledStore.get()) {
 			setStatus(t("status.assigningMechanics"));
 			assignMechanics(finish);
@@ -1449,5 +1761,4 @@ export function assignStaff(): void {
 			finish();
 		}
 	});
-}
-
+};
