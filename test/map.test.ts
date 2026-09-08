@@ -192,8 +192,8 @@ describe("surfaceFenceBlocksWalking", () => {
 			fakeMap(
 				{ x: 8, y: 8 },
 				{
-					"1,1": { surface: { baseHeight: 20, parkFences: 0xf } },
-					"2,2": { surface: { baseHeight: 20, parkFences: 0xf } },
+					"1,1": { surface: { baseHeight: 20, parkFences: 15 } },
+					"2,2": { surface: { baseHeight: 20, parkFences: 15 } },
 				},
 			),
 		);

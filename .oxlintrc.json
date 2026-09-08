@@ -29,7 +29,7 @@
     "eslint/sort-imports": "off",
     "unicorn/filename-case": "off",
     "unicorn/no-null": "off",
-    "unicorn/number-literal-case": "off"
+    "unicorn/number-literal-case": "error"
   },
   "env": {
     "es2023": true,
