@@ -87,7 +87,7 @@ export class FakeContext implements GameContext {
 		let ticks = 0;
 		while (0 < this.timers.size) {
 			if (++ticks > maxTicks) {
-				throw new Error("timer queue did not drain within " + String(maxTicks) + " ticks");
+				throw new Error(`timer queue did not drain within ${maxTicks} ticks`);
 			}
 			this.runPendingTimers();
 		}
@@ -103,9 +103,9 @@ export class FakeContext implements GameContext {
 export const fakeObjects = function fakeObjects(identifiers: string[]): GameObjects {
 	return {
 		getAllObjects(): LoadedObject[] {
-			return identifiers.map((identifier, index) => {
-				return { index: index, identifier: identifier } as unknown as LoadedObject;
-			});
+			return identifiers.map(
+				(identifier, index) => ({ index, identifier }) as unknown as LoadedObject,
+			);
 		},
 	};
 };

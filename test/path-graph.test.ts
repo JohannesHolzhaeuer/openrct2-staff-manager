@@ -85,7 +85,7 @@ describe("buildNetwork", () => {
 		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
 			return true;
 		});
-		expect([...graph.nodes.keys()].sort()).toEqual(["1,1", "2,1", "3,1"]);
+		expect([...graph.nodes.keys()].toSorted()).toEqual(["1,1", "2,1", "3,1"]);
 	});
 
 	it("respects the isIncluded filter (e.g. excluding queue tiles)", () => {
@@ -145,7 +145,7 @@ describe("splitIntoZones", () => {
 		});
 		const zones = splitIntoZones(graph, 2);
 		expect(zones.length).toBe(2);
-		const allKeys = zones.flat().sort();
+		const allKeys = zones.flat().toSorted();
 		expect(allKeys).toEqual(["1,1", "2,1", "3,1", "4,1"]);
 		// Every zone must itself be connected within the source graph.
 		for (const zone of zones) {

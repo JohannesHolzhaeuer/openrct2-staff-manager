@@ -19,7 +19,7 @@ import {
 	worldToTileX,
 } from "./staff";
 import {
-	PathTileInfo,
+	type PathTileInfo,
 	footpathsConnectTiles,
 	isGardenTile,
 	isQueueTile,

@@ -180,7 +180,7 @@ describe("chunkTilesForStaffCount", () => {
 		}
 		const chunks = chunkTilesForStaffCount(tiles, 3);
 		expect(chunks.length).toBe(3);
-		const flat = chunks.map((c) => c.map((t) => t.x).join(",")).sort();
+		const flat = chunks.map((c) => c.map((t) => t.x).join(",")).toSorted();
 		expect(flat).toEqual(["0,1", "2,3", "4,5"]);
 	});
 	it("keeps a single connected component in one chunk when staff count is 1", () => {

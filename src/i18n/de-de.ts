@@ -1,4 +1,4 @@
-import { Translations } from "./types";
+import type { Translations } from "./types";
 
 // German dictionary. Typed to the same shape as en-GB, so a missing or
 // mistyped key fails the TypeScript build.

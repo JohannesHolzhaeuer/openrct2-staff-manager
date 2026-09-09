@@ -30,7 +30,7 @@ const dedupeTiles = function dedupeTiles(
 	const seen = new Set<string>();
 	const result: { x: number; y: number; kind: "path" | "queue" | "land" }[] = [];
 	for (const tile of tiles) {
-		const key = String(tile.x) + ":" + String(tile.y) + ":" + tile.kind;
+		const key = `${tile.x}:${tile.y}:${tile.kind}`;
 		if (!seen.has(key)) {
 			seen.add(key);
 			result.push(tile);

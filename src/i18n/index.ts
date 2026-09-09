@@ -1,4 +1,4 @@
-import { TranslationKey, Translations } from "./types";
+import type { TranslationKey, Translations } from "./types";
 import { deDE } from "./de-de";
 import { enGB } from "./en-gb";
 
