@@ -38,12 +38,15 @@ const windowsDocumentsDir = function windowsDocumentsDir(): string {
 const defaultPluginDir = function defaultPluginDir(): string {
 	const home = os.homedir();
 	switch (process.platform) {
-		case "win32":
+		case "win32": {
 			return path.join(windowsDocumentsDir(), "OpenRCT2", "plugin");
-		case "darwin":
+		}
+		case "darwin": {
 			return path.join(home, "Library", "Application Support", "OpenRCT2", "plugin");
-		default:
+		}
+		default: {
 			return path.join(home, ".config", "OpenRCT2", "plugin");
+		}
 	}
 };
 

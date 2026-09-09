@@ -1,4 +1,4 @@
-import { Translations } from "./types";
+import type { Translations } from "./types";
 
 // Canonical/fallback dictionary. Every other language must implement the
 // exact same shape (Translations), so the compiler catches missing keys.

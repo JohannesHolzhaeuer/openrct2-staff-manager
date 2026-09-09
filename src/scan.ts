@@ -37,7 +37,7 @@ export interface PathTileInfo {
 }
 
 export const tileKey = function tileKey(x: number, y: number): string {
-	return String(x) + "," + String(y);
+	return `${x},${y}`;
 };
 
 // Cardinal neighbour offsets used to walk the footpath network tile by tile.
@@ -79,16 +79,12 @@ const getRideEntranceExitTileKeys = function getRideEntranceExitTileKeys(): Set<
 			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			if (station.entrance) {
 				tileKeys.add(
-					String(Math.floor(station.entrance.x / 32)) +
-						"," +
-						String(Math.floor(station.entrance.y / 32)),
+					`${Math.floor(station.entrance.x / 32)},${Math.floor(station.entrance.y / 32)}`,
 				);
 			}
 			// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 			if (station.exit) {
-				tileKeys.add(
-					String(Math.floor(station.exit.x / 32)) + "," + String(Math.floor(station.exit.y / 32)),
-				);
+				tileKeys.add(`${Math.floor(station.exit.x / 32)},${Math.floor(station.exit.y / 32)}`);
 			}
 		}
 	}
@@ -103,7 +99,7 @@ export const findParkEntranceTiles = function findParkEntranceTiles(): CoordsXY[
 	const parkEntranceTiles: CoordsXY[] = [];
 	for (let x = 0; x < mapSize.x; x++) {
 		for (let y = 0; y < mapSize.y; y++) {
-			const tileKey = String(x) + "," + String(y);
+			const tileKey = `${x},${y}`;
 			if (!rideEntranceExitTileKeys.has(tileKey)) {
 				const tile = gameMap().getTile(x, y);
 				for (let e = 0; e < tile.numElements; e++) {
@@ -489,8 +485,7 @@ const scanFootpathNetworkFromEntrance = function scanFootpathNetworkFromEntrance
 					undefined === current.z ||
 					footpathEdgeZ(footpath, current.fromDirection) === current.z
 				) {
-					const nodeKey =
-						String(current.x) + "," + String(current.y) + "," + String(footpath.baseZ);
+					const nodeKey = `${current.x},${current.y},${footpath.baseZ}`;
 					if (!visited.has(nodeKey)) {
 						visited.add(nodeKey);
 

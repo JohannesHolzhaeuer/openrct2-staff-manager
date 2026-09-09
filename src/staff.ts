@@ -1,7 +1,7 @@
 import {
 	CARDINAL_NEIGHBOUR_OFFSETS,
 	DIRECTION_OFFSETS,
-	PathTileInfo,
+	type PathTileInfo,
 	isValidStationExit,
 	lastAllPathTiles,
 	lastGardenAreas,
@@ -112,7 +112,7 @@ const collectFireOldestStaffTasks = function collectFireOldestStaffTasks(
 	countToFire: number,
 ): StaffAdjustTask[] {
 	const tasks: StaffAdjustTask[] = [];
-	const sorted = [...members].sort(function byEntityIdAscending(a, b) {
+	const sorted = [...members].toSorted(function byEntityIdAscending(a, b) {
 		return (a.id ?? 0) - (b.id ?? 0);
 	});
 	for (let i = 0; i < countToFire && i < sorted.length; i++) {
@@ -842,7 +842,7 @@ const tilesByDistance = function tilesByDistance(
 	x: number,
 	y: number,
 ): PathTileInfo[] {
-	return [...tiles].sort(function byManhattanDistance(a, b) {
+	return [...tiles].toSorted(function byManhattanDistance(a, b) {
 		return Math.abs(a.x - x) + Math.abs(a.y - y) - (Math.abs(b.x - x) + Math.abs(b.y - y));
 	});
 };
@@ -1003,7 +1003,7 @@ export const decideAreaAction = function decideAreaAction(options: {
 	for (let i = 0; i < areas.length; i++) {
 		const area = areas[i];
 		for (const tile of area) {
-			const key = String(worldToTileX(tile.x)) + "," + String(worldToTileX(tile.y));
+			const key = `${worldToTileX(tile.x)},${worldToTileX(tile.y)}`;
 			// Keep the first area that claims a tile, matching the previous
 			// first-match-wins iteration order.
 			if (!areaIndexByTileKey.has(key)) {
@@ -1012,14 +1012,14 @@ export const decideAreaAction = function decideAreaAction(options: {
 		}
 	}
 	// 1. Already covered?
-	if (areaIndexByTileKey.has(String(newTile.x) + "," + String(newTile.y))) {
+	if (areaIndexByTileKey.has(`${newTile.x},${newTile.y}`)) {
 		return { action: "covered" };
 	}
 	// 2. Adjacent to an existing area that's under the cap -> enlarge it.
 	for (const offset of ADJACENT_OFFSETS) {
 		const neighbourX = newTile.x + worldToTileX(offset.x);
 		const neighbourY = newTile.y + worldToTileX(offset.y);
-		const areaIndex = areaIndexByTileKey.get(String(neighbourX) + "," + String(neighbourY));
+		const areaIndex = areaIndexByTileKey.get(`${neighbourX},${neighbourY}`);
 		if (
 			areaIndex !== undefined &&
 			(!connect ||
@@ -1128,7 +1128,7 @@ const assignGardeningAreas = function assignGardeningAreas(
 			.map(function indexOf(_, i) {
 				return i;
 			})
-			.sort(function byRemainderDescending(a, b) {
+			.toSorted(function byRemainderDescending(a, b) {
 				return allocations[b] - counts[b] - (allocations[a] - counts[a]);
 			});
 		for (let i = 0; i < order.length && 0 < remainder; i++) {
@@ -1145,7 +1145,7 @@ const assignGardeningAreas = function assignGardeningAreas(
 				.map(function indexOf2(_, i) {
 					return i;
 				})
-				.sort(function byComponentSizeDescending(a, b) {
+				.toSorted(function byComponentSizeDescending(a, b) {
 					return workSize(components[b]) - workSize(components[a]);
 				});
 			const newCounts = components.map(function zero() {
@@ -1637,7 +1637,7 @@ const getEntertainerTiles = function getEntertainerTiles(includeQueue: boolean):
 // the currently hired handymen (oldest first, for a stable/consistent
 // result) between cleanup and gardening in proportion to the needed counts.
 const reassignHandymenOrders = function reassignHandymenOrders(): void {
-	const handymen = [...getStaffByType("handyman")].sort(function byIdAscending(a, b) {
+	const handymen = getStaffByType("handyman").toSorted(function byIdAscending(a, b) {
 		return (a.id ?? 0) - (b.id ?? 0);
 	});
 	if (0 === handymen.length) {
@@ -1649,9 +1649,7 @@ const reassignHandymenOrders = function reassignHandymenOrders(): void {
 	const totalNeeded = cleanupNeeded + gardeningNeeded;
 
 	let cleanupCount: number = handymen.length;
-	if (0 >= totalNeeded) {
-		cleanupCount = handymen.length;
-	} else {
+	if (0 < totalNeeded) {
 		cleanupCount = Math.round(handymen.length * (cleanupNeeded / totalNeeded));
 	}
 	cleanupCount = Math.max(0, Math.min(handymen.length, cleanupCount));

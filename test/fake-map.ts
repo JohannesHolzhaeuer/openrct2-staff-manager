@@ -64,9 +64,7 @@ export const fakeMap = function fakeMap(
 	const rides = extras.rides ?? [];
 	const staff = extras.staff ?? [];
 	const footpathsAt = function footpathsAt(x: number, y: number): FakeFootpath[] {
-		const spec = (tiles as { [key: string]: FakeTileSpec | undefined })[
-			String(x) + "," + String(y)
-		];
+		const spec = (tiles as { [key: string]: FakeTileSpec | undefined })[`${x},${y}`];
 		return spec?.footpaths ?? [];
 	};
 
@@ -154,7 +152,7 @@ export const fakeMap = function fakeMap(
 			return staff;
 		},
 		getTile(x: number, y: number): Tile {
-			const elements = toElements(tiles[String(x) + "," + String(y)] ?? {});
+			const elements = toElements(tiles[`${x},${y}`] ?? {});
 			return {
 				x: x,
 				y: y,

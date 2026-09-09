@@ -1,12 +1,12 @@
 import {
-	Bindable,
+	type Bindable,
 	Colour,
-	FlexiblePosition,
-	Scale,
-	Store,
-	WidgetCreator,
-	WindowTemplate,
-	WritableStore,
+	type FlexiblePosition,
+	type Scale,
+	type Store,
+	type WidgetCreator,
+	type WindowTemplate,
+	type WritableStore,
 	box,
 	button,
 	checkbox,
@@ -816,8 +816,7 @@ const staffManagerWindowTemplate = function staffManagerWindowTemplate(): Window
 										width: AUTO_ROW_HEIGHT,
 										height: AUTO_ROW_HEIGHT,
 										onDraw: function onDraw(g) {
-											const on = autoEnabledStore.get();
-											if (on) {
+											if (autoEnabledStore.get()) {
 												g.colour = Colour.BrightGreen;
 											} else {
 												g.colour = Colour.SaturatedRed;
