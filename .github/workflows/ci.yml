@@ -116,6 +116,17 @@ jobs:
       - name: Run coverage
         run: npm run coverage
 
+      - name: Upload coverage to Codecov
+        # Requires the Codecov GitHub app (or a CODECOV_TOKEN secret) to be
+        # enabled on this repo; until then this step is skipped and the
+        # badge shows as "unknown".
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/lcov.info
+          fail_ci_if_error: false
+
   build:
     name: Build
     runs-on: ubuntu-latest

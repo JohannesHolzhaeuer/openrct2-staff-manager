@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/actions/workflows/ci.yml)
 [![Release](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/actions/workflows/release.yml/badge.svg)](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/actions/workflows/release.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/JohannesHolzhaeuer/openrct2-staff-manager/main)](https://app.codecov.io/gh/JohannesHolzhaeuer/openrct2-staff-manager)
+[![Downloads](https://img.shields.io/github/downloads/JohannesHolzhaeuer/openrct2-staff-manager/total)](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/releases)
 
 ![Staff Manager screenshot](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/raw/main/screenshot.png)
 
