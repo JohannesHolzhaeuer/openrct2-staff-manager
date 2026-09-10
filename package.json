@@ -8,7 +8,7 @@
   "main": "dist/staff-manager.js",
   "scripts": {
     "build": "npm run verify && npm run bundle && node deploy.ts",
-    "verify": "npm run format:check && npm run lint && npm run test && npm run typecheck",
+    "verify": "npm run format:check && npm run lint && npm run test && npm run coverage && npm run typecheck",
     "dev": "npm run bundle && node deploy.ts",
     "bundle": "esbuild src/main.ts --bundle --outfile=dist/staff-manager.js --format=iife --target=es2023",
     "lint": "oxlint .",
