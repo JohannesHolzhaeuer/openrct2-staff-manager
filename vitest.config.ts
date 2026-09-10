@@ -8,17 +8,19 @@ export default defineConfig({
 		reporters: "dot",
 		coverage: {
 			provider: "v8",
+			// "text" for the terminal summary and "lcov" so Codecov can digest
+			// it (Codecov writes the PR comment/status from the uploaded report).
 			reporter: ["text", "lcov"],
 			include: ["src/**/*.ts"],
 			exclude: ["src/i18n/**"],
+			// Floors matching current coverage, to be raised as more tests are
+			// added. Enforced by vitest: a below-threshold run exits non-zero
+			// and fails the build/CI. scan.ts, staff.ts and staff-auto.ts
+			// remain the largest gaps.
 			thresholds: {
-				// Baseline floor matching current coverage, to be raised as more
-				// tests are added. auto.ts, main.ts, store.ts and ui.ts are now well
-				// covered; scan.ts, staff.ts and staff-auto.ts remain the largest
-				// gaps.
-				lines: 44,
-				statements: 43,
-				functions: 51,
+				lines: 50,
+				statements: 50,
+				functions: 55,
 				branches: 35,
 			},
 		},

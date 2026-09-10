@@ -114,18 +114,20 @@ jobs:
         run: npm test
 
       - name: Run coverage
+        # Thresholds are enforced in vitest.config.ts, so this fails the job
+        # when coverage drops below the configured floors.
         run: npm run coverage
 
       - name: Upload coverage to Codecov
         # Requires the Codecov GitHub app (or a CODECOV_TOKEN secret) to be
-        # enabled on this repo; until then this step is skipped and the
-        # badge shows as "unknown".
-        if: ${{ !cancelled() }}
+        # enabled on this repo. `fail_ci_if_error: true` makes status/comment
+        # configuration problems surface as a failed check instead of being
+        # silently skipped.
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/lcov.info
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   build:
     name: Build
