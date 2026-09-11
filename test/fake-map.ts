@@ -3,10 +3,14 @@ import type { GameMap } from "../src/game";
 
 export interface FakeSurface {
 	baseHeight: number;
+	baseZ?: number;
 	waterHeight?: number;
 	parkFences?: number;
 	surfaceStyle?: number;
+	// OpenRCT2's SurfaceElement masks land ownership into `ownership` bit 0.
+	// The plugin checks `hasOwnership`, so the fake exposes both.
 	ownership?: number;
+	hasOwnership?: boolean;
 }
 
 export interface FakeFootpath {
@@ -23,6 +27,20 @@ export interface FakeTileSpec {
 	// Extra element types on the tile (e.g. "small_scenery", "track"), used to
 	// exercise the checks that reject obstructed tiles.
 	others?: TileElementType[];
+	// Small scenery placed on the tile (for waterable-scenery checks), with the
+	// loaded object index and optional baseZ height.
+	smallScenery?: { object: number; baseZ?: number }[];
+	// Full custom tile elements (e.g. park-entrance elements carrying a
+	// `sequence`), pushed verbatim rather than reduced to `{ type }`.
+	customElements?: TileElement[];
+}
+
+// A fake loaded small scenery object plus its flags. Used instead of the bare
+// "small_scenery" element array because the waterable check reads the object's
+// flags (SMALL_SCENERY_FLAG_CAN_BE_WATERED), not just the element.
+export interface FakeSmallSceneryObject {
+	index: number;
+	flags: number;
 }
 
 const toElements = function toElements(spec: FakeTileSpec): TileElement[] {
@@ -31,10 +49,12 @@ const toElements = function toElements(spec: FakeTileSpec): TileElement[] {
 		elements.push({
 			type: "surface",
 			baseHeight: spec.surface.baseHeight,
+			baseZ: spec.surface.baseZ ?? 0,
 			waterHeight: spec.surface.waterHeight ?? 0,
 			parkFences: spec.surface.parkFences ?? 0,
 			surfaceStyle: spec.surface.surfaceStyle ?? 0,
 			ownership: spec.surface.ownership ?? 0,
+			hasOwnership: spec.surface.hasOwnership ?? 0 != 0,
 		} as unknown as TileElement);
 	}
 	for (const footpath of spec.footpaths ?? []) {
@@ -47,8 +67,18 @@ const toElements = function toElements(spec: FakeTileSpec): TileElement[] {
 			isGhost: footpath.isGhost ?? false,
 		} as unknown as TileElement);
 	}
+	for (const scenery of spec.smallScenery ?? []) {
+		elements.push({
+			type: "small_scenery",
+			object: scenery.object,
+			baseZ: scenery.baseZ ?? 0,
+		} as unknown as TileElement);
+	}
 	for (const type of spec.others ?? []) {
 		elements.push({ type: type } as unknown as TileElement);
+	}
+	for (const element of spec.customElements ?? []) {
+		elements.push(element);
 	}
 	return elements;
 };
@@ -169,5 +199,61 @@ export const fakeMap = function fakeMap(
 // A minimal staff entity for getAllEntities("staff") based lookups. `orders`
 // only matters for handymen, where it decides cleanup vs gardening.
 export const fakeStaff = function fakeStaff(id: number, staffType: StaffType, orders = 0): Staff {
-	return { id: id, staffType: staffType, orders: orders } as unknown as Staff;
+	return {
+		id: id,
+		staffType: staffType,
+		orders: orders,
+		x: 0,
+		y: 0,
+		z: 0,
+		patrolArea: makeFakePatrolArea(),
+	} as unknown as Staff;
+};
+
+const makeFakePatrolArea = function makeFakePatrolArea(
+	initialTiles: { x: number; y: number }[] = [],
+): { tiles: CoordsXY[]; add: (tiles: CoordsXY[]) => void; clear: () => void } {
+	const tiles: CoordsXY[] = [...initialTiles];
+	return {
+		tiles: tiles,
+		add(newTiles: CoordsXY[]): void {
+			for (const t of newTiles) {
+				tiles.push(t);
+			}
+		},
+		clear(): void {
+			tiles.length = 0;
+		},
+	};
+};
+
+// A minimal staff entity with a populated patrol area.
+export const fakeStaffWithPatrol = function fakeStaffWithPatrol(
+	id: number,
+	staffType: StaffType,
+	orders = 0,
+	initialTiles: { x: number; y: number }[] = [],
+): Staff {
+	return {
+		...fakeStaff(id, staffType, orders),
+		patrolArea: makeFakePatrolArea(initialTiles),
+	} as unknown as Staff;
+};
+
+// A minimal ride with the given stations (only classification and station
+// entrance/exit tiles are read).
+export const fakeRide = function fakeRide(
+	classification: "ride" | "shop",
+	stations: { entrance?: CoordsXYZD; exit?: CoordsXYZD | null }[] = [],
+): Ride {
+	return {
+		classification: classification,
+		stations: stations.map(
+			(s) =>
+				({
+					entrance: s.entrance,
+					exit: s.exit,
+				}) as unknown as RideStation,
+		),
+	} as unknown as Ride;
 };

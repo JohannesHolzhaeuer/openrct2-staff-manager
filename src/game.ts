@@ -101,14 +101,21 @@ export const resetGameContext = function resetGameContext(): void {
 };
 
 // --- Object manager -----------------------------------------------------------
-// Only the loaded-object lookup used to pick staff costumes.
+// Routes the bare `objectManager` global (see OpenRCT2's ObjectManager.d.ts)
+// through the same replaceable seam as map/context, so the loaded-object
+// lookups used by scan.ts (grass surface styles, waterable scenery) and
+// staff.ts (entertainer costumes) are testable without the OpenRCT2 global.
 export interface GameObjects {
-	getAllObjects(type: "peep_animations"): LoadedObject[];
+	getAllObjects(type: "peep_animations" | "terrain_surface"): LoadedObject[];
+	getObject(type: "small_scenery", index: number): SmallSceneryObject;
 }
 
 const realGameObjects: GameObjects = {
-	getAllObjects(type: "peep_animations"): LoadedObject[] {
+	getAllObjects(type: "peep_animations" | "terrain_surface"): LoadedObject[] {
 		return objectManager.getAllObjects(type);
+	},
+	getObject(type: "small_scenery", index: number): SmallSceneryObject {
+		return objectManager.getObject(type, index);
 	},
 };
 

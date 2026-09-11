@@ -115,6 +115,13 @@ const autoAreasByPurpose = new Map<string, AutoArea[]>();
 // are serialized one at a time instead of one per tile.
 const autoHireForPurpose = new Map<string, boolean>();
 
+// Test seam only. Production code must never call this. Clears the in-memory
+// auto-area records so a fresh test can seed them from its own staff roster.
+export const resetAutoAreas = function resetAutoAreas(): void {
+	autoAreasByPurpose.clear();
+	autoHireForPurpose.clear();
+};
+
 const autoAreas = function autoAreas(group: AutoGroup): AutoArea[] {
 	let list = autoAreasByPurpose.get(group.purpose);
 	if (!list) {
