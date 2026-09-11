@@ -14,6 +14,7 @@ import {
 	worldToTile,
 } from "../src/scan";
 import {
+	gardenAreaSizesStore,
 	gardenTilesCountStore,
 	ownedTilesCountStore,
 	parkEntranceInfoStore,
@@ -271,5 +272,117 @@ describe("worldToTile", () => {
 describe("constants", () => {
 	it("tileKey formats as x,y", () => {
 		expect(tileKey(3, 4)).toBe("3,4");
+	});
+});
+
+const ownedGrassTile = function ownedGrassTile(_x: number, _y: number, parkFences = 0) {
+	return {
+		surface: { baseHeight: 0, surfaceStyle: 0, hasOwnership: true, parkFences: parkFences },
+	};
+};
+
+const entranceTileSpec = function entrance() {
+	return {
+		surface: { baseHeight: 0, surfaceStyle: 99, hasOwnership: true },
+		customElements: [entranceElement()],
+	};
+};
+
+const pathTileSpec = function path(baseZ = 16, owned = true, slopeDirection?: number | null) {
+	return {
+		surface: {
+			baseHeight: 0,
+			surfaceStyle: 99,
+			...(owned ? { hasOwnership: true } : {}),
+		},
+		footpaths: [{ baseZ: baseZ, slopeDirection: slopeDirection }],
+	};
+};
+
+describe("scanFootpathNetwork walk behaviours", () => {
+	it("walks through an unowned path to reach owned tiles beyond it", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"1,1": entranceTileSpec(),
+					"1,2": pathTileSpec(), // owned
+					"1,3": pathTileSpec(16, false), // unowned public road - walked through
+					"1,4": pathTileSpec(), // owned, beyond the road
+				},
+			),
+		);
+		scanFootpathNetwork();
+		ctx.runAllTimers();
+		// Both owned path tiles are counted even though the unowned road sits between them.
+		expect(pathTilesCountStore.get()).toBe(2);
+	});
+
+	it("does not spread across unowned land/water without a path", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"1,1": entranceTileSpec(),
+					"1,2": pathTileSpec(), // owned
+					// unowned non-path land is a dead end - nothing beyond is reached.
+					"1,3": { surface: { baseHeight: 0 } },
+					"1,4": { surface: { baseHeight: 0 }, footpaths: [{ baseZ: 16 }] },
+				},
+			),
+		);
+		scanFootpathNetwork();
+		ctx.runAllTimers();
+		// Only the owned path at (1,2) counts; (1,4) is never reached.
+		expect(pathTilesCountStore.get()).toBe(1);
+	});
+
+	it("treats an elevated (bridge) path over unowned land as part of the network", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"1,1": entranceTileSpec(),
+					"2,1": pathTileSpec(), // owned ground path heading east
+					"3,1": pathTileSpec(16, true, 2), // ramp rising toward +X (east)
+					// Elevated landing over unowned land (baseZ 32 >= surface 0 + 32).
+					"4,1": {
+						surface: { baseHeight: 0, surfaceStyle: 99 },
+						footpaths: [{ baseZ: 32 }],
+					},
+				},
+			),
+		);
+		scanFootpathNetwork();
+		ctx.runAllTimers();
+		// (2,1) owned, (3,1) owned ramp, (4,1) elevated bridge -> all three count.
+		expect(pathTilesCountStore.get()).toBe(3);
+	});
+});
+
+describe("gardening grouping", () => {
+	it("keeps two garden areas split by a park fence in separate components", () => {
+		// Two grass patches on either side of a fenced edge. (3,2) carries an
+		// east fence (bit 0x2) and (4,2) carries the matching west fence
+		// (bit 0x8), so walking between them is blocked and they must be
+		// grouped as separate components rather than merged into one area.
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"1,1": entranceTileSpec(),
+					"1,2": pathTileSpec(),
+					"2,2": ownedGrassTile(2, 2),
+					"3,2": ownedGrassTile(3, 2, 0x2),
+					"4,2": ownedGrassTile(4, 2, 0x8),
+					"5,2": ownedGrassTile(5, 2),
+				},
+			),
+		);
+		setGameObjects(fakeObjects(["grass", "grass_clumps", "dirt"]));
+		scanFootpathNetwork();
+		ctx.runAllTimers();
+		// Left patch = (2,2),(3,2); right patch = (4,2),(5,2): two components.
+		expect(gardenAreaSizesStore.get().toSorted()).toEqual([2, 2]);
 	});
 });

@@ -15,13 +15,13 @@ export default defineConfig({
 			exclude: ["src/i18n/**"],
 			// Floors matching current coverage, to be raised as more tests are
 			// added. Enforced by vitest: a below-threshold run exits non-zero
-			// and fails the build/CI. scan.ts, staff.ts and staff-auto.ts
-			// remain the largest gaps.
+			// and fails the build/CI. ui.ts (live-render widget closures),
+			// staff.ts and main.ts remain the largest gaps.
 			thresholds: {
-				lines: 50,
-				statements: 50,
-				functions: 55,
-				branches: 35,
+				lines: 85,
+				statements: 85,
+				functions: 89,
+				branches: 75,
 			},
 		},
 	},

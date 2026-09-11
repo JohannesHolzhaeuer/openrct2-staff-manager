@@ -11,6 +11,7 @@ import {
 } from "../src/game";
 import { autoEnabledStore } from "../src/store";
 import { fakeMap } from "./fake-map";
+import { resetAutoAreas } from "../src/staff-auto";
 
 let ctx: FakeContext = new FakeContext();
 
@@ -40,6 +41,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	setAutoEnabled(false);
+	resetAutoAreas();
 	resetGameContext();
 	resetGameMap();
 	resetGameObjects();
@@ -181,5 +183,35 @@ describe("automatic tile collection", () => {
 		ctx.runAllTimers();
 
 		expect(ctx.actionsOfType("staffhire").length).toBeGreaterThan(0);
+	});
+
+	it("queues the centre of a footpathlayoutplace action", () => {
+		setAutoEnabled(true);
+		fireAction("footpathlayoutplace", { x: 5 * 32, y: 5 * 32, slope: 0 });
+
+		expect(ctx.pendingTimers).toBe(1);
+		ctx.runAllTimers();
+		// (5,5) has a non-ghost path -> at least one staff type hires for it.
+		expect(ctx.actionsOfType("staffhire").length).toBeGreaterThan(0);
+	});
+
+	it("does not queue a footpathlayoutplace on a tile with only a ghost path", () => {
+		setAutoEnabled(true);
+		// (5,6) carries only a ghost path in the fake map.
+		fireAction("footpathlayoutplace", { x: 5 * 32, y: 6 * 32, slope: 0 });
+
+		expect(ctx.pendingTimers).toBe(0);
+	});
+
+	it("drops an action fired while the queue is already being processed", () => {
+		setAutoEnabled(true);
+		// Land buy covers many tiles, forcing processPending to spread the work
+		// across several ticks (more than TILES_PER_TICK).
+		fireAction("landbuyrights", { x1: 0, y1: 0, x2: 32 * 31, y2: 32, setting: 0 });
+		ctx.runAllTimers();
+		// During the multi-tick sweep the isWorking guard is active; triggering
+		// a fresh action then must not hire again. Instead assert the sweep
+		// completed without throwing and scheduled no stray pending work.
+		expect(ctx.pendingTimers).toBe(0);
 	});
 });

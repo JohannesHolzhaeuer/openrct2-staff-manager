@@ -4,11 +4,13 @@ import {
 	centralTile,
 	exitToPathTile,
 	getCachedNetwork,
+	getConnectedPaths,
 	graphDistance,
 	invalidatePathGraphCache,
 	nearestZoneIndex,
 	pathTilesConnected,
 	resetPathGraphCacheForTests,
+	snapToNetwork,
 	splitIntoZones,
 } from "../src/paths/path-graph";
 import { resetGameContext, resetGameMap, setGameContext, setGameMap } from "../src/game";
@@ -221,6 +223,111 @@ describe("centralTile", () => {
 		});
 		const keys = ["1,1", "2,1", "3,1", "4,1", "5,1"];
 		expect(centralTile(graph, keys)).toBe("3,1");
+	});
+
+	it("returns undefined for an empty key list", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 8, y: 8 },
+				{
+					"1,1": { footpaths: [{ baseZ: 100 }] },
+				},
+			),
+		);
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
+			return true;
+		});
+		expect(centralTile(graph, [])).toBeUndefined();
+	});
+});
+
+describe("getConnectedPaths", () => {
+	it("returns an empty list when there is no footpath at the position", () => {
+		setGameMap(fakeMap({ x: 8, y: 8 }, {}));
+		expect(getConnectedPaths({ x: 1, y: 1, z: 100 })).toEqual([]);
+	});
+});
+
+describe("snapToNetwork", () => {
+	it("returns the tile key when the start is already a node", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 8, y: 8 },
+				{
+					"1,1": { footpaths: [{ baseZ: 100 }] },
+					"2,1": { footpaths: [{ baseZ: 100 }] },
+				},
+			),
+		);
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
+			return true;
+		});
+		expect(snapToNetwork(graph, { x: 1, y: 1, z: 100 })).toBe("1,1");
+	});
+
+	it("snaps to the nearest reachable node for a start outside the network", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 8, y: 8 },
+				{
+					"1,1": { footpaths: [{ baseZ: 100 }] },
+					"2,1": { footpaths: [{ baseZ: 100 }] },
+					// The start tile (1,2) has a path connecting up to (1,1),
+					// but is excluded from the graph by the isIncluded filter.
+					"1,2": { footpaths: [{ baseZ: 100 }] },
+				},
+			),
+		);
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function excludeStartTile(x, y) {
+			return !(1 === x && 2 === y);
+		});
+		// (1,2) is not part of the graph, but connects to (1,1).
+		expect(snapToNetwork(graph, { x: 1, y: 2, z: 100 })).toBe("1,1");
+	});
+
+	it("returns undefined when no neighbouring node belongs to the graph", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 8, y: 8 },
+				{
+					"1,1": { footpaths: [{ baseZ: 100 }] },
+				},
+			),
+		);
+		// An island at (6,6) is not in the graph built from (1,1).
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
+			return true;
+		});
+		expect(snapToNetwork(graph, { x: 6, y: 6, z: 100 })).toBeUndefined();
+	});
+});
+
+describe("splitIntoZones edge cases", () => {
+	it("returns a single zone for zoneCount 1", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 8, y: 8 },
+				{
+					"1,1": { footpaths: [{ baseZ: 100 }] },
+					"2,1": { footpaths: [{ baseZ: 100 }] },
+				},
+			),
+		);
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
+			return true;
+		});
+		const zones = splitIntoZones(graph, 1);
+		expect(zones.length).toBe(1);
+		expect(zones[0]).toHaveLength(2);
+	});
+
+	it("handles a graph with only the start node (no connections)", () => {
+		setGameMap(fakeMap({ x: 8, y: 8 }, {}));
+		const graph = buildNetwork({ x: 1, y: 1, z: 100 }, function includeAllTiles() {
+			return true;
+		});
+		// An isolated start is always its own single node/zone.
+		expect(splitIntoZones(graph, 3)).toEqual([["1,1"]]);
 	});
 });
 
