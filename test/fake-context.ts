@@ -99,13 +99,27 @@ export class FakeContext implements GameContext {
 	}
 }
 
-// Costume objects for hire tests. Only `index` and `identifier` are read.
-export const fakeObjects = function fakeObjects(identifiers: string[]): GameObjects {
+// Loaded-object fixtures for the replaceable object manager. `getAllObjects`
+// returns every identifier (in order), and `getObject` looks up individual
+// small scenery by index. The optional `flags` map lets tests mark specific
+// small-scenery objects as "can be watered" (SMALL_SCENERY_FLAG_CAN_BE_WATERED).
+export const fakeObjects = function fakeObjects(
+	identifiers: string[],
+	options: { smallSceneryFlags?: { [index: number]: number } } = {},
+): GameObjects {
+	const smallSceneryFlags = options.smallSceneryFlags ?? {};
 	return {
-		getAllObjects(): LoadedObject[] {
+		getAllObjects(_type: "peep_animations" | "terrain_surface"): LoadedObject[] {
 			return identifiers.map(
 				(identifier, index) => ({ index, identifier }) as unknown as LoadedObject,
 			);
+		},
+		getObject(_type: "small_scenery", index: number): SmallSceneryObject {
+			return {
+				index: index,
+				identifier: `small_scenery_${index}`,
+				flags: smallSceneryFlags[index] ?? 0,
+			} as unknown as SmallSceneryObject;
 		},
 	};
 };

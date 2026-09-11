@@ -1,4 +1,4 @@
-import { gameContext, gameMap } from "./game";
+import { gameContext, gameMap, gameObjects } from "./game";
 import {
 	gardenAreaSizesStore,
 	gardenTilesCountStore,
@@ -615,7 +615,7 @@ const hasWaterableSceneryElement = function hasWaterableSceneryElement(tile: Til
 		const element = tile.getElement(e);
 		if ("small_scenery" === element.type) {
 			const sceneryElement = element;
-			const sceneryObject = objectManager.getObject("small_scenery", sceneryElement.object);
+			const sceneryObject = gameObjects().getObject("small_scenery", sceneryElement.object);
 			if (0 !== (sceneryObject.flags & SMALL_SCENERY_FLAG_CAN_BE_WATERED)) {
 				return true;
 			}
@@ -630,7 +630,7 @@ const hasWaterableSceneryElement = function hasWaterableSceneryElement(tile: Til
 // tile's grassLength is meaningless (and shouldn't count as mowable) unless
 // its surface style is one of these.
 const findGrassSurfaceStyleIndices = function findGrassSurfaceStyleIndices(): Set<number> {
-	const surfaceObjects = objectManager.getAllObjects("terrain_surface");
+	const surfaceObjects = gameObjects().getAllObjects("terrain_surface");
 	const result = new Set<number>();
 	for (const surfaceObject of surfaceObjects) {
 		const identifier = surfaceObject.identifier.toLowerCase();

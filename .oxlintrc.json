@@ -56,7 +56,8 @@
     {
       "files": ["test/fake-map.ts", "test/fake-context.ts", "test/decoupled.test.ts"],
       "rules": {
-        "unicorn/no-null": "off"
+        "unicorn/no-null": "off",
+        "eslint/max-params": "off"
       }
     }
   ]
