@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.1](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.14.0...v0.14.1) (2026-09-11)
+
+
+### Build System
+
+* enforce coverage thresholds and wire Codecov PR gating ([#93](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/93)) ([4fff059](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/4fff0591385f6424182d897b3ee1b600cdad8156))
+* update oxlint to 1.82.0 and add best-practice rules ([#91](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/91)) ([fb60c63](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/fb60c63efa041402c69e4c97c5adea183596c650))
+
 ## [0.14.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.13.0...v0.14.0) (2026-09-08)
 
 
