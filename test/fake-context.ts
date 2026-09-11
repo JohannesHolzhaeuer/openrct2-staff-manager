@@ -25,6 +25,13 @@ export class FakeContext implements GameContext {
 	// failing game action.
 	actionResult: GameActionResult = {};
 
+	// Optional hook invoked whenever a "staffhire" action is executed, so tests
+	// can simulate the OpenRCT2 roster actually growing after the action
+	// succeeds (otherwise the code paths that look up the freshly hired member
+	// - e.g. queueAutoHire's teleport - can never find one). Receives the
+	// action's args and returns the id of the newly hired staff member.
+	onStaffHire: ((args: { [key: string]: unknown }) => number) | undefined = undefined;
+
 	// Delays passed to setTimeout, in order. Asserted by tests that care the
 	// batching never schedules with a delay of 0.
 	readonly delays: number[] = [];
@@ -43,6 +50,9 @@ export class FakeContext implements GameContext {
 	executeAction(action: string, args: object, callback: (result: GameActionResult) => void): void {
 		this.actions.push({ action: action, args: args as { [key: string]: unknown } });
 		// Single-player executes actions synchronously, so mirror that here.
+		if ("staffhire" === action && this.onStaffHire) {
+			this.onStaffHire(args as { [key: string]: unknown });
+		}
 		callback(this.actionResult);
 	}
 

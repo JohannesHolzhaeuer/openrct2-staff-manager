@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	countRideExits,
 	footpathsConnectTiles,
 	isValidStationExit,
 	surfaceFenceBlocksWalking,
 	surfaceTilesConnect,
 } from "../src/scan";
+import { fakeMap, fakeRide } from "./fake-map";
 import { resetGameMap, setGameMap } from "../src/game";
-import { fakeMap } from "./fake-map";
 
 afterEach(() => {
 	resetGameMap();
@@ -210,5 +211,25 @@ describe("isValidStationExit", () => {
 	it("rejects an unused station slot pointing outside the map", () => {
 		setGameMap(fakeMap({ x: 8, y: 8 }));
 		expect(isValidStationExit({ x: 32_000, y: 32_000, z: 0, direction: 0 })).toBe(false);
+	});
+});
+
+describe("countRideExits", () => {
+	it("counts only actual rides with valid, in-map exits", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{},
+				{
+					rides: [
+						fakeRide("ride", [{ exit: { x: 2 * 32, y: 2 * 32, z: 0, direction: 0 } as never }]),
+						fakeRide("ride", [{ exit: undefined }]),
+						// Shops don't need mechanics.
+						fakeRide("shop", [{ exit: { x: 5 * 32, y: 5 * 32, z: 0, direction: 0 } as never }]),
+					],
+				},
+			),
+		);
+		expect(countRideExits()).toBe(1);
 	});
 });
