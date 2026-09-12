@@ -4,6 +4,7 @@ import {
 	HANDYMAN_ORDERS_GARDENING,
 	STAFF_TYPE_ID_ENTERTAINER,
 	STAFF_TYPE_ID_SECURITY,
+	adjustAndAssignAutoMechanics,
 	adjustStaffCounts,
 	assignStaff,
 	canTeleportMechanic,
@@ -36,6 +37,7 @@ import {
 	mechanicsHiredStore,
 	mechanicsNeededStore,
 	progressStore,
+	rideExitCountStore,
 	statusTextStore,
 } from "../src/store";
 import { fakeMap, fakeRide, fakeStaff, fakeStaffWithPatrol } from "./fake-map";
@@ -378,5 +380,187 @@ describe("worldToTileX", () => {
 		expect(worldToTileX(31)).toBe(0);
 		expect(worldToTileX(32)).toBe(1);
 		expect(worldToTileX(95)).toBe(2);
+	});
+});
+
+describe("assignStaff (manual mechanics)", () => {
+	// A footpath tile spec at a fixed height so it is "park owned" and walkable.
+	const pathTile = function pathTile(baseZ = 16) {
+		return {
+			surface: { baseHeight: 0, surfaceStyle: 99, hasOwnership: true },
+			footpaths: [{ baseZ: baseZ }],
+		};
+	};
+
+	// Ride exit at direction 1 (DIRECTION_OFFSETS[1] = +Y) so its "front" is the
+	// tile below it, at the given baseZ.
+	const exitRide = function exitRide(exitX: number, exitY: number) {
+		return fakeRide("ride", [
+			{ exit: { x: exitX * 32, y: exitY * 32, z: 16, direction: 1 } as never },
+		]);
+	};
+
+	it("assigns the exit tile + front tile to each hired mechanic and teleports idle ones", () => {
+		// Disable handymen/guards/entertainers so the mechanic step is the only
+		// work left after the other steps short-circuit.
+		handymenEnabledStore.set(false);
+		guardsEnabledStore.set(false);
+		entertainersEnabledStore.set(false);
+		mechanicsEnabledStore.set(true);
+		rideExitCountStore.set(1);
+
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					// Exit at (2,2) facing +Y -> front tile (2,3).
+					"2,2": pathTile(),
+					"2,3": pathTile(),
+					// The mechanic stands on this footpath tile, so it is idle/teleportable.
+					"0,0": pathTile(),
+				},
+				{
+					rides: [exitRide(2, 2)],
+					staff: [{ ...fakeStaff(1, "mechanic"), x: 0, y: 0 }] as unknown as Staff[],
+				},
+			),
+		);
+
+		assignStaff();
+		ctx.runAllTimers();
+
+		// The single mechanic standing on a footpath is idle/teleportable, so a
+		// pickup+place should be issued onto the exit's front tile.
+		const mechanics = ctx.actionsOfType("peeppickup");
+		expect(mechanics.length).toBeGreaterThan(0);
+	});
+
+	it("leaves mechanics unassigned when the hired count does not match the needed count", () => {
+		handymenEnabledStore.set(false);
+		guardsEnabledStore.set(false);
+		entertainersEnabledStore.set(false);
+		mechanicsEnabledStore.set(true);
+		// 2 exits but only 1 mechanic hired -> not exactly-enough -> no assign.
+		rideExitCountStore.set(2);
+
+		const staff = [fakeStaff(1, "mechanic")];
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"2,2": pathTile(),
+					"2,3": pathTile(),
+					"5,5": pathTile(),
+					"5,6": pathTile(),
+				},
+				{
+					rides: [exitRide(2, 2), exitRide(5, 5)],
+					staff: staff as unknown as Staff[],
+				},
+			),
+		);
+
+		assignStaff();
+		ctx.runAllTimers();
+
+		// assignMechanics bails out before building any patrol areas.
+		expect(staff[0].patrolArea.tiles).toEqual([]);
+	});
+});
+
+describe("adjustAndAssignAutoMechanics", () => {
+	// Ride exit at (ex,ey) facing direction 1 (front = below), with a path in front.
+	const exitWithFront = function exitWithFront(ex: number, ey: number) {
+		return {
+			rides: [
+				fakeRide("ride", [{ exit: { x: ex * 32, y: ey * 32, z: 16, direction: 1 } as never }]),
+			],
+			tiles: {
+				[`${ex},${ey + 1}`]: {
+					surface: { baseHeight: 0, surfaceStyle: 99, hasOwnership: true },
+					footpaths: [{ baseZ: 16 }],
+				},
+			},
+		};
+	};
+
+	it("is a no-op when mechanics are disabled", () => {
+		mechanicsEnabledStore.set(false);
+		let completed = false;
+		adjustAndAssignAutoMechanics(function onComplete() {
+			completed = true;
+		});
+		expect(completed).toBe(true);
+		expect(ctx.actions).toHaveLength(0);
+	});
+
+	it("does nothing when every staffed exit already has a mechanic covering it", () => {
+		mechanicsEnabledStore.set(true);
+		const { rides, tiles } = exitWithFront(2, 2);
+		setGameMap(
+			fakeMap({ x: 16, y: 16 }, tiles, {
+				rides: rides,
+				staff: [
+					fakeStaffWithPatrol(1, "mechanic", 0, [
+						{ x: 2 * 32, y: 2 * 32 },
+						{ x: 2 * 32, y: 3 * 32 },
+					]),
+				],
+			}),
+		);
+		let completed = false;
+		adjustAndAssignAutoMechanics(function onComplete() {
+			completed = true;
+		});
+		ctx.runAllTimers();
+		expect(completed).toBe(true);
+		expect(ctx.actions).toHaveLength(0);
+	});
+
+	it("reuses an existing free mechanic to cover a newly-available exit", () => {
+		mechanicsEnabledStore.set(true);
+		const { rides, tiles } = exitWithFront(2, 2);
+		const freeMechanic = fakeStaffWithPatrol(1, "mechanic");
+		setGameMap(
+			fakeMap({ x: 16, y: 16 }, tiles, {
+				rides: rides,
+				staff: [freeMechanic],
+			}),
+		);
+		let completed = false;
+		adjustAndAssignAutoMechanics(function onComplete() {
+			completed = true;
+		});
+		ctx.runAllTimers();
+		expect(completed).toBe(true);
+		// No new hire needed; the free mechanic's patrol area gets the exit+front.
+		expect(ctx.actionsOfType("staffhire")).toHaveLength(0);
+		expect(freeMechanic.patrolArea.tiles.length).toBe(2);
+	});
+
+	it("hires the shortfall when there are more needing exits than free mechanics", () => {
+		mechanicsEnabledStore.set(true);
+		const { rides: ridesA, tiles: tilesA } = exitWithFront(2, 2);
+		const { rides: ridesB, tiles: tilesB } = exitWithFront(6, 6);
+		// One free mechanic covers one exit; the other exit needs a hire.
+		const freeMechanic = fakeStaffWithPatrol(1, "mechanic");
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{ ...tilesA, ...tilesB },
+				{
+					rides: [...ridesA, ...ridesB],
+					staff: [freeMechanic],
+				},
+			),
+		);
+		let completed = false;
+		adjustAndAssignAutoMechanics(function onComplete() {
+			completed = true;
+		});
+		ctx.runAllTimers();
+		expect(completed).toBe(true);
+		expect(ctx.actionsOfType("staffhire")).toHaveLength(1);
+		expect(ctx.actionsOfType("staffhire")[0].args.staffType).toBe(1); // mechanic
 	});
 });

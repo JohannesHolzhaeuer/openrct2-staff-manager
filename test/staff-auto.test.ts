@@ -187,17 +187,21 @@ describe("handleBoughtLandTile", () => {
 			fakeMap(
 				{ x: 16, y: 16 },
 				{
-					"2,2": { surface: { baseHeight: 0, surfaceStyle: 0, hasOwnership: true } },
+					"2,2": { surface: { baseHeight: 0, surfaceStyle: 3, hasOwnership: true } },
+					// The tile the existing area sits on (3,2), so the connectivity
+					// predicate finds a real surface next door.
+					"3,2": { surface: { baseHeight: 0, surfaceStyle: 3, hasOwnership: true } },
 				},
 				{
 					staff: [
-						fakeStaffWithPatrol(1, "handyman", HANDYMAN_ORDERS_GARDENING, [{ x: 96, y: 96 }]),
+						fakeStaffWithPatrol(1, "handyman", HANDYMAN_ORDERS_GARDENING, [{ x: 96, y: 64 }]),
 					],
 				},
 			),
 		);
-		// (2,2) is the tile (2,2), i.e. world 64-95. The existing area owns world
-		// (3,3) via {x:96,y:96}, so (2,2) is adjacent and under the mower cap -> enlarge.
+		// (2,2) is the garden tile (2,2), i.e. world 64-95. The existing area owns
+		// world (3,2) via {x:96,y:64}, which is cardinal-adjacent to (2,2) and
+		// under the mower cap -> enlarge, no new hire.
 		handleBoughtLandTile(2, 2);
 		ctx.runAllTimers();
 		expect(ctx.actionsOfType("staffhire")).toHaveLength(0);
@@ -213,7 +217,7 @@ describe("handleBoughtLandTile", () => {
 				},
 				{
 					staff: [
-						fakeStaffWithPatrol(1, "handyman", HANDYMAN_ORDERS_GARDENING, [{ x: 96, y: 96 }]),
+						fakeStaffWithPatrol(1, "handyman", HANDYMAN_ORDERS_GARDENING, [{ x: 96, y: 64 }]),
 					],
 				},
 			),
@@ -221,6 +225,126 @@ describe("handleBoughtLandTile", () => {
 		handleBoughtLandTile(2, 2);
 		ctx.runAllTimers();
 		expect(ctx.actionsOfType("staffhire")).toHaveLength(0);
+	});
+
+	it("is a no-op when handymen are disabled", () => {
+		handymenEnabledStore.set(false);
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"2,2": { surface: { baseHeight: 0, surfaceStyle: 3, hasOwnership: true } },
+				},
+			),
+		);
+		handleBoughtLandTile(2, 2);
+		ctx.runAllTimers();
+		expect(ctx.actions).toHaveLength(0);
+	});
+
+	it("hires a gardening handyman for a new isolated garden tile", () => {
+		handymenEnabledStore.set(true);
+		// No roaming staff at all: the lone garden tile triggers a hire.
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"2,2": { surface: { baseHeight: 0, surfaceStyle: 3, hasOwnership: true } },
+					// A placeable adjacent path so the hired gardener can be dropped.
+					"2,3": {
+						surface: { baseHeight: 0, surfaceStyle: 99, hasOwnership: true },
+						footpaths: [{ baseZ: 16 }],
+					},
+				},
+				{ staff: [] },
+			),
+		);
+		handleBoughtLandTile(2, 2);
+		ctx.runAllTimers();
+		expect(ctx.actionsOfType("staffhire")).toHaveLength(1);
+	});
+
+	it("falls back to the nearest placeable tile when the garden tile is obstructed", () => {
+		handymenEnabledStore.set(true);
+		const staff = [] as Staff[];
+		// Simulate the game actually adding the hired handyman to the roster, so
+		// queueAutoHire's post-hire member lookup finds it and issues a teleport.
+		ctx.onStaffHire = function onStaffHire(args) {
+			staff.push(
+				fakeStaffWithPatrol(99 + staff.length, "handyman", (args.staffOrders as number) ?? 0),
+			);
+			return 100;
+		};
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					// Mowable grass tile carrying a tree (small_scenery), which
+					// blocks peep placement but not the garden-tile classification.
+					"2,2": {
+						surface: { baseHeight: 0, surfaceStyle: 3, hasOwnership: true },
+						others: ["small_scenery"],
+					},
+					// A placeable adjacent path tile for the teleport fallback.
+					"2,3": {
+						surface: { baseHeight: 0, surfaceStyle: 99, hasOwnership: true },
+						footpaths: [{ baseZ: 16 }],
+					},
+				},
+				{ staff: staff as unknown as Staff[] },
+			),
+		);
+		handleBoughtLandTile(2, 2);
+		ctx.runAllTimers();
+		// A gardener is hired; even though the placement fallback cannot find a
+		// non-obstructed tile within the single-tile area, a pickup+place at the
+		// garden tile's surface height is still issued (proving the
+		// obstructed-tile fallback path ran rather than skipping the teleport).
+		expect(ctx.actionsOfType("staffhire")).toHaveLength(1);
+		const drop = ctx.actionsOfType("peeppickup").filter((a) => 2 === a.args.type);
+		expect(drop.length).toBeGreaterThan(0);
+		const lastDrop = drop[drop.length - 1];
+		expect([lastDrop.args.x, lastDrop.args.y, lastDrop.args.z]).toEqual([
+			2 * 32 + 16,
+			2 * 32 + 16,
+			0,
+		]);
+	});
+
+	it("teleports a gardening handyman at surface height onto a newly hired garden tile", () => {
+		handymenEnabledStore.set(true);
+		const staff = [] as Staff[];
+		ctx.onStaffHire = function onStaffHire(args) {
+			staff.push(
+				fakeStaffWithPatrol(200 + staff.length, "handyman", (args.staffOrders as number) ?? 0),
+			);
+			return 200;
+		};
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					// Garden tile at surface baseZ... surface baseZ is derived from
+					// baseHeight (see fake-map toElements: baseZ defaults to 0), so
+					// give it a baseHeight to make the surface Z non-zero.
+					"2,2": { surface: { baseHeight: 10, baseZ: 10, surfaceStyle: 3, hasOwnership: true } },
+				},
+				{ staff: staff as unknown as Staff[] },
+			),
+		);
+		handleBoughtLandTile(2, 2);
+		ctx.runAllTimers();
+		expect(ctx.actionsOfType("staffhire")).toHaveLength(1);
+		const drop = ctx.actionsOfType("peeppickup").filter((a) => 2 === a.args.type);
+		expect(drop.length).toBeGreaterThan(0);
+		// The gardener stands on the garden tile at its *surface* baseZ, not a
+		// footpath height.
+		const lastDrop = drop[drop.length - 1];
+		expect([lastDrop.args.x, lastDrop.args.y, lastDrop.args.z]).toEqual([
+			2 * 32 + 16,
+			2 * 32 + 16,
+			10,
+		]);
 	});
 });
 
