@@ -49,6 +49,7 @@ vi.mock("openrct2-flexui", () => {
 			},
 		}),
 		box: passthrough,
+		absolute: passthrough,
 		horizontal: passthrough,
 		vertical: passthrough,
 		label: passthrough,
