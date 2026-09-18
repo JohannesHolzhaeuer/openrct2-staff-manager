@@ -7,6 +7,7 @@ import {
 	type WidgetCreator,
 	type WindowTemplate,
 	type WritableStore,
+	absolute,
 	box,
 	button,
 	checkbox,
@@ -639,19 +640,17 @@ const progressTooltipStore = compute(progressStore, function progressTooltip(fra
 	return `${t("progress.tooltip")} (${Math.round(Math.max(0, Math.min(1, fraction)) * 100).toString()}%)`;
 });
 
-// The progress bar is drawn as a row of equally sized segments. Each segment
-// has its own store telling it whether it is part of the completed portion, so
-// segments never resize - they only switch between "filled" and "empty".
-const PROGRESS_SEGMENT_COUNT = 40;
-const progressSegmentStores: Store<boolean>[] = [];
-for (let i = 0; i < PROGRESS_SEGMENT_COUNT; i++) {
-	const threshold = (i + 1) / PROGRESS_SEGMENT_COUNT;
-	progressSegmentStores.push(
-		compute(progressStore, function isSegmentFilled(fraction: number) {
-			return fraction >= threshold;
-		}),
-	);
-}
+// The filled portion of the progress bar. Bound to the progress fraction as a
+// percentage scale (e.g. "37%") so the bar re-parses and repaints whenever the
+// fraction changes. FlexUI 0.1.0-prerelease.23 makes absolute layout positions
+// reactive, which is what finally makes a variable-width bar refresh reliably.
+const progressFillWidthStore = compute(
+	progressStore,
+	function progressFillWidth(fraction: number): Scale {
+		const clamped = Math.max(0, Math.min(1, fraction));
+		return `${Math.round(clamped * 100).toString()}%` as Scale;
+	},
+);
 
 const staffManagerWindowTemplate = function staffManagerWindowTemplate(): WindowTemplate {
 	const windowWidth = 430; // 400 + room for the section icon column on the left
@@ -733,14 +732,12 @@ const staffManagerWindowTemplate = function staffManagerWindowTemplate(): Window
 				],
 			}),
 			separator(),
-			// Progress bar. Variable-width widgets did not work: neither a single
-			// custom-drawn widget nor two weight-bound halves were reliably
-			// re-laid out / repainted when the progress store changed, so the
-			// bar kept showing a stale width. Instead the bar is a fixed grid of
-			// equally sized segments; each segment never changes size and is
-			// either completely filled or completely empty, driven by its own
-			// bound store. That keeps every repaint correct regardless of how
-			// the engine batches invalidations.
+			// Progress bar. The filled portion's width is bound to a percentage
+			// scale of the progress fraction; an absolute layout holds the full
+			// width for the recessed track and a second widget on top for the
+			// filled portion. FlexUI re-parses and repaints the bound width on
+			// every change, so the bar no longer needs the fixed grid of
+			// segments that were toggled between "filled" and "empty".
 			horizontal({
 				spacing: 4,
 				width: "100%",
@@ -752,34 +749,32 @@ const staffManagerWindowTemplate = function staffManagerWindowTemplate(): Window
 						width: "1w",
 						height: ACTIONS_ROW_HEIGHT,
 						content: [
-							horizontal({
-								spacing: 0,
+							absolute({
 								width: "100%",
 								height: PROGRESS_ROW_HEIGHT,
-								content: progressSegmentStores.map(function progressSegment(segmentFilledStore) {
-									// The tooltip is bound per segment on purpose: it is what makes
-									// flexui refresh this widget (and therefore call onDraw) when
-									// the segment flips between filled and empty.
-									return graphics({
-										width: "1w",
-										height: PROGRESS_ROW_HEIGHT,
-										tooltip: compute(
-											progressTooltipStore,
-											segmentFilledStore,
-											function identityTooltip(tooltip: string) {
-												return tooltip;
-											},
-										),
-										onDraw: function onDraw(g) {
-											if (segmentFilledStore.get()) {
-												g.colour = Colour.BrightGreen;
-												g.box(0, 0, g.width, g.height);
-											} else {
-												g.well(0, 0, g.width, g.height);
-											}
+								content: [
+									graphics({
+										x: 0,
+										y: 0,
+										width: "100%",
+										height: "100%",
+										tooltip: progressTooltipStore,
+										onDraw: function onDrawTrack(g) {
+											g.well(0, 0, g.width, g.height);
 										},
-									});
-								}),
+									}),
+									graphics({
+										x: 0,
+										y: 0,
+										width: progressFillWidthStore,
+										height: "100%",
+										tooltip: progressTooltipStore,
+										onDraw: function onDrawFill(g) {
+											g.colour = Colour.BrightGreen;
+											g.box(0, 0, g.width, g.height);
+										},
+									}),
+								],
 							}),
 							label({
 								text: statusTextStore,

@@ -22,7 +22,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "openrct2-flexui": "0.1.0-prerelease.22"
+    "openrct2-flexui": "0.1.0-prerelease.23"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
