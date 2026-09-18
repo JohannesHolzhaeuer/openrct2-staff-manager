@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.14.1...v0.14.2) (2026-09-18)
+
+
+### Build System
+
+* bump openrct2-flexui to 0.1.0-prerelease.23 ([#98](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/98)) ([d80e62d](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/d80e62dc1312c234e89b140ff0388ab9d8c373e6))
+
 ## [0.14.1](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.14.0...v0.14.1) (2026-09-16)
 
 
