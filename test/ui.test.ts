@@ -42,7 +42,19 @@ interface FakeStore<T> {
 
 vi.mock("openrct2-flexui", () => {
 	const passthrough = (config: unknown): unknown => config;
+	// Widgets that accept an `onDraw` hook are built in real life by flexui to
+	// hand a graphics context to the drawing closure. The test versions invoke
+	// the closure immediately with a minimal fake graphics context, so the
+	// drawing code inside the widget factories is exercised (and counted as
+	// covered) instead of staying cold.
+	const drawablePassthrough = (config: { onDraw?: (g: unknown) => void }): unknown => {
+		if ("function" === typeof config.onDraw) {
+			config.onDraw({ colour: 0, box: (): void => undefined, well: (): void => undefined });
+		}
+		return config;
+	};
 	return {
+		Colour: { BrightGreen: 1, SaturatedRed: 2 },
 		window: (config: unknown): { open: () => void } => ({
 			open: (): void => {
 				openedWindows.push(config);
@@ -57,7 +69,7 @@ vi.mock("openrct2-flexui", () => {
 		spinner: passthrough,
 		checkbox: passthrough,
 		toggle: passthrough,
-		graphics: passthrough,
+		graphics: drawablePassthrough,
 		compute: (...args: unknown[]): unknown => {
 			const stores = args.filter(
 				(a): a is FakeStore<unknown> => "object" === typeof a && null !== a && STORE_MARKER in a,
