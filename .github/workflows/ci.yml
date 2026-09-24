@@ -123,7 +123,7 @@ jobs:
         # enabled on this repo. `fail_ci_if_error: true` makes status/comment
         # configuration problems surface as a failed check instead of being
         # silently skipped.
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/lcov.info
