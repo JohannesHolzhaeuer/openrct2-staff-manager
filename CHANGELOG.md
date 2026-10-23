@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.3](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.14.2...v0.14.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* **plugin:** sync version and API metadata ([#109](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/109)) ([51a0b5b](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/51a0b5b78c3b83a2528d7916fd3d91b2d5a32cc2))
+
 ## [0.14.2](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.14.1...v0.14.2) (2026-09-18)
 
 
