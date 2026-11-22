@@ -1,9 +1,21 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { defineConfig } from "vitest/config";
 
 process.env.NO_COLOR = "1";
 process.env.CI = "1";
 
+// Mirror the version that bundle.ts injects (see src/globals.d.ts): vitest
+// applies the same define so the plugin's registerPlugin metadata reads the
+// real package.json version during tests instead of a stale hardcoded value.
+const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as {
+	version: string;
+};
+
 export default defineConfig({
+	define: {
+		STAFF_MANAGER_VERSION: JSON.stringify(pkg.version),
+	},
 	test: {
 		reporters: "dot",
 		coverage: {

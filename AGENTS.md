@@ -41,8 +41,9 @@ used by handymen/guards.
   vendor a local copy.
 - `tsconfig.json` — compiles `src/**/*.ts` to `dist/staff-manager.js` (ES2023, no module
   system, strict mode).
-- `tsconfig.node.json` — type-checks the Node build-tooling `.ts` files (`deploy.ts`,
-  `eslint.config.ts`) against `@types/node` as part of `npm run typecheck`.
+- `tsconfig.node.json` — type-checks the Node build-tooling `.ts` files (`bundle.ts`,
+  `deploy.ts`, `vitest.config.ts`, and `src/globals.d.ts`) against `@types/node` as part of
+  `npm run typecheck`.
 - `.oxlintrc.json` — [oxlint](https://oxc.rs/docs/guide/usage/linter.html) configuration covering
   all `.ts` files (`src/**`, `test/**`, and build-tooling scripts like `deploy.ts`). oxlint is a
   Rust-based linter with no dependency on the `typescript`/`typescript-eslint` version, which is
@@ -50,6 +51,10 @@ used by handymen/guards.
   TypeScript major releases and blocked upgrading past TypeScript 6). It does not do type-aware
   linting; TypeScript's own `strict` compiler options in `tsconfig.json`/`tsconfig.node.json`
   cover the type-checking rules ESLint used to provide via `typescript-eslint`.
+- `bundle.ts` — the esbuild build script (JS API) that bundles `src/main.ts` into
+  `dist/staff-manager.js`. It reads `version` from `package.json` and injects it via esbuild's
+  `define` as the `STAFF_MANAGER_VERSION` global, so the compiled plugin always reports the
+  package version. `npm run bundle`/`watch` run `node bundle.ts [--watch]`.
 - `deploy.ts` — copies `dist/staff-manager.js` into the local OpenRCT2 `plugin` folder
   (OS-specific default path, overridable via `OPENRCT2_PLUGIN_DIR` env var) so it can be
   hot-reloaded in-game. Run with `node` (project is `"type": "module"`).
@@ -67,7 +72,7 @@ npm install        # first time only
 npm run build      # verify + esbuild bundle + deploy to local OpenRCT2 plugin folder
 npm run verify     # lint + test + tsc typecheck (no bundle/deploy)
 npm run dev        # bundle + deploy only, skipping verify - fast inner dev loop
-npm run watch       # esbuild --watch, for iterative development (does not auto-deploy)
+npm run watch       # bundle.ts --watch, for iterative development (does not auto-deploy)
 npm test           # run the unit tests alone (vitest run)
 npm run typecheck  # run the TypeScript compiler alone (src + tsconfig.node.json)
 npm run lint       # run the linter alone (oxlint .)
@@ -100,8 +105,11 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
   `queueAutoHire`. Ghost (hover) footpath tiles are filtered out in `queueTileIfPlacedPath` in
   `src/auto.ts` so hovering never hires staff. Preserve this synchronous tracking when touching auto mode.
 - Plugin metadata (name, version, author) is set in the `registerPlugin(...)` call at the bottom
-  of `src/main.ts`; keep `package.json`'s `version` field in sync when bumping versions for a
-  release.
+  of `src/main.ts`. The `version` is build-injected, not hardcoded: `bundle.ts` reads it from
+  `package.json` and `define`s it in as the `STAFF_MANAGER_VERSION` global (declared in
+  `src/globals.d.ts`), and `vitest.config.ts` applies the same `define` so tests see the real
+  version. `package.json` is the single source of truth — don't hardcode the version in
+  `src/main.ts`.
 - Do not rely on `FootpathElement`/`EntranceElement.ride` as a sentinel to distinguish park
   entrances from ride entrances/exits, since a park entrance can share the same ride id as an
   unrelated ride. Instead, build the set of real ride entrance/exit tiles from
@@ -119,7 +127,8 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
 
 ## Releasing
 
-1. Bump `version` in `package.json` and the `registerPlugin` call in `src/main.ts`.
+1. Bump `version` in `package.json` (the `registerPlugin` version is injected from it at build
+   time by `bundle.ts`).
 2. Commit, then create and push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. The `release.yml` workflow builds the plugin and publishes a GitHub Release with
    `dist/staff-manager.js` attached automatically.
