@@ -1,11 +1,17 @@
 import {
+	type AreaNode,
+	chunkTilesForStaffCount,
+	decideAreaAction,
+	isStandingOnTile,
+} from "../src/staff";
+import {
 	type PathTileInfo,
+	findFootpathAtEdge,
 	footpathEdgeZ,
 	footpathsConnect,
 	oppositeDirection,
 	surfacesConnect,
 } from "../src/scan";
-import { chunkTilesForStaffCount, decideAreaAction, isStandingOnTile } from "../src/staff";
 import { describe, expect, it } from "vitest";
 
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
@@ -100,6 +106,27 @@ describe("footpathsConnect", () => {
 	});
 });
 
+describe("findFootpathAtEdge", () => {
+	it("returns the flat footpath sitting at the edge height", () => {
+		expect(findFootpathAtEdge(0, 100, [fp(100)])).toEqual(fp(100));
+	});
+	it("returns the sloped footpath whose raised edge matches the height", () => {
+		// fp(100, 0) rises toward direction 0, so the edge facing 0 is at 100 + 16.
+		expect(findFootpathAtEdge(0, 116, [fp(100, 0)])).toEqual(fp(100, 0));
+	});
+	it("returns undefined when no footpath meets at that height", () => {
+		expect(findFootpathAtEdge(0, 150, [fp(100)])).toBeUndefined();
+	});
+	it("picks the correct stacked footpath by height (ground vs bridge)", () => {
+		const ground = fp(100);
+		const bridge = fp(200);
+		// The same tile carries a ground and a bridge footpath; only the one whose
+		// edge matches the height the walk crosses at is the connected node.
+		expect(findFootpathAtEdge(2, 100, [bridge, ground])).toEqual(ground);
+		expect(findFootpathAtEdge(2, 200, [bridge, ground])).toEqual(bridge);
+	});
+});
+
 describe("surfacesConnect", () => {
 	it("undefined surfaces never connect", () => {
 		expect(surfacesConnect(undefined, undefined)).toBe(false);
@@ -172,10 +199,10 @@ describe("chunkTilesForStaffCount", () => {
 		for (const t of tiles) {
 			const i = t.x;
 			if (0 < i) {
-				t.neighbourKeys.push(`${i - 1},0`);
+				t.neighbourKeys.push(`${i - 1},0,0`);
 			}
 			if (5 > i) {
-				t.neighbourKeys.push(`${i + 1},0`);
+				t.neighbourKeys.push(`${i + 1},0,0`);
 			}
 		}
 		const chunks = chunkTilesForStaffCount(tiles, 3);
@@ -185,8 +212,8 @@ describe("chunkTilesForStaffCount", () => {
 	});
 	it("keeps a single connected component in one chunk when staff count is 1", () => {
 		const tiles = chain([0, 1], [0, 0]);
-		tiles[0].neighbourKeys.push("1,0");
-		tiles[1].neighbourKeys.push("0,0");
+		tiles[0].neighbourKeys.push("1,0,0");
+		tiles[1].neighbourKeys.push("0,0,0");
 		const chunks = chunkTilesForStaffCount(tiles, 1);
 		expect(chunks.length).toBe(1);
 		expect(chunks[0].length).toBe(2);
@@ -214,7 +241,7 @@ describe("chunkTilesForStaffCount", () => {
 		for (let x = 0; 2 >= x; x++) {
 			tiles.push(mk(x, 1));
 		}
-		const key = (x: number, y: number) => `${x},${y}`;
+		const key = (x: number, y: number) => `${x},${y},0`;
 		const t = {} as { [key: string]: PathTileInfo };
 		for (const tile of tiles) {
 			t[key(tile.x, tile.y)] = tile;
@@ -265,7 +292,7 @@ describe("chunkTilesForStaffCount", () => {
 				tiles.push(mk(x, y));
 			}
 		}
-		const key = (x: number, y: number) => `${x},${y}`;
+		const key = (x: number, y: number) => `${x},${y},0`;
 		const t = {} as { [key: string]: PathTileInfo };
 		for (const tile of tiles) {
 			t[key(tile.x, tile.y)] = tile;
@@ -308,155 +335,253 @@ describe("chunkTilesForStaffCount", () => {
 			expect(seen.size).toBe(chunk.length); // every chunk is one piece
 		}
 	});
+	it("keeps stacked-footpath nodes (same tile, different heights) in separate chunks", () => {
+		// A ground path (4,10)-(5,10)-(6,10) at baseZ 100 and a bridge
+		// (5,9)-(5,10)-(5,11) at baseZ 200 cross at tile (5,10). The two stacked
+		// footpaths on (5,10) are DISTINCT nodes (keyed by baseZ) and are NOT
+		// walkable to each other (there is no ramp between them), so no patrol
+		// area may end up containing a ground tile and a bridge tile together -
+		// that is exactly the "tile above another, area misses the way between"
+		// bug this regression guards against.
+		const tile = (x: number, y: number, baseZ: number, neighbours: string[]): PathTileInfo => ({
+			x,
+			y,
+			baseHeight: 0,
+			baseZ,
+			isQueue: false,
+			neighbourKeys: neighbours,
+		});
+		const tiles: PathTileInfo[] = [
+			tile(4, 10, 100, ["5,10,100"]),
+			tile(5, 10, 100, ["4,10,100", "6,10,100"]),
+			tile(6, 10, 100, ["5,10,100"]),
+			tile(5, 9, 200, ["5,10,200"]),
+			tile(5, 10, 200, ["5,9,200", "5,11,200"]),
+			tile(5, 11, 200, ["5,10,200"]),
+		];
+		const chunks = chunkTilesForStaffCount(tiles, 2);
+		// The two stacked networks stay separate instead of merging into one area.
+		expect(chunks.length).toBe(2);
+		// Both stacked nodes at (5,10) survive as distinct tiles (not collapsed).
+		const allKeys = new Set(chunks.flat().map((t) => `${t.x},${t.y},${t.baseZ}`));
+		expect(allKeys.has("5,10,100")).toBe(true);
+		expect(allKeys.has("5,10,200")).toBe(true);
+		for (const chunk of chunks) {
+			const keys = new Set(chunk.map((t) => `${t.x},${t.y},${t.baseZ}`));
+			const byKey = new Map<string, PathTileInfo>();
+			for (const t of chunk) {
+				byKey.set(`${t.x},${t.y},${t.baseZ}`, t);
+			}
+			// Every chunk is one contiguous piece.
+			const seen = new Set<string>([`${chunk[0].x},${chunk[0].y},${chunk[0].baseZ}`]);
+			const queue: string[] = [...seen];
+			let qi = 0;
+			while (qi < queue.length) {
+				const ck = queue[qi];
+				qi++;
+				for (const nk of byKey.get(ck)?.neighbourKeys ?? []) {
+					if (keys.has(nk) && !seen.has(nk)) {
+						seen.add(nk);
+						queue.push(nk);
+					}
+				}
+			}
+			expect(seen.size).toBe(chunk.length);
+			// ...and never mixes a ground (baseZ 100) tile with a bridge (baseZ 200) tile.
+			expect(new Set(chunk.map((t) => t.baseZ)).size).toBe(1);
+		}
+	});
 });
 
-// Helper: convert a list of tile-coordinate pairs into world-coordinate areas (the
-// form decideAreaAction expects - each tile is {x*32, y*32}).
-const areaTiles = function areaTiles(...tiles: [number, number][]): CoordsXY[] {
-	return tiles.map(([tx, ty]) => ({ x: tx * 32, y: ty * 32 }));
+// Helper: build an area's node list (tile coordinates + height level).
+const areaNodes = function areaNodes(...tiles: [number, number, number][]): AreaNode[] {
+	return tiles.map(([x, y, baseZ]) => ({ x: x, y: y, baseZ: baseZ }));
 };
 
 describe("decideAreaAction", () => {
-	it("returns covered when the tile is already in an area", () => {
-		const areas = [areaTiles([0, 0], [1, 0])];
-		expect(decideAreaAction({ areas: areas, newTile: { x: 0, y: 0 }, maxSize: 8 })).toEqual({
-			action: "covered",
-		});
+	it("returns covered when the node is already in an area", () => {
+		const areas = [areaNodes([0, 0, 8], [1, 0, 8])];
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 0, y: 0, baseZ: 8 }, maxSize: 8 }),
+		).toEqual({ action: "covered" });
 	});
 	it("returns enlarge for an adjacent area under the cap", () => {
-		const areas = [areaTiles([0, 0])]; // size 1, cap 8
-		expect(decideAreaAction({ areas: areas, newTile: { x: 1, y: 0 }, maxSize: 8 })).toEqual({
-			action: "enlarge",
-			areaIndex: 0,
-		});
+		const areas = [areaNodes([0, 0, 8])]; // size 1, cap 8
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 1, y: 0, baseZ: 8 }, maxSize: 8 }),
+		).toEqual({ action: "enlarge", areaIndex: 0 });
 	});
 	it("returns hire for an adjacent area at the cap", () => {
-		const areas = [areaTiles([0, 0], [1, 0], [2, 0], [3, 0])]; // size 4, cap 4
-		expect(decideAreaAction({ areas: areas, newTile: { x: 4, y: 0 }, maxSize: 4 })).toEqual({
-			action: "hire",
-		});
+		const areas = [areaNodes([0, 0, 8], [1, 0, 8], [2, 0, 8], [3, 0, 8])]; // size 4, cap 4
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 4, y: 0, baseZ: 8 }, maxSize: 4 }),
+		).toEqual({ action: "hire" });
 	});
 	it("returns hire when no adjacent area exists", () => {
 		expect(
-			decideAreaAction({ areas: [areaTiles([0, 0])], newTile: { x: 10, y: 10 }, maxSize: 8 }),
+			decideAreaAction({
+				areas: [areaNodes([0, 0, 8])],
+				newNode: { x: 10, y: 10, baseZ: 8 },
+				maxSize: 8,
+			}),
 		).toEqual({ action: "hire" });
 	});
 	it("enlarges the first adjacent area among several", () => {
-		// two areas: (0,0) and (5,5); new tile (1,0) is adjacent to the first
-		const areas = [areaTiles([0, 0]), areaTiles([5, 5])];
-		expect(decideAreaAction({ areas: areas, newTile: { x: 1, y: 0 }, maxSize: 8 })).toEqual({
-			action: "enlarge",
-			areaIndex: 0,
-		});
+		// two areas: (0,0) and (5,5); new node (1,0) is adjacent to the first
+		const areas = [areaNodes([0, 0, 8]), areaNodes([5, 5, 8])];
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 1, y: 0, baseZ: 8 }, maxSize: 8 }),
+		).toEqual({ action: "enlarge", areaIndex: 0 });
 	});
 	it("returns covered even for a non-first area", () => {
-		const areas = [areaTiles([5, 5]), areaTiles([0, 0])];
-		expect(decideAreaAction({ areas: areas, newTile: { x: 0, y: 0 }, maxSize: 8 })).toEqual({
-			action: "covered",
-		});
+		const areas = [areaNodes([5, 5, 8]), areaNodes([0, 0, 8])];
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 0, y: 0, baseZ: 8 }, maxSize: 8 }),
+		).toEqual({ action: "covered" });
 	});
-	it("enlarges an area that lies to the +x side of the new tile", () => {
-		// area at (1,0); new tile (0,0) is only adjacent through the +x offset,
+	it("enlarges an area that lies to the +x side of the new node", () => {
+		// area at (1,0); new node (0,0) is only adjacent through the +x offset,
 		// which the fixed code must detect (previously it hired for this case).
-		const areas = [areaTiles([1, 0])];
-		expect(decideAreaAction({ areas: areas, newTile: { x: 0, y: 0 }, maxSize: 8 })).toEqual({
-			action: "enlarge",
-			areaIndex: 0,
-		});
+		const areas = [areaNodes([1, 0, 8])];
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 0, y: 0, baseZ: 8 }, maxSize: 8 }),
+		).toEqual({ action: "enlarge", areaIndex: 0 });
 	});
-	it("enlarges an area that lies to the +y side of the new tile", () => {
-		const areas = [areaTiles([0, 2])];
-		expect(decideAreaAction({ areas: areas, newTile: { x: 0, y: 1 }, maxSize: 8 })).toEqual({
-			action: "enlarge",
-			areaIndex: 0,
-		});
+	it("enlarges an area that lies to the +y side of the new node", () => {
+		const areas = [areaNodes([0, 2, 8])];
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 0, y: 1, baseZ: 8 }, maxSize: 8 }),
+		).toEqual({ action: "enlarge", areaIndex: 0 });
 	});
 	it("enlarges only a genuinely-connected (walkable) adjacent area when a connect predicate is supplied", () => {
-		const areas = [areaTiles([1, 0])];
-		// new tile (0,0) is cardinal-adjacent to area tile (1,0), and the predicate
+		const areas = [areaNodes([1, 0, 8])];
+		// new node (0,0) is cardinal-adjacent to area node (1,0), and the predicate
 		// confirms they are walkable -> enlarge.
 		const decision = decideAreaAction({
 			areas: areas,
-			newTile: { x: 0, y: 0 },
+			newNode: { x: 0, y: 0, baseZ: 8 },
 			maxSize: 8,
 			connect: alwaysConnected,
 		});
 		expect(decision).toEqual({ action: "enlarge", areaIndex: 0 });
 	});
-	it("does not enlarge an unreachable (e.g. bridge) adjacent tile when the predicate returns false", () => {
-		const areas = [areaTiles([1, 0])];
-		// area tile at (1,0) is cardinal-adjacent to new tile (0,0), but the
+	it("does not enlarge an unreachable (e.g. bridge) adjacent node when the predicate returns false", () => {
+		const areas = [areaNodes([1, 0, 8])];
+		// area node at (1,0) is cardinal-adjacent to new node (0,0), but the
 		// predicate says they are not walkable (e.g. a bridge over a path) -> hire,
-		// giving the unreachable tile its own staff member instead of merging areas.
+		// giving the unreachable node its own staff member instead of merging areas.
 		const decision = decideAreaAction({
 			areas: areas,
-			newTile: { x: 0, y: 0 },
+			newNode: { x: 0, y: 0, baseZ: 8 },
 			maxSize: 8,
 			connect: neverConnected,
 		});
 		expect(decision.action).toBe("hire");
 	});
 	it("the connect predicate only gates adjacency, not coverage", () => {
-		const areas = [areaTiles([0, 0])];
-		// new tile is already in the area -> covered regardless of the predicate.
+		const areas = [areaNodes([0, 0, 8])];
+		// new node is already in the area -> covered regardless of the predicate.
 		const decision = decideAreaAction({
 			areas: areas,
-			newTile: { x: 0, y: 0 },
+			newNode: { x: 0, y: 0, baseZ: 8 },
 			maxSize: 8,
 			connect: neverConnected,
 		});
 		expect(decision).toEqual({ action: "covered" });
 	});
+	it("covered is per level: a stacked second level on a covered tile is NOT covered", () => {
+		// The area owns the ground level (8) of tile (0,0). A bridge level (24)
+		// stacked on the same tile is a different node: it is not covered and,
+		// with nothing walkable-adjacent, must start its own area.
+		const areas = [areaNodes([0, 0, 8])];
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 0, y: 0, baseZ: 24 }, maxSize: 8 }),
+		).toEqual({ action: "hire" });
+	});
+	it("enlarges via the matching level of a stacked area tile", () => {
+		// The area owns both levels of tile (1,0) (a ramp loop connects them).
+		const areas = [areaNodes([1, 0, 8], [1, 0, 24])];
+		const decision = decideAreaAction({
+			areas: areas,
+			newNode: { x: 0, y: 0, baseZ: 24 },
+			maxSize: 8,
+			// Only the matching height level is walkable-adjacent.
+			connect: (areaNode, newNode) => areaNode.baseZ === newNode.baseZ,
+		});
+		expect(decision).toEqual({ action: "enlarge", areaIndex: 0 });
+	});
+	it("does not enlarge through a level of the area the new node cannot reach", () => {
+		// The area owns the ground level (8) of tile (1,0) only. The new bridge
+		// level (24) is cardinal-adjacent at x/y but not walkable-adjacent.
+		const areas = [areaNodes([1, 0, 8])];
+		const decision = decideAreaAction({
+			areas: areas,
+			newNode: { x: 0, y: 0, baseZ: 24 },
+			maxSize: 8,
+			connect: (areaNode, newNode) => areaNode.baseZ === newNode.baseZ,
+		});
+		expect(decision).toEqual({ action: "hire" });
+	});
 	it("hires for a negative tile coordinate", () => {
 		expect(
-			decideAreaAction({ areas: [areaTiles([0, 0])], newTile: { x: -1, y: 0 }, maxSize: 8 }),
+			decideAreaAction({
+				areas: [areaNodes([0, 0, 8])],
+				newNode: { x: -1, y: 0, baseZ: 8 },
+				maxSize: 8,
+			}),
 		).toEqual({ action: "hire" });
 		expect(
-			decideAreaAction({ areas: [areaTiles([0, 0])], newTile: { x: 0, y: -1 }, maxSize: 8 }),
+			decideAreaAction({
+				areas: [areaNodes([0, 0, 8])],
+				newNode: { x: 0, y: -1, baseZ: 8 },
+				maxSize: 8,
+			}),
 		).toEqual({ action: "hire" });
 	});
 	it("hires when no areas exist at all", () => {
-		expect(decideAreaAction({ areas: [], newTile: { x: 3, y: 3 }, maxSize: 8 })).toEqual({
+		expect(decideAreaAction({ areas: [], newNode: { x: 3, y: 3, baseZ: 8 }, maxSize: 8 })).toEqual({
 			action: "hire",
 		});
 	});
 	it("ignores empty areas when looking for an adjacent one", () => {
-		// The first area has no tiles; the second is the genuinely adjacent one,
+		// The first area has no nodes; the second is the genuinely adjacent one,
 		// so its index (not the empty one's) must be reported.
-		const areas = [areaTiles(), areaTiles([1, 0])];
-		expect(decideAreaAction({ areas: areas, newTile: { x: 0, y: 0 }, maxSize: 8 })).toEqual({
-			action: "enlarge",
-			areaIndex: 1,
-		});
+		const areas = [areaNodes(), areaNodes([1, 0, 8])];
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 0, y: 0, baseZ: 8 }, maxSize: 8 }),
+		).toEqual({ action: "enlarge", areaIndex: 1 });
 	});
-	it("passes the matched area tile and index to the connect predicate", () => {
-		const areas = [areaTiles([5, 5]), areaTiles([1, 0])];
+	it("passes the matched area node and index to the connect predicate", () => {
+		const areas = [areaNodes([5, 5, 8]), areaNodes([1, 0, 8])];
 		const calls: number[][] = [];
 		decideAreaAction({
 			areas: areas,
-			newTile: { x: 0, y: 0 },
+			newNode: { x: 0, y: 0, baseZ: 8 },
 			maxSize: 8,
-			connect: function connect(areaTile, newTile, index) {
-				calls.push([areaTile.x, areaTile.y, newTile.x, newTile.y, index]);
+			connect: function connect(areaNode, newNode, index) {
+				calls.push([areaNode.x, areaNode.y, areaNode.baseZ, newNode.x, newNode.y, index]);
 				return true;
 			},
 		});
-		// Only the actually-adjacent tile (1,0) of area 1 is offered to the predicate,
-		// with the new tile's coordinates and that area's index.
-		expect(calls).toEqual([[1, 0, 0, 0, 1]]);
+		// Only the actually-adjacent node (1,0,8) of area 1 is offered to the
+		// predicate, with the new node's coordinates and that area's index.
+		expect(calls).toEqual([[1, 0, 8, 0, 0, 1]]);
 	});
 	it("diagonal-only neighbours are not adjacent", () => {
 		// (1,1) touches (0,0) only at a corner, which is not walkable.
 		expect(
-			decideAreaAction({ areas: [areaTiles([1, 1])], newTile: { x: 0, y: 0 }, maxSize: 8 }),
+			decideAreaAction({
+				areas: [areaNodes([1, 1, 8])],
+				newNode: { x: 0, y: 0, baseZ: 8 },
+				maxSize: 8,
+			}),
 		).toEqual({ action: "hire" });
 	});
 	it("checks the cap of the adjacent area, not of the first area", () => {
 		// Area 0 is far away and full; area 1 is the adjacent one and under the cap.
-		const areas = [areaTiles([9, 9], [9, 8]), areaTiles([1, 0])];
-		expect(decideAreaAction({ areas: areas, newTile: { x: 0, y: 0 }, maxSize: 2 })).toEqual({
-			action: "enlarge",
-			areaIndex: 1,
-		});
+		const areas = [areaNodes([9, 9, 8], [9, 8, 8]), areaNodes([1, 0, 8])];
+		expect(
+			decideAreaAction({ areas: areas, newNode: { x: 0, y: 0, baseZ: 8 }, maxSize: 2 }),
+		).toEqual({ action: "enlarge", areaIndex: 1 });
 	});
 });

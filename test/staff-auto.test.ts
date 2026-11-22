@@ -1,4 +1,5 @@
 import { FakeContext, fakeObjects } from "./fake-context";
+import { type FakeTileSpec, fakeMap, fakeRide, fakeStaffWithPatrol } from "./fake-map";
 import {
 	HANDYMAN_ORDERS_CLEANUP,
 	HANDYMAN_ORDERS_GARDENING,
@@ -15,7 +16,6 @@ import {
 	handymenTilesPerStaffStore,
 	mechanicsEnabledStore,
 } from "../src/store";
-import { fakeMap, fakeRide, fakeStaffWithPatrol } from "./fake-map";
 import { handleBoughtLandTile, handlePlacedPathTile, resetAutoAreas } from "../src/staff-auto";
 import {
 	resetGameContext,
@@ -25,6 +25,7 @@ import {
 	setGameMap,
 	setGameObjects,
 } from "../src/game";
+import { scanFootpathNetwork } from "../src/scan";
 
 let ctx: FakeContext = new FakeContext();
 
@@ -424,5 +425,166 @@ describe("auto mechanics for adjacent ride exits", () => {
 		handlePlacedPathTile(2, 2, false);
 		ctx.runAllTimers();
 		expect(ctx.actionsOfType("staffhire")).toHaveLength(0);
+	});
+});
+
+describe("stacked footpaths: a bridge over a ground path", () => {
+	// The reported layout: a ground path at level 8. At (3,1) the ground path
+	// continues UNDER the bridge, and the first slanted path tile of the bridge
+	// is stacked on top of it - a slope that starts at level 16, i.e. its low
+	// end is one full height level ABOVE the ground path, so a handyman cannot
+	// walk from the ground network onto the bridge. The bridge deck is at
+	// level 32. The two height networks are only "adjacent" at (3,1)'s x/y.
+	const stackedBridgeTiles = function stackedBridgeTiles(): {
+		[key: string]: FakeTileSpec;
+	} {
+		const surface = { baseHeight: 0, surfaceStyle: 99, hasOwnership: true };
+		return {
+			"1,1": { surface: surface, footpaths: [{ baseZ: 8 }] },
+			"2,1": { surface: surface, footpaths: [{ baseZ: 8 }] },
+			"3,1": {
+				surface: surface,
+				footpaths: [{ baseZ: 8 }, { baseZ: 16, slopeDirection: 2 }],
+			},
+			"4,1": { surface: surface, footpaths: [{ baseZ: 32 }] },
+		};
+	};
+
+	// The set of "x,y" tile keys a patrol area currently covers (the fake
+	// patrol area appends on every add, so dedupe before comparing).
+	const coveredTiles = function coveredTiles(tiles: { x: number; y: number }[]): Set<string> {
+		return new Set(tiles.map((t) => `${Math.floor(t.x / 32)},${Math.floor(t.y / 32)}`));
+	};
+
+	it("a bridge built over a ground path gets its own handyman, never the ground area", () => {
+		handymenEnabledStore.set(true);
+		handymenTilesPerStaffStore.set(8);
+		const staff = [
+			// One handyman already patrolling the ground network (1,1) and (2,1).
+			fakeStaffWithPatrol(1, "handyman", HANDYMAN_ORDERS_CLEANUP, [
+				{ x: 32, y: 32 },
+				{ x: 64, y: 32 },
+			]),
+		] as Staff[];
+		ctx.onStaffHire = function onStaffHire(args) {
+			const id = 90 + staff.length;
+			staff.push(fakeStaffWithPatrol(id, "handyman", (args.staffOrders as number) ?? 0));
+			return id;
+		};
+		setGameMap(fakeMap({ x: 16, y: 16 }, stackedBridgeTiles(), { staff: staff }));
+
+		// The player builds the first slanted tile (3,1), then the bridge deck (4,1).
+		handlePlacedPathTile(3, 1, false);
+		handlePlacedPathTile(4, 1, false);
+		ctx.runAllTimers();
+
+		// Exactly one hire: the bridge's own handyman.
+		expect(ctx.actionsOfType("staffhire")).toHaveLength(1);
+		// The ground handyman gained the ground level of (3,1) (the path
+		// continues under the bridge) but NOT the bridge deck...
+		const groundTiles = coveredTiles(staff[0].patrolArea.tiles);
+		expect(groundTiles.has("1,1")).toBe(true);
+		expect(groundTiles.has("2,1")).toBe(true);
+		expect(groundTiles.has("3,1")).toBe(true);
+		expect(groundTiles.has("4,1")).toBe(false);
+		// ...while the hired bridge handyman patrols the ramp + deck.
+		const bridgeTiles = coveredTiles(staff[1].patrolArea.tiles);
+		expect(bridgeTiles.has("3,1")).toBe(true);
+		expect(bridgeTiles.has("4,1")).toBe(true);
+		expect(bridgeTiles.has("1,1")).toBe(false);
+		expect(bridgeTiles.has("2,1")).toBe(false);
+	});
+
+	it("a walkable ramp (low end at ground level) still merges into one area", () => {
+		handymenEnabledStore.set(true);
+		handymenTilesPerStaffStore.set(8);
+		const surface = { baseHeight: 0, surfaceStyle: 99, hasOwnership: true };
+		const staff = [
+			fakeStaffWithPatrol(1, "handyman", HANDYMAN_ORDERS_CLEANUP, [
+				{ x: 32, y: 32 },
+				{ x: 64, y: 32 },
+			]),
+		] as Staff[];
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"1,1": { surface: surface, footpaths: [{ baseZ: 8 }] },
+					"2,1": { surface: surface, footpaths: [{ baseZ: 8 }] },
+					// Ramp whose low end IS at ground level: genuinely walkable
+					// from the ground path up to the deck at level 24.
+					"3,1": { surface: surface, footpaths: [{ baseZ: 8, slopeDirection: 2 }] },
+					"4,1": { surface: surface, footpaths: [{ baseZ: 24 }] },
+				},
+				{ staff: staff },
+			),
+		);
+
+		handlePlacedPathTile(3, 1, false);
+		handlePlacedPathTile(4, 1, false);
+		ctx.runAllTimers();
+
+		// The whole bridge + ground network is one walkable piece: no new
+		// handyman, and the existing one patrols all four tiles.
+		expect(ctx.actionsOfType("staffhire")).toHaveLength(0);
+		const tiles = coveredTiles(staff[0].patrolArea.tiles);
+		expect(tiles).toEqual(new Set(["1,1", "2,1", "3,1", "4,1"]));
+	});
+
+	it("after a manual Assign, a seeded area keeps the stacked tile's levels in their own networks", () => {
+		handymenEnabledStore.set(true);
+		handymenTilesPerStaffStore.set(8);
+		const surface = { baseHeight: 0, surfaceStyle: 99, hasOwnership: true };
+		const entranceElement = { type: "entrance", sequence: 0 } as unknown as TileElement;
+		const staff = [
+			// The ground handyman's area (as a manual Assign would build it)
+			// includes the ground level of the stacked tile (3,2).
+			fakeStaffWithPatrol(1, "handyman", HANDYMAN_ORDERS_CLEANUP, [
+				{ x: 32, y: 64 },
+				{ x: 64, y: 64 },
+				{ x: 96, y: 64 },
+			]),
+		] as Staff[];
+		ctx.onStaffHire = function onStaffHire(args) {
+			const id = 90 + staff.length;
+			staff.push(fakeStaffWithPatrol(id, "handyman", (args.staffOrders as number) ?? 0));
+			return id;
+		};
+		setGameMap(
+			fakeMap(
+				{ x: 16, y: 16 },
+				{
+					"1,1": { surface: surface, customElements: [entranceElement] },
+					"1,2": { surface: surface, footpaths: [{ baseZ: 8 }] },
+					"2,2": { surface: surface, footpaths: [{ baseZ: 8 }] },
+					"3,2": {
+						surface: surface,
+						footpaths: [{ baseZ: 8 }, { baseZ: 16, slopeDirection: 2 }],
+					},
+					"4,2": { surface: surface, footpaths: [{ baseZ: 32 }] },
+					"5,2": { surface: surface, footpaths: [{ baseZ: 32 }] },
+				},
+				{ staff: staff },
+			),
+		);
+
+		// A scan (as the plugin UI runs) populates the walk graph, so the
+		// ambiguous stacked tile's levels can be resolved to their components.
+		scanFootpathNetwork();
+		ctx.runAllTimers();
+
+		// The bridge deck tile (4,2) is confirmed/placed: it must NOT enlarge
+		// the ground area (the ground level of (3,2) is 32 away from it), but
+		// start the bridge's own area.
+		handlePlacedPathTile(4, 2, false);
+		ctx.runAllTimers();
+
+		expect(ctx.actionsOfType("staffhire")).toHaveLength(1);
+		const groundTiles = coveredTiles(staff[0].patrolArea.tiles);
+		expect(groundTiles.has("4,2")).toBe(false);
+		expect(groundTiles.has("5,2")).toBe(false);
+		const bridgeTiles = coveredTiles(staff[1].patrolArea.tiles);
+		expect(bridgeTiles.has("4,2")).toBe(true);
+		expect(bridgeTiles.has("1,2")).toBe(false);
 	});
 });

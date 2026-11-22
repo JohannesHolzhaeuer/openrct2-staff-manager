@@ -1,5 +1,6 @@
 import {
 	ADJACENT_OFFSETS,
+	type AreaNode,
 	HANDYMAN_ORDERS_CLEANUP,
 	HANDYMAN_ORDERS_GARDENING,
 	MECHANIC_ORDERS_DEFAULT,
@@ -10,6 +11,7 @@ import {
 	canTeleportMechanic,
 	decideAreaAction,
 	findNearestPathInOrderedTiles,
+	getHandymenByPurpose,
 	getStaffByType,
 	hireStaff,
 	isExitAlreadyAssigned,
@@ -20,13 +22,15 @@ import {
 } from "./staff";
 import {
 	type PathTileInfo,
-	footpathsConnectTiles,
+	footpathBaseZsAt,
 	isGardenTile,
 	isQueueTile,
 	isValidStationExit,
+	lastScanComponentOf,
+	pathLevelsConnect,
+	pathNodeKey,
 	surfaceBaseZAt,
 	surfaceTilesConnect,
-	tileKey,
 } from "./scan";
 import {
 	entertainersEnabledStore,
@@ -57,11 +61,16 @@ import { gameMap } from "./game";
 // patrol area once the hire completes.
 interface AutoArea {
 	member: Staff | undefined;
-	// Tile keys (see tileKey) of tiles assigned to this area, world-coordinate
-	// lists of the patrol area tile targets for TeleportStoredTile are kept in
-	// tileKeys for coverage/adjacency checks.
-	tileKeys: Set<string>;
-	// World coordinates of every tile in this area (for patrolArea.add).
+	// Node keys (see pathNodeKey: "x,y,baseZ") of the tile LEVELS assigned to
+	// this area. Levels, not tiles: a single tile can carry several stacked
+	// footpaths at different heights (a bridge over a ground path) that belong
+	// to separate walkable networks, so the area owns each level it actually
+	// walks - keying by (x, y, baseZ) is what stops a bridge level from being
+	// glued onto a ground-level area (or vice versa).
+	nodeKeys: Set<string>;
+	// World coordinates of every distinct x/y tile in this area (for
+	// patrolArea.add). The engine's patrol area is x/y-only, so one coordinate
+	// per tile covers every level the area has there.
 	coords: CoordsXY[];
 }
 
@@ -71,9 +80,13 @@ interface AutoGroup {
 	orders: number;
 	getMaxSize: () => number;
 	purpose: string;
+	// The tile level(s) (baseZ) the freshly handled tile currently carries for
+	// this group: one entry per stacked footpath level for the path groups,
+	// the surface height for the gardening group.
+	getLevels: (tx: number, ty: number) => number[];
 	// Connectivity predicate (shared with the manual scan) used to decide whether a
-	// freshly placed tile is genuinely walkable into an area before enlarging it.
-	connect: (areaTile: CoordsXY, newTile: CoordsXY, areaIndex: number) => boolean;
+	// freshly placed tile level is genuinely walkable into an area before enlarging it.
+	connect: (areaNode: AreaNode, newNode: AreaNode, areaIndex: number) => boolean;
 }
 
 const AUTO_GROUP_CLEANUP: AutoGroup = {
@@ -82,7 +95,8 @@ const AUTO_GROUP_CLEANUP: AutoGroup = {
 	orders: HANDYMAN_ORDERS_CLEANUP,
 	getMaxSize: () => handymenTilesPerStaffStore.get(),
 	purpose: "cleanup",
-	connect: (areaTile, newTile) => footpathsConnectTiles(areaTile, newTile),
+	getLevels: (tx, ty) => footpathBaseZsAt(tx, ty),
+	connect: (areaNode, newNode) => pathLevelsConnect(areaNode, newNode),
 };
 const AUTO_GROUP_GARDENING: AutoGroup = {
 	staffType: "handyman",
@@ -90,7 +104,9 @@ const AUTO_GROUP_GARDENING: AutoGroup = {
 	orders: HANDYMAN_ORDERS_GARDENING,
 	getMaxSize: () => handymenMowerTilesPerStaffStore.get(),
 	purpose: "gardening",
-	connect: (areaTile, newTile) => surfaceTilesConnect(areaTile, newTile),
+	getLevels: (tx, ty) => [surfaceBaseZAt(tx, ty)],
+	connect: (areaNode, newNode) =>
+		surfaceTilesConnect({ x: areaNode.x, y: areaNode.y }, { x: newNode.x, y: newNode.y }),
 };
 const AUTO_GROUP_GUARD: AutoGroup = {
 	staffType: "security",
@@ -98,7 +114,8 @@ const AUTO_GROUP_GUARD: AutoGroup = {
 	orders: 0,
 	getMaxSize: () => guardsTilesPerStaffStore.get(),
 	purpose: "guard",
-	connect: (areaTile, newTile) => footpathsConnectTiles(areaTile, newTile),
+	getLevels: (tx, ty) => footpathBaseZsAt(tx, ty),
+	connect: (areaNode, newNode) => pathLevelsConnect(areaNode, newNode),
 };
 const AUTO_GROUP_ENTERTAINER: AutoGroup = {
 	staffType: "entertainer",
@@ -106,7 +123,8 @@ const AUTO_GROUP_ENTERTAINER: AutoGroup = {
 	orders: 0,
 	getMaxSize: () => entertainersTilesPerStaffStore.get(),
 	purpose: "entertainer",
-	connect: (areaTile, newTile) => footpathsConnectTiles(areaTile, newTile),
+	getLevels: (tx, ty) => footpathBaseZsAt(tx, ty),
+	connect: (areaNode, newNode) => pathLevelsConnect(areaNode, newNode),
 };
 
 // Synchronous per-purpose area records (see the block comment above the interface).
@@ -122,70 +140,195 @@ export const resetAutoAreas = function resetAutoAreas(): void {
 	autoHireForPurpose.clear();
 };
 
+// The roster members that belong to this group. For the handyman groups only
+// handymen of the matching purpose: a cleanup handyman's path area must not
+// seed the gardening group's record (and vice versa), since the two patrol
+// entirely different tile sets.
+const groupMembers = function groupMembers(group: AutoGroup): Staff[] {
+	if ("handyman" === group.staffType) {
+		return HANDYMAN_ORDERS_GARDENING === group.orders
+			? getHandymenByPurpose("gardening")
+			: getHandymenByPurpose("cleanup");
+	}
+	return getStaffByType(group.staffType);
+};
+
+// Decodes a path node key ("x,y,baseZ", see pathNodeKey) back into an AreaNode.
+const keyToNode = function keyToNode(key: string): AreaNode {
+	const parts = key.split(",");
+	return { x: Number(parts[0]), y: Number(parts[1]), baseZ: Number(parts[2]) };
+};
+
+// Seeds a member's (x/y-only) patrol area into (x/y/height) nodes. Land (the
+// gardening group) has one level per tile. For path groups, a tile with a
+// single footpath level is unambiguous. A tile carrying several stacked
+// footpaths (a bridge over a ground path) is ambiguous - the patrol area API
+// carries no height - so its level(s) are resolved against the most recent
+// scan's walk graph: only the level(s) that belong to the same walkable
+// component as this area's other nodes are kept. With no scan graph to
+// resolve against, every level is kept: the engine's patrol area is x/y-only
+// anyway, so this can at worst re-create the old over-merge on a later
+// placement, never drop a level the area genuinely walks.
+const seedAreaNodes = function seedAreaNodes(group: AutoGroup, coords: CoordsXY[]): Set<string> {
+	const nodeKeys = new Set<string>();
+	if ("handyman" === group.staffType && HANDYMAN_ORDERS_GARDENING === group.orders) {
+		for (const tile of coords) {
+			const tx = worldToTileX(tile.x);
+			const ty = worldToTileX(tile.y);
+			nodeKeys.add(pathNodeKey(tx, ty, surfaceBaseZAt(tx, ty)));
+		}
+		return nodeKeys;
+	}
+	const levelsByTileKey = new Map<string, number[]>();
+	for (const tile of coords) {
+		const tx = worldToTileX(tile.x);
+		const ty = worldToTileX(tile.y);
+		const key = `${tx},${ty}`;
+		if (!levelsByTileKey.has(key)) {
+			levelsByTileKey.set(key, footpathBaseZsAt(tx, ty));
+		}
+	}
+	let hasAmbiguousTile = false;
+	for (const levels of levelsByTileKey.values()) {
+		if (1 < levels.length) {
+			hasAmbiguousTile = true;
+			break;
+		}
+	}
+	if (!hasAmbiguousTile) {
+		for (const [key, levels] of levelsByTileKey) {
+			for (const baseZ of levels) {
+				nodeKeys.add(pathNodeKey(Number(key.split(",")[0]), Number(key.split(",")[1]), baseZ));
+			}
+		}
+		return nodeKeys;
+	}
+	// Resolve the stacked tiles via the walk-graph components of this area's
+	// unambiguous nodes.
+	const areaComponents = new Set<number>();
+	for (const [key, levels] of levelsByTileKey) {
+		if (1 === levels.length) {
+			const [x, y] = key.split(",");
+			const component = lastScanComponentOf(pathNodeKey(Number(x), Number(y), levels[0]));
+			if (component !== undefined) {
+				areaComponents.add(component);
+			}
+		}
+	}
+	for (const [key, levels] of levelsByTileKey) {
+		const [x, y] = key.split(",");
+		const tx = Number(x);
+		const ty = Number(y);
+		if (1 === levels.length) {
+			nodeKeys.add(pathNodeKey(tx, ty, levels[0]));
+		} else {
+			let addedAny = false;
+			for (const baseZ of levels) {
+				const component = lastScanComponentOf(pathNodeKey(tx, ty, baseZ));
+				if (component !== undefined && areaComponents.has(component)) {
+					nodeKeys.add(pathNodeKey(tx, ty, baseZ));
+					addedAny = true;
+				}
+			}
+			if (!addedAny) {
+				for (const baseZ of levels) {
+					nodeKeys.add(pathNodeKey(tx, ty, baseZ));
+				}
+			}
+		}
+	}
+	return nodeKeys;
+};
+
 const autoAreas = function autoAreas(group: AutoGroup): AutoArea[] {
 	let list = autoAreasByPurpose.get(group.purpose);
 	if (!list) {
 		list = [];
-		for (const m of getStaffByType(group.staffType)) {
+		for (const m of groupMembers(group)) {
 			const coords = [...m.patrolArea.tiles];
-			const keys = new Set<string>();
-			for (const t of coords) {
-				keys.add(tileKey(worldToTileX(t.x), worldToTileX(t.y)));
-			}
-			list.push({ member: m, tileKeys: keys, coords: coords });
+			const nodeKeys = seedAreaNodes(group, coords);
+			list.push({ member: m, nodeKeys: nodeKeys, coords: coords });
 		}
 		autoAreasByPurpose.set(group.purpose, list);
 	}
 	return list;
 };
 
-const autoAddTileToArea = function autoAddTileToArea(
+const autoAddNodeToArea = function autoAddNodeToArea(
 	group: AutoGroup,
 	areaIndex: number,
-	tile: CoordsXY,
+	node: AreaNode,
 ): void {
 	const area = autoAreas(group)[areaIndex];
-	if (area.tileKeys.has(tileKey(tile.x, tile.y))) {
+	const key = pathNodeKey(node.x, node.y, node.baseZ);
+	if (area.nodeKeys.has(key)) {
 		return;
 	}
-	area.tileKeys.add(tileKey(tile.x, tile.y));
-	area.coords.push({ x: tile.x * 32, y: tile.y * 32 });
+	area.nodeKeys.add(key);
+	// The engine's patrol area is x/y-only, so only add the coordinate when
+	// this is the first level of the tile the area gains.
+	const tileKeyOfNode = `${node.x},${node.y}`;
+	const hasTile = area.coords.some(function sameTile(c) {
+		return tileKeyOfNode === `${worldToTileX(c.x)},${worldToTileX(c.y)}`;
+	});
+	if (!hasTile) {
+		area.coords.push({ x: node.x * 32, y: node.y * 32 });
+	}
 };
 
+// Decides what to do with every level the freshly placed/bought tile
+// currently carries: a level already in an area is "covered"; a level
+// genuinely walkable into an under-cap area enlarges it; anything else starts
+// a new area (and a hire). Deciding per level - rather than per tile - is
+// what keeps a stacked tile's levels in their own height networks: the
+// ground level of a bridge-over-path tile stays in the ground area while the
+// bridge level above it grows into the bridge's own area.
 const handleTileForGroup = function handleTileForGroup(
 	group: AutoGroup,
 	tx: number,
 	ty: number,
 ): boolean {
+	const levels = group.getLevels(tx, ty);
+	if (0 === levels.length) {
+		return false;
+	}
 	const areas = autoAreas(group);
-	const list = autoAreasAsCoords(group);
-	const decision = decideAreaAction({
-		areas: list,
-		newTile: { x: tx, y: ty },
-		maxSize: group.getMaxSize(),
-		connect: group.connect,
+	// A node view per area for decideAreaAction, kept in sync with the
+	// AutoArea records as nodes are added below.
+	const nodeAreas: AreaNode[][] = areas.map(function areaNodes(a) {
+		return [...a.nodeKeys].map(keyToNode);
 	});
-	if ("covered" === decision.action) {
-		return false;
+	let hired = false;
+	let enlarged = false;
+	for (const baseZ of levels) {
+		const newNode: AreaNode = { x: tx, y: ty, baseZ: baseZ };
+		const decision = decideAreaAction({
+			areas: nodeAreas,
+			newNode: newNode,
+			maxSize: group.getMaxSize(),
+			connect: group.connect,
+		});
+		if ("covered" !== decision.action) {
+			if ("enlarge" === decision.action) {
+				autoAddNodeToArea(group, decision.areaIndex, newNode);
+				nodeAreas[decision.areaIndex].push(newNode);
+				enlarged = true;
+			} else {
+				areas.push({
+					member: undefined,
+					nodeKeys: new Set([pathNodeKey(tx, ty, baseZ)]),
+					coords: [{ x: tx * 32, y: ty * 32 }],
+				});
+				nodeAreas.push([newNode]);
+				queueAutoHire(group, newNode);
+				hired = true;
+			}
+		}
 	}
-	if ("enlarge" === decision.action) {
-		autoAddTileToArea(group, decision.areaIndex, { x: tx, y: ty });
+	if (enlarged) {
 		applyAutoAreasToLive(group);
-		return false;
 	}
-	areas.push({
-		member: undefined,
-		tileKeys: new Set([tileKey(tx, ty)]),
-		coords: [{ x: tx * 32, y: ty * 32 }],
-	});
-	queueAutoHire(group, tx, ty);
-	return true;
-};
-
-const autoAreasAsCoords = function autoAreasAsCoords(group: AutoGroup): CoordsXY[][] {
-	return autoAreas(group).map(function areaCoords(a) {
-		return a.coords;
-	});
+	return hired;
 };
 
 const applyAutoAreasToLive = function applyAutoAreasToLive(group: AutoGroup): void {
@@ -198,19 +341,36 @@ const applyAutoAreasToLive = function applyAutoAreasToLive(group: AutoGroup): vo
 
 // The teleport height for a member of the given auto group at (tx, ty):
 // surface height for gardening handymen (so they land on the grass to mow),
-// or footpath height otherwise.
-const teleportZForGroup = function teleportZForGroup(
-	group: AutoGroup,
-	tx: number,
-	ty: number,
-): number {
+// or the footpath level that triggered the hire otherwise. NOT the lowest
+// footpath on the tile: a bridge level hired over a ground path must be
+// dropped onto the bridge, not the path beneath it.
+const teleportZForGroup = function teleportZForGroup(group: AutoGroup, node: AreaNode): number {
 	if ("handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING) {
-		return surfaceBaseZAt(tx, ty);
+		return surfaceBaseZAt(node.x, node.y);
 	}
-	return footpathBaseZAt(tx, ty);
+	return node.baseZ;
 };
 
-const queueAutoHire = function queueAutoHire(group: AutoGroup, tx: number, ty: number): void {
+// The level this area patrols at (tx, ty) (its node's baseZ), if it owns a
+// node there at all. Used to drop a hired member at the height of the network
+// they were hired for when the trigger tile itself isn't placeable.
+const areaLevelAt = function areaLevelAt(
+	area: AutoArea,
+	tx: number,
+	ty: number,
+): number | undefined {
+	for (const key of area.nodeKeys) {
+		const node = keyToNode(key);
+		if (node.x === tx && node.y === ty) {
+			return node.baseZ;
+		}
+	}
+	return undefined;
+};
+
+const queueAutoHire = function queueAutoHire(group: AutoGroup, node: AreaNode): void {
+	const tx = node.x;
+	const ty = node.y;
 	if (autoHireForPurpose.get(group.purpose)) {
 		return;
 	}
@@ -231,7 +391,7 @@ const queueAutoHire = function queueAutoHire(group: AutoGroup, tx: number, ty: n
 				}
 				area.member = member;
 				member.patrolArea.add(area.coords);
-				const z = teleportZForGroup(group, tx, ty);
+				const z = teleportZForGroup(group, node);
 				// For a gardening area, avoid dropping the handyman onto a queue/fenced
 				// footpath (which now only occurs as a possible teleport tile when the tile
 				// itself is a path), so they can actually step onto the grass they are to mow.
@@ -281,7 +441,11 @@ const queueAutoHire = function queueAutoHire(group: AutoGroup, tx: number, ty: n
 					if (fallback) {
 						teleportX = fallback.x;
 						teleportY = fallback.y;
-						teleportZ = teleportZForGroup(group, teleportX, teleportY);
+						teleportZ =
+							"handyman" === group.staffType && group.orders === HANDYMAN_ORDERS_GARDENING
+								? surfaceBaseZAt(teleportX, teleportY)
+								: (areaLevelAt(area, teleportX, teleportY) ??
+									footpathBaseZAt(teleportX, teleportY));
 					}
 				}
 				teleportStaffToTile(member, { x: teleportX, y: teleportY, z: teleportZ });
