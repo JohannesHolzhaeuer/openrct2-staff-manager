@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	countRideExits,
-	footpathsConnectTiles,
 	isValidStationExit,
+	pathLevelsConnect,
 	surfaceFenceBlocksWalking,
 	surfaceTilesConnect,
 } from "../src/scan";
@@ -13,7 +13,11 @@ afterEach(() => {
 	resetGameMap();
 });
 
-describe("footpathsConnectTiles", () => {
+const node = function node(x: number, y: number, baseZ: number) {
+	return { x: x, y: y, baseZ: baseZ };
+};
+
+describe("pathLevelsConnect", () => {
 	it("connects two flat neighbouring paths at the same height", () => {
 		setGameMap(
 			fakeMap(
@@ -24,7 +28,7 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 2, y: 1 })).toBe(true);
+		expect(pathLevelsConnect(node(1, 1, 100), node(2, 1, 100))).toBe(true);
 	});
 
 	it("does not connect a bridge path to the path passing underneath", () => {
@@ -37,20 +41,72 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 2, y: 1 })).toBe(false);
+		expect(pathLevelsConnect(node(1, 1, 100), node(2, 1, 148))).toBe(false);
+		expect(pathLevelsConnect(node(2, 1, 148), node(1, 1, 100))).toBe(false);
 	});
 
-	it("picks the matching path when a tile carries several at different heights", () => {
+	it("connects each level of a stacked pair only to its own height network", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 8, y: 8 },
+				{
+					// Both tiles carry a ground path and a bridge path above it.
+					"1,1": { footpaths: [{ baseZ: 148 }, { baseZ: 100 }] },
+					"2,1": { footpaths: [{ baseZ: 148 }, { baseZ: 100 }] },
+				},
+			),
+		);
+		// Ground meets ground, bridge meets bridge...
+		expect(pathLevelsConnect(node(1, 1, 100), node(2, 1, 100))).toBe(true);
+		expect(pathLevelsConnect(node(1, 1, 148), node(2, 1, 148))).toBe(true);
+		// ...but a level never meets the other tile's other level.
+		expect(pathLevelsConnect(node(1, 1, 100), node(2, 1, 148))).toBe(false);
+		expect(pathLevelsConnect(node(1, 1, 148), node(2, 1, 100))).toBe(false);
+	});
+
+	it("connects a ramp to the path at its low end and the path at its high end", () => {
 		setGameMap(
 			fakeMap(
 				{ x: 8, y: 8 },
 				{
 					"1,1": { footpaths: [{ baseZ: 100 }] },
-					"2,1": { footpaths: [{ baseZ: 148 }, { baseZ: 100 }] },
+					// Slope climbing east (direction 2): low end at 100, high end at 116.
+					"2,1": { footpaths: [{ baseZ: 100, slopeDirection: 2 }] },
+					"3,1": { footpaths: [{ baseZ: 116 }] },
 				},
 			),
 		);
-		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 2, y: 1 })).toBe(true);
+		expect(pathLevelsConnect(node(1, 1, 100), node(2, 1, 100))).toBe(true);
+		expect(pathLevelsConnect(node(3, 1, 116), node(2, 1, 100))).toBe(true);
+	});
+
+	it("does not connect a path to the raised side of a neighbouring ramp", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 8, y: 8 },
+				{
+					// The ramp's low end (west edge) is at 116 - one level above
+					// the ground path, which a peep cannot climb straight.
+					"2,1": { footpaths: [{ baseZ: 116, slopeDirection: 2 }] },
+					"1,1": { footpaths: [{ baseZ: 100 }] },
+				},
+			),
+		);
+		expect(pathLevelsConnect(node(1, 1, 100), node(2, 1, 116))).toBe(false);
+	});
+
+	it("rejects a level that no footpath on either tile actually has", () => {
+		setGameMap(
+			fakeMap(
+				{ x: 8, y: 8 },
+				{
+					"1,1": { footpaths: [{ baseZ: 100 }] },
+					"2,1": { footpaths: [{ baseZ: 100 }] },
+				},
+			),
+		);
+		expect(pathLevelsConnect(node(1, 1, 148), node(2, 1, 100))).toBe(false);
+		expect(pathLevelsConnect(node(1, 1, 100), node(2, 1, 148))).toBe(false);
 	});
 
 	it("rejects diagonal and identical tiles", () => {
@@ -63,8 +119,8 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 2, y: 2 })).toBe(false);
-		expect(footpathsConnectTiles({ x: 1, y: 1 }, { x: 1, y: 1 })).toBe(false);
+		expect(pathLevelsConnect(node(1, 1, 100), node(2, 2, 100))).toBe(false);
+		expect(pathLevelsConnect(node(1, 1, 100), node(1, 1, 100))).toBe(false);
 	});
 
 	it("treats out-of-bounds tiles as having no paths", () => {
@@ -76,7 +132,7 @@ describe("footpathsConnectTiles", () => {
 				},
 			),
 		);
-		expect(footpathsConnectTiles({ x: 0, y: 0 }, { x: -1, y: 0 })).toBe(false);
+		expect(pathLevelsConnect(node(0, 0, 100), node(-1, 0, 100))).toBe(false);
 	});
 });
 

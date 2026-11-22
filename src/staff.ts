@@ -5,7 +5,7 @@ import {
 	isValidStationExit,
 	lastAllPathTiles,
 	lastGardenAreas,
-	tileKey,
+	pathNodeKey,
 } from "./scan";
 import {
 	computeNeeded,
@@ -514,7 +514,7 @@ export const chunkTilesForStaffCount = function chunkTilesForStaffCount(
 	const order: string[] = [];
 	const orderIndexByKey = new Map<string, number>();
 	for (const tile of tiles) {
-		const key = tileKey(tile.x, tile.y);
+		const key = pathNodeKey(tile.x, tile.y, tile.baseZ);
 		if (!tileByKey.has(key)) {
 			tileByKey.set(key, tile);
 			orderIndexByKey.set(key, order.length);
@@ -634,7 +634,7 @@ const mergeSurplusChunks = function mergeSurplusChunks(
 	const chunkIndexByKey = new Map<string, number>();
 	for (let i = 0; i < chunks.length; i++) {
 		for (const tile of chunks[i]) {
-			chunkIndexByKey.set(tileKey(tile.x, tile.y), i);
+			chunkIndexByKey.set(pathNodeKey(tile.x, tile.y, tile.baseZ), i);
 		}
 	}
 
@@ -974,61 +974,92 @@ export const ADJACENT_OFFSETS: CoordsXY[] = [
 	{ x: 0, y: -32 },
 ];
 
-// Pure decision logic for a freshly placed (or bought) tile against one staff type's
-// already-assigned patrol areas, using that type's configured maximum area size:
-//  - If the tile is already in any area              -> "covered"  (do nothing)
-//  - Else if an adjacent area is under the max size -> "enlarge"  (extend that area)
-//  - Else                                       -> "hire"      (new staff + assign)
-// `areas` is the list of tile-world-coordinate arrays, one per already-hired staff
-// member of the type. `newTile` is the placed tile in tile coordinates. The optional
-// `connect` predicate decides whether the new tile is genuinely walkable to an
-// existing area tile: when supplied, only actually-connected cardinal neighbours count as
-// adjacent (so bridges/inclined ways are never merged); when omitted (tests), plain
-// cardinal adjacency is used.
+// A single walkable node in an auto area: a tile at a specific footpath (or
+// surface) height. A tile can carry several stacked footpaths at different
+// heights (a bridge over a ground path), each belonging to a separate
+// walkable network, so area membership is tracked per (x, y, baseZ) node
+// rather than per (x, y) tile - otherwise the two height networks would be
+// glued into one patrol area that no handyman can actually walk in one piece.
+export interface AreaNode {
+	x: number;
+	y: number;
+	baseZ: number;
+}
+
+// Pure decision logic for a freshly placed (or bought) tile LEVEL against one
+// staff type's already-assigned patrol areas, using that type's configured
+// maximum area size:
+//  - If the node (x/y AND height level) is already in any area -> "covered"  (do nothing)
+//  - Else if a walkable-adjacent area node's area is under the max size -> "enlarge"
+//  - Else                                                    -> "hire"  (new staff + assign)
+// `areas` is a list of node arrays, one per already-hired staff member of the
+// type. `newNode` is the placed tile level in tile coordinates. The optional
+// `connect` predicate decides whether the new node is genuinely walkable to an
+// existing area node: when supplied, only actually-connected cardinal neighbours
+// count as adjacent (so a bridge level is never merged into a ground-level
+// area); when omitted (tests), plain cardinal adjacency is used.
 export const decideAreaAction = function decideAreaAction(options: {
-	areas: CoordsXY[][];
-	newTile: CoordsXY;
+	areas: AreaNode[][];
+	newNode: AreaNode;
 	maxSize: number;
-	connect?: (areaTile: CoordsXY, newTile: CoordsXY, areaIndex: number) => boolean;
+	connect?: (areaNode: AreaNode, newNode: AreaNode, areaIndex: number) => boolean;
 }): AreaDecision {
-	const { areas, newTile, maxSize, connect } = options;
-	if (0 > newTile.x || 0 > newTile.y) {
+	const { areas, newNode, maxSize, connect } = options;
+	if (0 > newNode.x || 0 > newNode.y) {
 		return { action: "hire" };
 	}
-	// Index every area tile once by "x,y" tile key, mapping to the index of the
-	// area it belongs to. The coverage and adjacency checks below then become
-	// O(1) lookups instead of rescanning every tile of every area (the coverage
-	// pass alone used to flatten and walk all areas on each placed tile).
-	const areaIndexByTileKey = new Map<string, number>();
+	// Index every area node once: a set of node keys for the O(1) coverage
+	// check, and a tile-key -> per-area level list for the adjacency check.
+	// Both checks then become O(1) lookups instead of rescanning every node of
+	// every area on each placed tile.
+	const coveredNodeKeys = new Set<string>();
+	const areaLevelsByTileKey = new Map<string, { areaIndex: number; baseZs: number[] }[]>();
 	for (let i = 0; i < areas.length; i++) {
-		const area = areas[i];
-		for (const tile of area) {
-			const key = `${worldToTileX(tile.x)},${worldToTileX(tile.y)}`;
-			// Keep the first area that claims a tile, matching the previous
-			// first-match-wins iteration order.
-			if (!areaIndexByTileKey.has(key)) {
-				areaIndexByTileKey.set(key, i);
+		for (const node of areas[i]) {
+			coveredNodeKeys.add(pathNodeKey(node.x, node.y, node.baseZ));
+			const key = `${node.x},${node.y}`;
+			let byArea = areaLevelsByTileKey.get(key);
+			if (byArea === undefined) {
+				byArea = [];
+				areaLevelsByTileKey.set(key, byArea);
+			}
+			let entry = byArea.find(function matchingArea(e) {
+				return e.areaIndex === i;
+			});
+			if (entry === undefined) {
+				entry = { areaIndex: i, baseZs: [] };
+				byArea.push(entry);
+			}
+			if (!entry.baseZs.includes(node.baseZ)) {
+				entry.baseZs.push(node.baseZ);
 			}
 		}
 	}
-	// 1. Already covered?
-	if (areaIndexByTileKey.has(`${newTile.x},${newTile.y}`)) {
+	// 1. Already covered? A node is covered only when that exact (x/y AND
+	// height level) is in an area: a stacked bridge level on a tile whose
+	// ground level is already patrolled is NOT covered, and must be decided
+	// on its own merits below (usually ending up in the bridge's own area).
+	if (coveredNodeKeys.has(pathNodeKey(newNode.x, newNode.y, newNode.baseZ))) {
 		return { action: "covered" };
 	}
-	// 2. Adjacent to an existing area that's under the cap -> enlarge it.
+	// 2. Adjacent to a genuinely-walkable area node whose area is under the
+	// cap -> enlarge that area.
 	for (const offset of ADJACENT_OFFSETS) {
-		const neighbourX = newTile.x + worldToTileX(offset.x);
-		const neighbourY = newTile.y + worldToTileX(offset.y);
-		const areaIndex = areaIndexByTileKey.get(`${neighbourX},${neighbourY}`);
-		if (
-			areaIndex !== undefined &&
-			(!connect ||
-				connect({ x: neighbourX, y: neighbourY }, { x: newTile.x, y: newTile.y }, areaIndex))
-		) {
-			if (areas[areaIndex].length < maxSize) {
-				return { action: "enlarge", areaIndex: areaIndex };
+		const neighbourX = newNode.x + worldToTileX(offset.x);
+		const neighbourY = newNode.y + worldToTileX(offset.y);
+		const byArea = areaLevelsByTileKey.get(`${neighbourX},${neighbourY}`);
+		if (byArea !== undefined) {
+			for (const entry of byArea) {
+				for (const baseZ of entry.baseZs) {
+					const areaNode: AreaNode = { x: neighbourX, y: neighbourY, baseZ: baseZ };
+					if (!connect || connect(areaNode, newNode, entry.areaIndex)) {
+						if (areas[entry.areaIndex].length < maxSize) {
+							return { action: "enlarge", areaIndex: entry.areaIndex };
+						}
+						return { action: "hire" };
+					}
+				}
 			}
-			return { action: "hire" };
 		}
 	}
 	return { action: "hire" };

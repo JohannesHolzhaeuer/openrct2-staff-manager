@@ -30,9 +30,10 @@ used by handymen/guards.
 - `src/config.ts` — default values for the user-facing settings (tiles per staff, enabled flags, etc.).
 - `src/scan.ts` — the map scans: park-entrance detection, height-aware footpath network walk,
   gardening-tile scan, ride-exit counting. Contains the shared connectivity primitives
-  (`footpathsConnect`/`footpathsConnectTiles` for paths, `surfacesConnect`/`surfaceTilesConnect`
-  for land, `surfaceFenceBlocksWalking` for fences) and the pure `footpathIsElevated`/`footpathEdgeZ`
-  helpers.
+  (`footpathsConnect`/`pathLevelsConnect` for paths, `surfacesConnect`/`surfaceTilesConnect`
+  for land, `surfaceFenceBlocksWalking` for fences), the `footpathBaseZsAt` stacked-level helper,
+  `lastScanComponentOf` (walk-graph components of the last scan) and the pure
+  `footpathIsElevated`/`footpathEdgeZ` helpers.
 - `src/staff.ts` — staff roster logic: hire/fire, classification (cleanup vs gardening), patrol-area
   assignment and teleporting (single serialised queue), the Hired/Assigned refresh.
 - `src/i18n/` — translation dictionaries (en-GB, de-DE) and the `t()` helper.
@@ -96,7 +97,7 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
   continues on the next tick via `context.setTimeout` rather than recursing, so a large queue
   never blows the call stack. Never teleport a **gardening** handyman onto a queue/fenced tile —
   pick a non-queue work tile from the same area so they can reach the grass.
-- Automatic mode (`src/auto.ts` + the "Incremental automatic helpers" in `src/staff.ts`) decides
+- Automatic mode (`src/auto.ts` + the "Incremental automatic helpers" in `src/staff-auto.ts`) decides
   **synchronously** against an in-memory record of each purpose's assigned areas
   (`autoAreasByPurpose` / `AutoArea`), _not_ against the live staff roster/`patrolArea`s — those
   only update after async `staffhire`/`patrolArea.add` calls complete, so reading them mid-drag would
@@ -104,6 +105,14 @@ Requires Node.js and npm on PATH. In Visual Studio, building the `.esproj`/`.sln
   a new member only when nothing adjacent is under the cap; hires are serialised one per purpose via
   `queueAutoHire`. Ghost (hover) footpath tiles are filtered out in `queueTileIfPlacedPath` in
   `src/auto.ts` so hovering never hires staff. Preserve this synchronous tracking when touching auto mode.
+  Auto areas track **tile levels**, not tiles: an `AutoArea` is a set of `(x, y, baseZ)` nodes
+  (`pathNodeKey`), because the engine's patrol area API is x/y-only (z-less) and a tile can carry
+  stacked footpaths (a bridge over a ground path) that belong to separate walkable networks. Decisions
+  run per level (`decideAreaAction` is node-based), enlarge-adjacency is checked level-to-level with
+  `pathLevelsConnect`, and a member's seeded area resolves stacked tiles' ambiguous levels via the last
+  scan's walk-graph components (`lastScanComponentOf`) so a bridge level is never glued onto a
+  ground-level area (or vice versa) — the classic "handyman patrols a bridge and the garden under it"
+  bug.
 - Plugin metadata (name, version, author) is set in the `registerPlugin(...)` call at the bottom
   of `src/main.ts`. The `version` is build-injected, not hardcoded: `bundle.ts` reads it from
   `package.json` and `define`s it in as the `STAFF_MANAGER_VERSION` global (declared in

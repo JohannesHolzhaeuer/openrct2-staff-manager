@@ -25,19 +25,34 @@ export interface PathTileInfo {
 	// part of the patrol area but are NOT mowed/watered and do NOT count toward
 	// gardener staffing. Undefined for cleanup/queue/regular garden work tiles.
 	isConnector?: boolean;
-	// Keys (see tileKey) of the tiles this tile is actually walkable to.
-	// Plain x/y adjacency is NOT enough to decide this: two neighbouring
-	// tiles can sit at completely different heights (e.g. a path on a
-	// bridge crossing a path below, or two terraces separated by a cliff),
-	// in which case staff cannot step from one to the other. Connectivity
-	// is therefore computed once, while the tiles are being collected, and
-	// carried on the tile itself so that patrol areas built later are
-	// guaranteed to be genuinely walkable in one piece.
+	// Keys (see pathNodeKey) of the walkable nodes this tile's node is
+	// actually walkable to. Plain x/y adjacency is NOT enough to decide
+	// this: two neighbouring tiles can sit at completely different heights
+	// (e.g. a path on a bridge crossing a path below, or two terraces
+	// separated by a cliff), in which case staff cannot step from one to the
+	// other. A single tile can even carry two stacked footpaths at different
+	// heights that belong to unrelated networks (a bridge over a path); those
+	// are separate walkable nodes, so a link is only valid to the neighbour
+	// node that actually meets this node at the shared edge height.
+	// Connectivity is therefore computed once, while the tiles are being
+	// collected, and carried on the tile itself so that patrol areas built
+	// later are guaranteed to be genuinely walkable in one piece.
 	neighbourKeys: string[];
 }
 
 export const tileKey = function tileKey(x: number, y: number): string {
 	return `${x},${y}`;
+};
+
+// A walkable footpath node is identified by its tile AND its height: a single
+// tile can carry several stacked footpaths at different baseZ (e.g. a bridge
+// crossing over a ground path), each of which is a separate, independently
+// walkable network. Keying nodes by (x, y, baseZ) - rather than (x, y) - keeps
+// those networks distinct, so the patrol areas built from them never "teleport"
+// between, say, a bridge and the path directly beneath it (which a plain x/y
+// key would merge into one unreachable area).
+export const pathNodeKey = function pathNodeKey(x: number, y: number, baseZ: number): string {
+	return `${x},${y},${baseZ}`;
 };
 
 // Cardinal neighbour offsets used to walk the footpath network tile by tile.
@@ -190,6 +205,27 @@ const findFootpathElements = function findFootpathElements(x: number, y: number)
 	return findFootpathElementsOnTile(gameMap().getTile(x, y));
 };
 
+// The footpath (from an already-fetched list for one tile) whose edge facing
+// `fromDirection` sits at world height `edgeZ`, or undefined if none matches.
+// This is the inverse of footpathEdgeZ: a walk crosses a shared edge at a known
+// height, and a tile can carry several stacked footpaths at different heights,
+// so this picks the specific footpath on the far tile that is actually being
+// connected to. Keeping it pure over the supplied footpaths means the
+// neighbour-node resolution in the footpath walk can be unit-tested without a
+// live map.
+export const findFootpathAtEdge = function findFootpathAtEdge(
+	fromDirection: number,
+	edgeZ: number,
+	footpaths: FootpathGeometry[],
+): FootpathGeometry | undefined {
+	for (const footpath of footpaths) {
+		if (footpathEdgeZ(footpath, fromDirection) === edgeZ) {
+			return footpath;
+		}
+	}
+	return undefined;
+};
+
 // The world height of a footpath at the edge facing the given direction
 // (using OpenRCT2's 0=-X, 1=+Y, 2=+X, 3=-Y direction convention). A flat
 // path is at baseZ all around; a sloped path is at baseZ on three edges and
@@ -222,29 +258,67 @@ export const footpathsConnect = function footpathsConnect(
 	return footpathEdgeZ(from, direction) === footpathEdgeZ(to, oppositeDirection(direction));
 };
 
-// Whether staff can walk between two neighbouring tiles' *footpath* elements. Unlike
-// plain x/y adjacency, this defers to the engine's own PathNavigator/PathConnection
-// graph (see src/paths/path-graph.ts) instead of re-deriving height/slope rules by
-// hand: a path on a bridge and a path passing beneath it at a different height are
-// NOT considered connected, and two inclined ways meet only if the engine actually
-// reports a PathConnection between them. This is the shared connectivity primitive
-// used by both the manual scan (to build patrol areas) and auto mode (to decide
-// enlarge-vs-hire), so the two never disagree about whether two tiles belong in one
-// reachable area.
-export const footpathsConnectTiles = function footpathsConnectTiles(
-	from: CoordsXY,
-	to: CoordsXY,
+// The baseZ of every non-ghost footpath element on a tile, one entry per
+// stacked level (a tile can carry a ground path and a bridge path above it,
+// each at its own height).
+export const footpathBaseZsAt = function footpathBaseZsAt(x: number, y: number): number[] {
+	const result: number[] = [];
+	for (const footpath of findFootpathElements(x, y)) {
+		if (!footpath.isGhost && !result.includes(footpath.baseZ)) {
+			result.push(footpath.baseZ);
+		}
+	}
+	return result;
+};
+
+// Whether the footpath level `fromBaseZ` on tile (fromX, fromY) is genuinely
+// walkable-adjacent to the footpath level `toBaseZ` on the neighbouring tile
+// (toX, toY): the two paths must meet at the same height on their shared
+// edge (see footpathsConnect). Level-to-level, both ways: a tile can carry
+// several stacked footpaths (a bridge over a ground path), and the ground
+// level may well be adjacent at x/y while the bridge level above it is not -
+// checking "any level on the to tile" would still glue the two height
+// networks together. This is the connectivity primitive auto mode uses to
+// decide whether a freshly placed tile level can join an existing patrol
+// area, so a bridge level is never glued onto a ground-level area (or vice
+// versa) just because the two happen to share an x/y tile.
+export const pathLevelsConnect = function pathLevelsConnect(
+	from: { x: number; y: number; baseZ: number },
+	to: { x: number; y: number; baseZ: number },
 ): boolean {
 	if (from.x === to.x && from.y === to.y) {
 		return false;
 	}
-	const froms = findFootpathElements(from.x, from.y);
-	for (const f of froms) {
-		if (pathTilesConnected({ x: from.x, y: from.y, z: f.baseZ }, to)) {
-			return true;
-		}
+	const dx = to.x - from.x;
+	const dy = to.y - from.y;
+	// A walkable neighbour differs by exactly one tile on exactly one axis;
+	// anything else (diagonal, farther away) is not adjacent at all.
+	const isCardinalX = -1 === dx || 1 === dx;
+	const isCardinalY = -1 === dy || 1 === dy;
+	if (isCardinalX === isCardinalY) {
+		return false;
 	}
-	return false;
+	// The shared edge's direction from `from`'s perspective (0=-X, 1=+Y,
+	// 2=+X, 3=-Y).
+	let direction = -1;
+	if (isCardinalX) {
+		direction = 1 === dx ? 2 : 0;
+	} else {
+		direction = 1 === dy ? 1 : 3;
+	}
+	const fromFootpath = findFootpathElements(from.x, from.y).find(function isMatchingLevel(fp) {
+		return !fp.isGhost && from.baseZ === fp.baseZ;
+	});
+	if (undefined === fromFootpath) {
+		return false;
+	}
+	const toFootpath = findFootpathElements(to.x, to.y).find(function isMatchingLevel(fp) {
+		return !fp.isGhost && to.baseZ === fp.baseZ;
+	});
+	if (undefined === toFootpath) {
+		return false;
+	}
+	return footpathsConnect(fromFootpath, toFootpath, direction);
 };
 
 // Whether staff can walk between two neighbouring *land* tiles (used for gardening
@@ -428,6 +502,20 @@ const scanFootpathNetworkFromEntrance = function scanFootpathNetworkFromEntrance
 	// carry several stacked footpaths that are not connected to each other.
 	const visited = new Set<string>();
 	const tilesByKey = new Map<string, PathTileInfo>();
+	// A tile is popped once per stacked footpath on it, and its footpaths are
+	// also read for every connecting neighbour, so without this each tile's
+	// elements would be re-scanned (one map.getTile per visit and per edge).
+	// Cache the footpath list per tile for the duration of the walk instead.
+	const footpathsByTile = new Map<string, FootpathInfo[]>();
+	const getFootpaths = function getFootpaths(x: number, y: number): FootpathInfo[] {
+		const cacheKey = tileKey(x, y);
+		let cached = footpathsByTile.get(cacheKey);
+		if (undefined === cached) {
+			cached = findFootpathElements(x, y);
+			footpathsByTile.set(cacheKey, cached);
+		}
+		return cached;
+	};
 	// A step to take: onto tile (x, y), arriving from `fromDirection`, where
 	// the path we are stepping off meets this tile at height `z`. A null z
 	// means "no height constraint" and is only used for the initial steps out
@@ -476,7 +564,7 @@ const scanFootpathNetworkFromEntrance = function scanFootpathNetworkFromEntrance
 			// built from them to leave a gap in the middle. Unowned non-path
 			// tiles (e.g. surrounding land/water) are still dead ends, so the
 			// walk doesn't spread across the whole map.
-			const footpaths = findFootpathElements(current.x, current.y);
+			const footpaths = getFootpaths(current.x, current.y);
 
 			for (const footpath of footpaths) {
 				// Only step onto this path if it actually meets the path we came
@@ -485,15 +573,14 @@ const scanFootpathNetworkFromEntrance = function scanFootpathNetworkFromEntrance
 					undefined === current.z ||
 					footpathEdgeZ(footpath, current.fromDirection) === current.z
 				) {
-					const nodeKey = `${current.x},${current.y},${footpath.baseZ}`;
+					const nodeKey = pathNodeKey(current.x, current.y, footpath.baseZ);
 					if (!visited.has(nodeKey)) {
 						visited.add(nodeKey);
 
-						const key = tileKey(current.x, current.y);
 						const ownedOrElevated =
 							isParkOwnedTile(current.x, current.y) ||
 							isElevatedFootpath(current.x, current.y, footpath);
-						let info = tilesByKey.get(key);
+						let info = tilesByKey.get(nodeKey);
 						if (ownedOrElevated && !info) {
 							info = {
 								x: current.x,
@@ -503,7 +590,7 @@ const scanFootpathNetworkFromEntrance = function scanFootpathNetworkFromEntrance
 								isQueue: footpath.isQueue,
 								neighbourKeys: [],
 							};
-							tilesByKey.set(key, info);
+							tilesByKey.set(nodeKey, info);
 							if (footpath.isQueue) {
 								queueTiles.push(info);
 							} else {
@@ -521,27 +608,38 @@ const scanFootpathNetworkFromEntrance = function scanFootpathNetworkFromEntrance
 							);
 							if (connects) {
 								const edgeZ = footpathEdgeZ(footpath, d);
-								// Record the walkable link between the two tiles (both ends,
-								// once both tiles are known to be part of the park's network).
-								// Guard by height: a tile can carry stacked footpaths at different
-								// heights (e.g. underground and overground crossing), which are separate
-								// walkable nodes. Only the node matching this tile's recorded baseZ may
-								// contribute links - otherwise a single tile whose two stacked paths belong to
-								// different networks would bridge them, merging into one unreachable area.
+								// Record the walkable link OUT of this node. A node is keyed by
+								// (x, y, baseZ) (see pathNodeKey), so a tile carrying stacked
+								// footpaths (e.g. a bridge over a ground path) is several distinct
+								// nodes - one per height - and this node may only link to the
+								// neighbour node that actually meets it at the shared edge height.
+								// Resolving that neighbour node via findFootpathAtEdge (matching the
+								// edge height) is what stops one node from bridging two stacked
+								// networks into a single, unreachable area: a ground node no longer
+								// links to the bridge node sitting on the same tile, and vice versa.
+								// Only the outbound edge is recorded here; the neighbour records its
+								// own outbound edge back to us when it is walked, so both directions
+								// land (and a link to a neighbour that is not itself a node - e.g. an
+								// unowned, non-elevated road tile - is simply not recorded).
 								if (info !== undefined) {
-									if (info.baseZ === footpath.baseZ) {
-										const neighbourKey = tileKey(neighbour.x, neighbour.y);
-										if (!info.neighbourKeys.includes(neighbourKey)) {
-											info.neighbourKeys.push(neighbourKey);
-										}
-										const neighbourInfo = tilesByKey.get(neighbourKey);
-										if (neighbourInfo !== undefined) {
-											if (
-												neighbourInfo.baseZ === footpath.baseZ &&
-												!neighbourInfo.neighbourKeys.includes(key)
-											) {
-												neighbourInfo.neighbourKeys.push(key);
-											}
+									const neighbourFootpaths = getFootpaths(neighbour.x, neighbour.y);
+									const neighbourFootpath = findFootpathAtEdge(
+										oppositeDirection(d),
+										edgeZ,
+										neighbourFootpaths,
+									);
+									if (
+										neighbourFootpath !== undefined &&
+										(isParkOwnedTile(neighbour.x, neighbour.y) ||
+											isElevatedFootpath(neighbour.x, neighbour.y, neighbourFootpath))
+									) {
+										const neighbourNodeKey = pathNodeKey(
+											neighbour.x,
+											neighbour.y,
+											neighbourFootpath.baseZ,
+										);
+										if (!info.neighbourKeys.includes(neighbourNodeKey)) {
+											info.neighbourKeys.push(neighbourNodeKey);
 										}
 									}
 								}
@@ -753,7 +851,6 @@ const groupGardeningTiles = function groupGardeningTiles(state: GardeningSweepSt
 		const startX = parseInt(parts[0], 10);
 		const startY = parseInt(parts[1], 10);
 		const component: PathTileInfo[] = [];
-		const componentByKey = new Map<string, PathTileInfo>();
 		const stack: CoordsXY[] = [{ x: startX, y: startY }];
 		visited.add(key);
 		let workTileCount = 0;
@@ -774,13 +871,13 @@ const groupGardeningTiles = function groupGardeningTiles(state: GardeningSweepSt
 				neighbourKeys: [],
 			};
 			component.push(info);
-			componentByKey.set(currentKey, info);
 			if (!info.isConnector) {
 				workTileCount++;
 			}
 			for (const offset of CARDINAL_NEIGHBOUR_OFFSETS) {
 				const neighbour = { x: current.x + offset.x, y: current.y + offset.y };
 				const neighbourKey = tileKey(neighbour.x, neighbour.y);
+				const neighbourSurface = findSurfaceElement(gameMap().getTile(neighbour.x, neighbour.y));
 				// Walk on to any walkable node (garden work or connector footpath tile).
 				if (
 					walkKeys.has(neighbourKey) &&
@@ -791,18 +888,22 @@ const groupGardeningTiles = function groupGardeningTiles(state: GardeningSweepSt
 					// cannot be climbed, so the tiles must end up in separate
 					// areas rather than in one patrol area a handyman gets stuck
 					// in.
-					surfacesConnect(
-						surface,
-						findSurfaceElement(gameMap().getTile(neighbour.x, neighbour.y)),
-					) &&
+					surfacesConnect(surface, neighbourSurface) &&
 					// A park fence or path railing on either side of the shared edge blocks
 					// walking between the two tiles, so they must remain separate areas.
 					!surfaceFenceBlocksWalking(current, neighbour)
 				) {
-					info.neighbourKeys.push(neighbourKey);
-					const neighbourInfo = componentByKey.get(neighbourKey);
-					if (neighbourInfo && !neighbourInfo.neighbourKeys.includes(currentKey)) {
-						neighbourInfo.neighbourKeys.push(currentKey);
+					// Neighbour nodes are keyed by (x, y, baseZ) like the path network (see
+					// pathNodeKey), so the link points at the neighbour's surface-height node.
+					// Only the outbound edge is recorded; the neighbour records its own edge
+					// back to this tile when it is walked, so both directions land.
+					const neighbourNodeKey = pathNodeKey(
+						neighbour.x,
+						neighbour.y,
+						surfaceBaseZOr0(neighbourSurface),
+					);
+					if (!info.neighbourKeys.includes(neighbourNodeKey)) {
+						info.neighbourKeys.push(neighbourNodeKey);
 					}
 					if (!visited.has(neighbourKey)) {
 						visited.add(neighbourKey);
@@ -870,6 +971,62 @@ export const countRideExits = function countRideExits(): number {
 // patrol areas without re-scanning the map.
 export let lastAllPathTiles: PathTileInfo[] = [];
 export let lastGardenAreas: PathTileInfo[][] = [];
+
+// --- Walk-graph components (for incremental auto mode) -----------------------------
+// Lazy connected-component table over the most recent scan's footpath network
+// (lastAllPathTiles), keyed by path node key. The footpath walk itself is the
+// only thing that knows which stacked footpath levels are genuinely connected
+// (via ramps) and which are separate networks (a bridge over a path), so this
+// is the authoritative source for "which height level does this patrol tile
+// belong to" when auto mode seeds its areas from a member's (x/y-only)
+// patrol area.
+let componentCacheTiles: PathTileInfo[] | undefined = undefined;
+let componentCache: Map<string, number> | undefined = undefined;
+
+// The connected-component id of the given path node within the most recent
+// scan's footpath network, or undefined if the node is not part of that
+// network (no scan has run yet, or the tile/level no longer exists). The
+// table is rebuilt whenever the scan's tile array is replaced, so lookups
+// always match the freshest scan.
+export const lastScanComponentOf = function lastScanComponentOf(
+	nodeKey: string,
+): number | undefined {
+	const tiles = lastAllPathTiles;
+	if (tiles !== componentCacheTiles) {
+		const indexByKey = new Map<string, number>();
+		for (let i = 0; i < tiles.length; i++) {
+			indexByKey.set(pathNodeKey(tiles[i].x, tiles[i].y, tiles[i].baseZ), i);
+		}
+		const componentOf = Array.from({ length: tiles.length }, () => -1);
+		const result = new Map<string, number>();
+		for (let i = 0; i < tiles.length; i++) {
+			if (-1 === componentOf[i]) {
+				const id = result.size;
+				componentOf[i] = id;
+				const stack: number[] = [i];
+				while (0 < stack.length) {
+					const current = stack.pop();
+					if (current === undefined) {
+						break;
+					}
+					result.set(pathNodeKey(tiles[current].x, tiles[current].y, tiles[current].baseZ), id);
+					for (const neighbourKey of tiles[current].neighbourKeys) {
+						const neighbourIndex = indexByKey.get(neighbourKey);
+						if (neighbourIndex !== undefined && -1 === componentOf[neighbourIndex]) {
+							componentOf[neighbourIndex] = id;
+							stack.push(neighbourIndex);
+						}
+					}
+				}
+			}
+		}
+		componentCacheTiles = tiles;
+		componentCache = result;
+	}
+	// componentCacheTiles and componentCache are always set together, so on the
+	// cache-hit branch above the table is defined (the compiler can't see that).
+	return componentCache?.get(nodeKey);
+};
 
 // --- Per-tile classification helpers (for incremental auto mode) ---------------------
 // A single tile can carry a footpath (plain or queue) and garden/owned state.
