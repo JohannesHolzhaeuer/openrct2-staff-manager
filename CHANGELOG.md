@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.15.0...v0.15.1) (2026-11-22)
+
+
+### Build System
+
+* inject plugin version from package.json at build time ([#116](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/116)) ([bdeadf8](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/bdeadf826ddf8beb111b8b48c778a262aa1cf16e))
+
 ## [0.15.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.14.3...v0.15.0) (2026-10-23)
 
 
