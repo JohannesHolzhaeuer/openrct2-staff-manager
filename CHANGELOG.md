@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.16.0...v0.16.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* keep patrol areas on one walkable height network ([#119](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/issues/119)) ([fd22c81](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/commit/fd22c817e0d6974bd0f4dfaf39abfee1275ac021))
+
 ## [0.16.0](https://github.com/JohannesHolzhaeuer/openrct2-staff-manager/compare/v0.15.1...v0.16.0) (2026-11-22)
 
 
